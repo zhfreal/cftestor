@@ -1,0 +1,12 @@
+.idea
+dist
+*.sh
+*.exe
+cftestor
+*.db
+*.txt
+*.csv
+*.json
+*.xml
+*.bat
+*.py
