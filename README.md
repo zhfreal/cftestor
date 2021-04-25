@@ -14,52 +14,71 @@
 ### 下载、编译
 
 请在[release](https://github.com/XIU2/CloudflareSpeedTest/releases)
-中下载最新的预编译文件或自行编译
+中下载最新的预编译文件或自行编译。需要注意的是，由于使用[go-sqlite3](https://github.com/mattn/go-sqlite3)
+编译时需要打开CGO，交叉编译时请使用CC和CXX变量传入gcc和g++工具链。
 ```bash
 $ git clone https://github.com/zhfreal/cftestor.git
 $ cd cftestor
-$ go build .
+$ CGO_ENABLED=1 go build .
 $ ./cftestor -h
 
-    cftestor v1.0
+    cftestor v1.0.1
     测试Cloudflare IP的延迟和速度，获取最快的IP！
     https://github.com/zhfreal/cftestor
 
     参数:
-        -s, --ip                    string  待测试IP(段)，例如1.0.0.1或者1.0.0.0/32，可重复使用测试多个IP或者IP段
+        -s, --ip                    string  待测试IP(段)(默认为空)
+                                            例如1.0.0.1或者1.0.0.0/32，可重复使用测试多个IP或者IP段。
         -i, --in                    string  IP(段) 数据文件
-        -m, --ping-thread           int     ping测试线程数量 (默认 100)
-        -t, --ping-timeout          int     ping超时时间(ms), 当使用"--ping-via-http"时，此值应适当加大 (默认 1000ms)
-        -c, --ping-try              int     ping测试次数 (默认 4)
-            --port                  int     测速端口。当使用SSL握手方式测试延时且不进行下载测试时，需要根据此参数测试；其余情况则是使用
-                                            "--url"提供的参数进行测试。(默认 443)
-            --hostname              string  SSL握手时使用的hostname。当使用SSL握手方式测试延时且不进行下载测试时，需要根据此参数测试；
-                                            其余情况则是使用"--url"提供的参数进行测试。(默认值: "cf.zhfreal.nl")
-            --ping-via-http                 使用HTTP请求方式进行延时测试，当使用此模式时，"--ping-timeout"应适当加大，另外请根据自身
-                                            服务器的情况，以及CF对实际访问量的限制，降低--ping-thread的值，避免访问量过大，造成测试结果
-                                            偏低。默认使用SSL握手方式测试Ping。
-        -n, --download-thread       int     下测试线程数 (默认 1)
-        -d, --download-max-duration int     单次下载测速最长时间(s) (默认 30s)
-        -b, --download-try          int     尝试下载次数 (默认 1)
-        -u, --url                   string  下载测速地址 (默认 "https://cf.zhfreal.nl/500mb.dat")。
-                                            自定义下载文件建议使用压缩文件，避免CF或者HTTP容器设置压缩时使测试速度异常大；另外请在CF上关闭
-                                            对此文件的缓存或者在服务器上将此文件加上用户名和密码实现访问控制，这样可以测试经过CF后到实际服务
-                                            器整个链路的速度。当在服务器上对下载文件加上用户名和密码的访问控制时时，可以如下格式传入url:
-                                            "https://<用户名>:<密码>@cf.zhfreal.nl/500mb.dat", "<用户名>"和"<密码>"请用实际值替换。
-            --interval              int     测试间隔时间(ms) (默认 100ms)
-        -k, --time-limit            int     平均延迟上限(ms) (默认 800ms)
-        -l, --speed                 float   下载速度下限(KB/s) (默认 2000KB/s)
-        -r, --result                int     测速结果集数量 (默认 20)
-            --disable-download              禁用下载测速开关(默认 不带此参数，即需进行下载测试)
-            --ipv6                          测试IPv6开关(默认进行IPv4测试，仅不指定-i和-s时有效)
-            --testall                       测速全部IP开关(默认否，仅不指定-s和-i时有效)
-        -w, --store-to-file                 是否将测试结果写入文件开关(默认否)。当指定此参数且不指定-o参数时，输出文件名称自动生成。
-        -o, --result-file           string  输出结果文件，指定此参数将结果输出至本参数对应的文件。
-            --store-to-db                   是否将结果存入sqlite3数据库开关，携带此参数时为需要将结果存入数据库文件
-            --db-file               string  sqlite3数据库文件名称。(默认"ip.db")
-            --label                 string  输出结果文件后缀或者数据库中数据记录的标签，用于区分测试目标服务器。如果指定"--result-file"
-                                            时，此参数对文件名无效。当不指定此参数时，自动结果文件名后缀和数据库记录的标签为"--hostname"
-                                            或者"--url"对应的域名。
+        -m, --ping-thread           int     延时测试线程数量(默认 100)
+        -t, --ping-timeout          int     延时超时时间(ms)(默认 1000ms)
+                                            当使用"--ping-via-http"时，应适当加大。
+        -c, --ping-try              int     延时测试次数(默认 4)
+            --port                  int     测速端口(默认 443)
+                                            当使用SSL握手方式测试延时且不进行下载测试时，需要根据此参数测试；其余
+                                            情况则是使用。"--url"提供的参数进行测试。
+            --hostname              string  SSL握手时使用的hostname(默认: "cf.zhfreal.nl")
+                                            当使用SSL握手方式测试延时且不进行下载测试时，需要根据此参数测试；其余
+                                            情况则是使用"--url"提供的参数进行测试。
+
+            --ping-via-http                 使用HTTP请求方式进行延时测试开关(默认关闭，即使用SSL握手方式测试延时)
+                                            当使用此模式时，"--ping-timeout"应适当加大；另外请根据自身服务器的情况，
+                                            以及CF对实际访问量的限制，降低--ping-thread值，避免访问量过大，造成测试
+                                            结果偏低。
+        -n, --download-thread       int     下测试线程数(默认 1)
+        -d, --download-max-duration int     单次下载测速最长时间(s)(默认 30s)
+        -b, --download-try          int     尝试下载次数(默认 1)
+        -u, --url                   string  下载测速地址(默认 "https://cf.zhfreal.nl/500mb.dat")。
+                                            自定义下载文件建议使用压缩文件，避免CF或者HTTP容器设置压缩时使测试速度
+                                            异常大；另外请在CF上关闭对此文件的缓存或者在服务器上将此文件加上用户名
+                                            和密码实现访问控制，这样可以测试经过CF后到实际服务器整个链路的速度。当
+                                            在服务器上对下载文件加上用户名和密码的访问控制时时，可以如下格式传入url:
+                                            "https://<用户名>:<密码>@cf.zhfreal.nl/500mb.dat", "<用户名>"和"<密码>"
+                                            请用实际值替换。
+            --interval              int     测试间隔时间(ms)(默认 100ms)
+        -k, --time-limit            int     平均延时上限(ms)(默认 800ms)
+                                            平均延时超过此值不计入结果集，不再进行下载测试。
+        -l, --speed                 float   下载平均速度下限(KB/s)(默认 2000KB/s)
+                                            下载平均速度低于此值时不计入结果集。
+        -r, --result                int     测速结果集数量(默认 20)
+                                            当符合条件的IP数量超过此值时，结束测试。但是如果开启"--testall"，此值不
+                                            再生效。
+            --disable-download              禁用下载测速开关(默认关闭，即需进行下载测试)
+            --ipv6                          测试IPv6开关(默认关闭，即进行IPv4测试，仅不携带-i且不携带-s时有效)
+            --testall                       测试全部IP开关(默认关闭，仅不携带-s且不携带-i时有效)
+        -w, --store-to-file                 是否将测试结果写入文件开关(默认关闭)
+                                            当携带此参数且不携带-o参数时，输出文件名称自动生成。
+        -o, --result-file           string  输出结果文件
+                                            携带此参数将结果输出至本参数对应的文件。
+            --store-to-db                   是否将结果存入sqlite3数据库开关（默认关闭）
+                                            此参数打开时且不携带"--db-file"参数时，数据库文件默认为"ip.db"。
+            --db-file               string  sqlite3数据库文件名称。
+                                            携带此参数将结果输出至本参数对应的数据库文件。
+            --label                 string  输出结果文件后缀或者数据库中数据记录的标签
+                                            用于区分测试目标服务器。携带此参数时，在自动存储文件名模式下，文件名自
+                                            动附加此值，数据库中Lable字段为此值。但如果携带"--result-file"时，此参
+                                            数对文件名无效。当不携带此参数时，自动结果文件名后缀和数据库记录的标签
+                                            为"--hostname"或者"--url"对应的域名。
         -V, --debug                         调试模式
         -V, --version                       打印程序版本
     pflag: help requested
@@ -123,9 +142,9 @@ $
 ## 注意事项
 ### 自定义测试地址，找到符合自己的最佳IP
 默认测试中--url参数中对应的文件已经在CF上缓存，测试结果未必适用于您的服务器。若需找到最佳IP，建议使用自己的测试地址。 <br>
-#### 1、自行在落地服务器上创建测试文件，测试文件最好压缩。避免CF或者HTTP容器(nginx/apache/caddy等)使用压缩方式传输数据时测试速度异常大。
-#### 2、在CF上通过设置页面规则关闭对此测试文件的缓存，或者在HTTP容器中对此文件进行用户名和密码的访问控制(此时可按此传入: "-u https://<用户名>:<密码>@cf.zhfreal.nl/500mb.dat", "<用户名>"和"<密码>"请用实际值替换)。
-#### 3、因CF没有缓存，请注意落地服务器的流量消耗。
+1、自行在落地服务器上创建测试文件，测试文件最好压缩。避免CF或者HTTP容器(nginx/apache/caddy等)使用压缩方式传输数据时测试速度异常大。
+2、在CF上通过设置页面规则关闭对此测试文件的缓存，或者在HTTP容器中对此文件进行用户名和密码的访问控制(此时可按此传入: "-u https://<用户名>:<密码>@cf.zhfreal.nl/500mb.dat", "<用户名>"和"<密码>"请用实际值替换)。
+3、因CF没有缓存，请注意落地服务器的流量消耗。
 
 ### 使用"--ping-via-http"参数测试延时
 #### "--ping-timeout"参数增大
