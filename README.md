@@ -38,10 +38,10 @@ $ ./cftestor -h
             --port                  int     测速端口(默认 443)
                                             当使用SSL握手方式测试延时且不进行下载测试时，需要根据此参数测试；其余
                                             情况则是使用。"--url"提供的参数进行测试。
-            --hostname              string  SSL握手时使用的hostname(默认: "` + DefaultTestHost + `")
+            --hostname              string  SSL握手时使用的hostname(默认: "cf.zhfreal.nl")
                                             当使用SSL握手方式测试延时且不进行下载测试时，需要根据此参数测试；其余
                                             情况则是使用"--url"提供的参数进行测试。
-                                            
+
             --ping-via-http                 使用HTTP请求方式进行延时测试开关(默认关闭，即使用SSL握手方式测试延时)
                                             当使用此模式时，"--ping-timeout"应适当加大；另外请根据自身服务器的情
                                             况，以及CF对实际访问量的限制，降低--ping-thread值，避免访问量过大，
@@ -49,7 +49,7 @@ $ ./cftestor -h
         -n, --download-thread       int     下测试线程数(默认 1)
         -d, --download-max-duration int     单次下载测速最长时间(s)(默认 30s)
         -b, --download-try          int     尝试下载次数(默认 1)
-        -u, --url                   string  下载测速地址(默认 "` + DefaultTestUrl + `")。
+        -u, --url                   string  下载测速地址(默认 "https://cf.zhfreal.nl/500mb.dat")。
                                             自定义下载文件建议使用压缩文件，避免CF或者HTTP容器设置压缩时使测试速度
                                             异常大；另外请在CF上关闭对此文件的缓存或者在服务器上将此文件加上用户名
                                             和密码实现访问控制，这样可以测试经过CF后到实际服务器整个链路的速度。当
