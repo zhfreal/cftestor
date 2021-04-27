@@ -47,7 +47,7 @@ $ ./cftestor -h
                                             况，以及CF对实际访问量的限制，降低--ping-thread值，避免访问量过大，
                                             造成测试结果偏低。
         -n, --download-thread       int     下测试线程数(默认 1)
-        -d, --download-max-duration int     单次下载测速最长时间(s)(默认 30s)
+        -d, --download-max-duration int     单次下载测速最长时间(s)(默认 10s)
         -b, --download-try          int     尝试下载次数(默认 1)
         -u, --url                   string  下载测速地址(默认 "https://cf.zhfreal.nl/500mb.dat")。
                                             自定义下载文件建议使用压缩文件，避免CF或者HTTP容器设置压缩时使测试速度

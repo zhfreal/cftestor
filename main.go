@@ -75,7 +75,7 @@ func init() {
                                             况，以及CF对实际访问量的限制，降低--ping-thread值，避免访问量过大，
                                             造成测试结果偏低。
         -n, --download-thread       int     下测试线程数(默认 1)
-        -d, --download-max-duration int     单次下载测速最长时间(s)(默认 30s)
+        -d, --download-max-duration int     单次下载测速最长时间(s)(默认 10s)
         -b, --download-try          int     尝试下载次数(默认 1)
         -u, --url                   string  下载测速地址(默认 "` + DefaultTestUrl + `")。
                                             自定义下载文件建议使用压缩文件，避免CF或者HTTP容器设置压缩时使测试速度
@@ -123,7 +123,7 @@ func init() {
     flag.BoolVar(&pingViaHttp, "ping-via-http", false, "使用连接方式进行延时测试，默认是使用SSL握手方式")
 
     flag.IntVarP(&downloadThread, "download-thread", "n", 1, "下测试线程数")
-    flag.IntVarP(&downloadTimer, "download-max-duration", "d", 30, "单次下载测速最长时间(s)")
+    flag.IntVarP(&downloadTimer, "download-max-duration", "d", 10, "单次下载测速最长时间(s)")
     flag.IntVarP(&downloadTry, "download-try", "b", 1, "尝试下载次数")
     flag.StringVarP(&urlStr, "url", "u", DefaultTestUrl, "下载测速地址")
     flag.IntVar(&interval, "interval", 100, "间隔时间(ms)")
