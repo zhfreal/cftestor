@@ -14,14 +14,15 @@ import (
 )
 
 const (
-    DownloadBufferSize = 1024 * 16
-    WorkerStopSignal   = "DONE"
-    StatisticTimer     = 10
-    FileDefaultSize    = 1024 * 1024 * 300
-    DownloadSizeMin    = 1024 * 1024
-    DefaultTestUrl     = "https://cf.zhfreal.nl/500mb.dat"
-    DefaultDBFile      = "ip.db"
-    DefaultTestHost    = "cf.zhfreal.nl"
+    DownloadBufferSize    = 1024 * 16
+    WorkerStopSignal      = "DONE"
+    StatisticTimer        = 10
+    FileDefaultSize       = 1024 * 1024 * 300
+    DownloadSizeMin       = 1024 * 1024
+    DefaultTestUrl        = "https://cf.zhfreal.nl/500mb.dat"
+    DefaultDBFile         = "ip.db"
+    DefaultTestHost       = "cf.zhfreal.nl"
+    DownloadControlFactor = 2.0
 )
 
 var (
@@ -59,7 +60,7 @@ func init() {
                                             例如1.0.0.1或者1.0.0.0/32，可重复使用测试多个IP或者IP段。
         -i, --in                    string  IP(段) 数据文件
                                             文本文件，每一行为一个IP或者IP段。
-        -m, --ping-thread           int     延时测试线程数量(默认 100)
+        -m, --ping-thread           int     延时测试线程数量(默认 50)
         -t, --ping-timeout          int     延时超时时间(ms)(默认 1000ms)
                                             当使用"--ping-via-http"时，应适当加大。
         -c, --ping-try              int     延时测试次数(默认 4)
@@ -115,7 +116,7 @@ func init() {
     flag.VarP(&ipStr, "ip", "s", "待测试IP或者地址段，例如1.0.0.1或者1.0.0.0/24")
     flag.StringVarP(&ipFile, "in", "i", "", "IP 数据文件")
 
-    flag.IntVarP(&pingWorkerThread, "ping-thread", "m", 100, "ping测试线程数")
+    flag.IntVarP(&pingWorkerThread, "ping-thread", "m", 50, "ping测试线程数")
     flag.IntVarP(&pingTimeout, "ping-timeout", "t", 1000, "ping超时时间(ms)")
     flag.IntVarP(&pingTry, "ping-try", "c", 4, "ping测速次数")
     flag.IntVar(&port, "port", 443, "延迟测速端口")
@@ -195,7 +196,6 @@ func init() {
             srcIPS = append(srcIPS, CFIPV6...)
         }
     }
-
     if pingWorkerThread <= 0 {
         pingWorkerThread = 500
     }
@@ -319,10 +319,7 @@ func main() {
     }
     fmt.Println()
     // start controller worker
-    go controllerWorker(pingTaskChan, pingTaskOutChan, downloadTaskChan,
-        downloadOutChan, &wg, rttMaxStatic, speedMinStatic,
-        resultMax, pingWorkerThread, downloadThread, interval,
-        disableDownload, debug, ips, storeToFile, resultFile)
+    go controllerWorker(pingTaskChan, pingTaskOutChan, downloadTaskChan, downloadOutChan, &wg)
     wg.Add(1)
     // start ping worker
     for i := 0; i < pingWorkerThread; i++ {
@@ -390,9 +387,7 @@ func main() {
 }
 
 func controllerWorker(pingTaskChan chan string, pingTaskOutChan chan SingleVerifyResult, downloadTaskChan chan string,
-    downloadOutChan chan SingleVerifyResult, wg *sync.WaitGroup, timeMaxStatic int, speedLimitation float64,
-    resultLimitation int, pingWorkerThread int, downloadThread int, interval int,
-    disableDownload bool, debug bool, ips []string, storeToFile bool, csvFile string) {
+    downloadOutChan chan SingleVerifyResult, wg *sync.WaitGroup) {
     defer wg.Done()
 
     var allPingTasks, allDownloadTasks, pingTaskDone, downloadTaskDone int
@@ -403,7 +398,7 @@ func controllerWorker(pingTaskChan chan string, pingTaskOutChan chan SingleVerif
     var downloadQueueBuffer = make([]string, 0)
     var cacheResultMap = make(map[string]VerifyResults, 0)
     var WorkReadyDone = false
-    // initialize task, put pingection test task to chan per pingection thread
+    // initialize task, put ping test task to chan per ping thread
     for len(ips) > 0 && (allPingTasks-pingTaskDone) < pingWorkerThread {
         allPingTasks += 1
         pingTaskChan <- ips[0]
@@ -417,6 +412,11 @@ func controllerWorker(pingTaskChan chan string, pingTaskOutChan chan SingleVerif
         allDownloadTasks, downloadTaskDone, len(ips),
         len(downloadQueueBuffer), len(verifyResultsMap)}, disableDownload)
     var OverAllStatTimer = time.Now()
+
+    // estimated time in millisecond for single ping task,
+    estimatedTimeSinglePing := float64((pingTimeout + interval) * pingTry)
+    // estimated time in millisecond for single download task,
+    estimatedTimeSingleDownload := float64((downloadTimer * 1000 + interval) * downloadTry)
 
 LOOP:
     for {
@@ -434,22 +434,13 @@ LOOP:
                 // reset timer
                 OverAllStatTimer = time.Now()
             }
-            if tVerifyResult.PingDurationAvg > 0.0 && tVerifyResult.PingDurationAvg <= float64(timeMaxStatic) {
+            if tVerifyResult.PingDurationAvg > 0.0 && tVerifyResult.PingDurationAvg <= float64(rttMaxStatic) {
                 if disableDownload == false {
+                    // put ping test result to cacheResultMap for later
+                    // if the result is good as expected when we perform download test
                     if WorkReadyDone == false {
                         cacheResultMap[tVerifyResult.IP] = tVerifyResult
                         downloadQueueBuffer = append(downloadQueueBuffer, tVerifyResult.IP)
-                        // pop from downloadQueueBuffer, push it to download task channel
-                        // when we don't get ips as much as expected ?
-                        if (allDownloadTasks-downloadTaskDone) < downloadThread && len(downloadQueueBuffer) > 0 {
-                            downloadTaskChan <- downloadQueueBuffer[0]
-                            allDownloadTasks += 1
-                            if len(downloadQueueBuffer) > 1 {
-                                downloadQueueBuffer = downloadQueueBuffer[1:]
-                            } else {
-                                downloadQueueBuffer = []string{}
-                            }
-                        }
                     }
                 } else { // Download test disabled
                     verifyResultsMap[tVerifyResult.IP] = tVerifyResult
@@ -461,10 +452,10 @@ LOOP:
                     OverAllStatTimer = time.Now()
                     // write result csv
                     if storeToFile {
-                        WriteResult(csvFile, []VerifyResults{tVerifyResult})
+                        WriteResult(resultFile, []VerifyResults{tVerifyResult})
                     }
                     // all work ready done
-                    if len(verifyResultsMap) >= resultLimitation {
+                    if len(verifyResultsMap) >= resultMax {
                         WorkReadyDone = true
                         myLogger.PrintOverAllStat(OverAllStat{allPingTasks, pingTaskDone,
                             allDownloadTasks, downloadTaskDone, len(ips),
@@ -472,15 +463,6 @@ LOOP:
                         // reset timer
                         OverAllStatTimer = time.Now()
                     }
-                }
-            }
-            if WorkReadyDone == false && len(ips) > 0 && (allPingTasks-pingTaskDone) < pingWorkerThread {
-                allPingTasks += 1
-                pingTaskChan <- ips[0]
-                if len(ips) > 1 {
-                    ips = ips[1:]
-                } else {
-                    ips = []string{}
                 }
             }
         default:
@@ -504,16 +486,16 @@ LOOP:
                 v.DownloadSize = tVerifyResult.DownloadSize
                 v.DownloadDurationSec = tVerifyResult.DownloadDurationSec
                 // check when pingection duration and download speed
-                if tVerifyResult.DownloadSpeedAvg >= speedLimitation && tVerifyResult.DownloadSize > DownloadSizeMin {
+                if tVerifyResult.DownloadSpeedAvg >= speedMinStatic && tVerifyResult.DownloadSize > DownloadSizeMin {
                     // put tVerifyResult into verifyResultsMap
                     verifyResultsMap[tVerifyResult.IP] = v
                     // WorkReadyDone
-                    if len(verifyResultsMap) >= resultLimitation {
+                    if len(verifyResultsMap) >= resultMax {
                         WorkReadyDone = true
                     }
                     // write result csv
                     if storeToFile {
-                        WriteResult(csvFile, []VerifyResults{v})
+                        WriteResult(resultFile, []VerifyResults{v})
                     }
                     myLogger.PrintSingleStat(LoggerContent{LogLevelInfo, []VerifyResults{v}},
                         OverAllStat{allPingTasks, pingTaskDone,
@@ -527,16 +509,6 @@ LOOP:
                             len(downloadQueueBuffer), len(verifyResultsMap)}, disableDownload)
                     OverAllStatTimer = time.Now()
                 }
-                // put task, when we don't get ips as much as expected
-                if WorkReadyDone == false && (allDownloadTasks-downloadTaskDone) < downloadThread && len(downloadQueueBuffer) > 0 {
-                    downloadTaskChan <- downloadQueueBuffer[0]
-                    allDownloadTasks += 1
-                    if len(downloadQueueBuffer) > 1 {
-                        downloadQueueBuffer = downloadQueueBuffer[1:]
-                    } else {
-                        downloadQueueBuffer = []string{}
-                    }
-                }
             default:
                 if pingTaskDone >= allPingTasks && downloadTaskDone >= allDownloadTasks && (WorkReadyDone || len(ips) == 0) {
                     break LOOP
@@ -549,6 +521,44 @@ LOOP:
                 allDownloadTasks, downloadTaskDone, len(ips),
                 len(downloadQueueBuffer), len(verifyResultsMap)}, disableDownload)
             OverAllStatTimer = time.Now()
+        }
+        // Ping task control
+        // when all works did not finished, and the ping task pool don't have enough ips
+        // then we put ping task to ping queue
+        if WorkReadyDone == false && len(ips) > 0 && (allPingTasks-pingTaskDone) < pingWorkerThread {
+            // when don't perform download test or, download tasks pool has less than value:DownloadControlFactor*downloadThread
+            // we put ping task to download queue
+            // if disableDownload || (len(downloadQueueBuffer)+allDownloadTasks-downloadTaskDone) < DownloadControlFactor*downloadThread {
+            if disableDownload || estimatedTimeSinglePing >= math.Ceil(float64(len(downloadQueueBuffer) + allDownloadTasks-downloadTaskDone)/float64(downloadThread))*estimatedTimeSingleDownload*DownloadControlFactor {
+                for i:=0; i<pingWorkerThread; i++ {
+                    if len(ips) == 0 {
+                        break
+                    }
+                    allPingTasks += 1
+                    pingTaskChan <- ips[0]
+                    if len(ips) > 1 {
+                        ips = ips[1:]
+                    } else {
+                        ips = []string{}
+                    }
+                }
+            }
+        }
+        // Download task control
+        // put task to queue if it has enough ips
+        if disableDownload == false && WorkReadyDone == false && len(downloadQueueBuffer) > 0 && (allDownloadTasks-downloadTaskDone) < downloadThread {
+            for i:=0; i<downloadThread; i++ {
+                if len(downloadQueueBuffer) == 0 {
+                    break
+                }
+                downloadTaskChan <- downloadQueueBuffer[0]
+                allDownloadTasks += 1
+                if len(downloadQueueBuffer) > 1 {
+                    downloadQueueBuffer = downloadQueueBuffer[1:]
+                } else {
+                    downloadQueueBuffer = []string{}
+                }
+            }
         }
         time.Sleep(time.Duration(interval) * time.Millisecond)
     }

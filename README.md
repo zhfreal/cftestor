@@ -31,7 +31,7 @@ $ ./cftestor -h
                                             例如1.0.0.1或者1.0.0.0/32，可重复使用测试多个IP或者IP段。
         -i, --in                    string  IP(段) 数据文件
                                             文本文件，每一行为一个IP或者IP段。
-        -m, --ping-thread           int     延时测试线程数量(默认 100)
+        -m, --ping-thread           int     延时测试线程数量(默认 50)
         -t, --ping-timeout          int     延时超时时间(ms)(默认 1000ms)
                                             当使用"--ping-via-http"时，应适当加大。
         -c, --ping-try              int     延时测试次数(默认 4)
