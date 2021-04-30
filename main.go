@@ -49,7 +49,7 @@ var (
 func init() {
     var printVersion bool
 
-    version = "v1.1.0"
+    version = "v1.1.1"
     var help = `
     cftestor ` + version + `
     测试Cloudflare IP的延迟和速度，获取最快的IP！
@@ -465,9 +465,28 @@ LOOP:
                     }
                 }
             }
+            if disableDownload && pingTaskDone >= allPingTasks {
+                WorkReadyDone = true
+            }
         default:
-            if disableDownload && pingTaskDone >= allPingTasks && (WorkReadyDone || len(ips) == 0) {
+            if disableDownload && WorkReadyDone {
                 break LOOP
+            }
+        }
+        // Download task control
+        // put task to queue if it has enough ips
+        if disableDownload == false && WorkReadyDone == false && len(downloadQueueBuffer) > 0 && (allDownloadTasks-downloadTaskDone) < downloadThread {
+            for i:=0; i<downloadThread; i++ {
+                if len(downloadQueueBuffer) == 0 {
+                    break
+                }
+                downloadTaskChan <- downloadQueueBuffer[0]
+                allDownloadTasks += 1
+                if len(downloadQueueBuffer) > 1 {
+                    downloadQueueBuffer = downloadQueueBuffer[1:]
+                } else {
+                    downloadQueueBuffer = []string{}
+                }
             }
         }
         if disableDownload == false {
@@ -515,13 +534,6 @@ LOOP:
                 }
             }
         }
-        // Print overall stat during waiting time and reset OverAllStatTimer
-        if time.Since(OverAllStatTimer) > time.Duration(StatisticTimer)*time.Second {
-            myLogger.PrintOverAllStat(OverAllStat{allPingTasks, pingTaskDone,
-                allDownloadTasks, downloadTaskDone, len(ips),
-                len(downloadQueueBuffer), len(verifyResultsMap)}, disableDownload)
-            OverAllStatTimer = time.Now()
-        }
         // Ping task control
         // when all works did not finished, and the ping task pool don't have enough ips
         // then we put ping task to ping queue
@@ -544,21 +556,12 @@ LOOP:
                 }
             }
         }
-        // Download task control
-        // put task to queue if it has enough ips
-        if disableDownload == false && WorkReadyDone == false && len(downloadQueueBuffer) > 0 && (allDownloadTasks-downloadTaskDone) < downloadThread {
-            for i:=0; i<downloadThread; i++ {
-                if len(downloadQueueBuffer) == 0 {
-                    break
-                }
-                downloadTaskChan <- downloadQueueBuffer[0]
-                allDownloadTasks += 1
-                if len(downloadQueueBuffer) > 1 {
-                    downloadQueueBuffer = downloadQueueBuffer[1:]
-                } else {
-                    downloadQueueBuffer = []string{}
-                }
-            }
+        // Print overall stat during waiting time and reset OverAllStatTimer
+        if time.Since(OverAllStatTimer) > time.Duration(StatisticTimer)*time.Second {
+            myLogger.PrintOverAllStat(OverAllStat{allPingTasks, pingTaskDone,
+                allDownloadTasks, downloadTaskDone, len(ips),
+                len(downloadQueueBuffer), len(verifyResultsMap)}, disableDownload)
+            OverAllStatTimer = time.Now()
         }
         time.Sleep(time.Duration(interval) * time.Millisecond)
     }
