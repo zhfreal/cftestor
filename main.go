@@ -49,7 +49,7 @@ var (
 func init() {
     var printVersion bool
 
-    version = "v1.1.1"
+    version = "v1.2.0"
     var help = `
     cftestor ` + version + `
     测试Cloudflare IP的延迟和速度，获取最快的IP！
@@ -64,13 +64,13 @@ func init() {
         -t, --ping-timeout          int     延时超时时间(ms)(默认 1000ms)
                                             当使用"--ping-via-http"时，应适当加大。
         -c, --ping-try              int     延时测试次数(默认 4)
-            --port                  int     测速端口(默认 443)
+        -p, --port                  int     测速端口(默认 443)
                                             当使用SSL握手方式测试延时且不进行下载测试时，需要根据此参数测试；其余
                                             情况则是使用。"--url"提供的参数进行测试。
             --hostname              string  SSL握手时使用的hostname(默认: "` + DefaultTestHost + `")
                                             当使用SSL握手方式测试延时且不进行下载测试时，需要根据此参数测试；其余
                                             情况则是使用"--url"提供的参数进行测试。
-                                            
+
             --ping-via-http                 使用HTTP请求方式进行延时测试开关(默认关闭，即使用SSL握手方式测试延时)
                                             当使用此模式时，"--ping-timeout"应适当加大；另外请根据自身服务器的情
                                             况，以及CF对实际访问量的限制，降低--ping-thread值，避免访问量过大，
@@ -95,22 +95,22 @@ func init() {
                                             不再生效。
             --disable-download              禁用下载测速开关(默认关闭，即需进行下载测试)
             --ipv6                          测试IPv6开关(默认关闭，即进行IPv4测试，仅不携带-i且不携带-s时有效)
-            --testall                       测试全部IP开关(默认关闭，仅不携带-s且不携带-i时有效)
+        -a  --test-all                      测试全部IP开关(默认关闭，仅不携带-s且不携带-i时有效)
         -w, --store-to-file                 是否将测试结果写入文件开关(默认关闭)
                                             当携带此参数且不携带-o参数时，输出文件名称自动生成。
         -o, --result-file           string  输出结果文件
                                             携带此参数将结果输出至本参数对应的文件。
-            --store-to-db                   是否将结果存入sqlite3数据库开关（默认关闭）
-                                            此参数打开时且不携带"--db-file"参数时，数据库文件默认为"ip.db"。
-            --db-file               string  sqlite3数据库文件名称。
+        -e, --store-to-db                   是否将结果存入sqlite3数据库开关（默认关闭）
+                                            此参数打开且不携带"--db-file"参数时，数据库文件默认为"ip.db"。
+        -f, --db-file               string  sqlite3数据库文件名称。
                                             携带此参数将结果输出至本参数对应的数据库文件。
-            --label                 string  输出结果文件后缀或者数据库中数据记录的标签
+        -g, --label                 string  输出结果文件后缀或者数据库中数据记录的标签
                                             用于区分测试目标服务器。携带此参数时，在自动存储文件名模式下，文件名自
                                             动附加此值，数据库中Lable字段为此值。但如果携带"--result-file"时，
                                             此参数对文件名无效。当不携带此参数时，自动结果文件名后缀和数据库记录的
                                             标签为"--hostname"或者"--url"对应的域名。
         -V, --debug                         调试模式
-        -V, --version                       打印程序版本
+        -v, --version                       打印程序版本
     `
 
     flag.VarP(&ipStr, "ip", "s", "待测试IP或者地址段，例如1.0.0.1或者1.0.0.0/24")
@@ -119,7 +119,7 @@ func init() {
     flag.IntVarP(&pingWorkerThread, "ping-thread", "m", 50, "ping测试线程数")
     flag.IntVarP(&pingTimeout, "ping-timeout", "t", 1000, "ping超时时间(ms)")
     flag.IntVarP(&pingTry, "ping-try", "c", 4, "ping测速次数")
-    flag.IntVar(&port, "port", 443, "延迟测速端口")
+    flag.IntVarP(&port, "port", "p", 443, "延迟测速端口")
     flag.StringVar(&hostName, "hostname", DefaultTestHost, "SSL握手对应的hostname")
     flag.BoolVar(&pingViaHttp, "ping-via-http", false, "使用连接方式进行延时测试，默认是使用SSL握手方式")
 
@@ -135,13 +135,13 @@ func init() {
 
     flag.BoolVar(&disableDownload, "disable-download", false, "禁用下载测速")
     flag.BoolVar(&ipv6Mode, "ipv6", false, "测试IPv6")
-    flag.BoolVar(&testAll, "testall", false, "测速全部IP")
+    flag.BoolVarP(&testAll, "test-all", "a", false, "测速全部IP")
 
     flag.BoolVarP(&storeToFile, "store-to-file", "w", false, "是否将测试结果写入文件")
     flag.StringVarP(&resultFile, "result-file", "o", "", "输出结果文件")
-    flag.BoolVar(&storeToDB, "store-to-db", false, "结果写入sqlite数据库")
-    flag.StringVar(&dbFile, "db-file", "", "sqlite数据库文件")
-    flag.StringVar(&suffixLabel, "label", "", "输出结果文件后缀或者数据库中数据记录的标签")
+    flag.BoolVarP(&storeToDB, "store-to-db", "e",false, "结果写入sqlite数据库")
+    flag.StringVarP(&dbFile, "db-file", "f","", "sqlite数据库文件")
+    flag.StringVarP(&suffixLabel, "label", "g", "", "输出结果文件后缀或者数据库中数据记录的标签")
 
     flag.BoolVarP(&debug, "debug", "V", false, "调试模式")
     flag.BoolVarP(&printVersion, "version", "v", false, "打印程序版本")
