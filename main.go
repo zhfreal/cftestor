@@ -49,7 +49,7 @@ var (
 func init() {
     var printVersion bool
 
-    version = "v1.2.0"
+    version = "v1.2.1"
     var help = `
     cftestor ` + version + `
     测试Cloudflare IP的延迟和速度，获取最快的IP！
@@ -197,7 +197,7 @@ func init() {
         }
     }
     if pingWorkerThread <= 0 {
-        pingWorkerThread = 500
+        pingWorkerThread = 100
     }
     if resultMax <= 0 {
         resultMax = 20

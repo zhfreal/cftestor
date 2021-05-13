@@ -32,10 +32,15 @@ func downloadHandler(ip net.IP, tUrl string, HttpRspTimeoutDuration time.Duratio
         Transport:     nil,
         CheckRedirect: nil,
         Jar:           nil,
+        Timeout:       HttpRspTimeoutDuration,
+    }
+
+    if testPingOnly == false {
+        client.Timeout += downloadTimeMaxDuration
     }
     client.Transport = &http.Transport{
         DialContext:           GetDialContextByAddr(fullAddress),
-        ResponseHeaderTimeout: HttpRspTimeoutDuration,
+        //ResponseHeaderTimeout: HttpRspTimeoutDuration,
     }
     var allResult = make([]SingleResultSlice, 0)
     // loop for test
