@@ -44,12 +44,14 @@ var (
     pingTimeoutDuration                    time.Duration
     downloadTimeMaxDuration                time.Duration
     verifyResultsMap                       = make(map[string]VerifyResults, 0)
+    defaultASN                             = 0
+    defaultCity                            = ""
 )
 
 func init() {
     var printVersion bool
 
-    version = "v1.2.1"
+    version = "v1.2.3"
     var help = `
     cftestor ` + version + `
     测试Cloudflare IP的延迟和速度，获取最快的IP！
@@ -91,10 +93,10 @@ func init() {
         -l, --speed                 float   下载平均速度下限(KB/s)(默认 2000KB/s)
                                             下载平均速度低于此值时不计入结果集。
         -r, --result                int     测速结果集数量(默认 20)
-                                            当符合条件的IP数量超过此值时，结束测试。但是如果开启"--test-all"，此值
+                                            当符合条件的IP数量超过此值时，结束测试。但是如果开启"--testall"，此值
                                             不再生效。
             --disable-download              禁用下载测速开关(默认关闭，即需进行下载测试)
-            --ipv6                          测试IPv6开关(默认关闭，即进行IPv4测试，仅不携带-i且不携带-s时有效)
+        -6, --ipv6                          测试IPv6开关(默认关闭，即进行IPv4测试，仅不携带-i且不携带-s时有效)
         -a  --test-all                      测试全部IP开关(默认关闭，仅不携带-s且不携带-i时有效)
         -w, --store-to-file                 是否将测试结果写入文件开关(默认关闭)
                                             当携带此参数且不携带-o参数时，输出文件名称自动生成。
@@ -134,7 +136,7 @@ func init() {
     flag.IntVarP(&resultMax, "result", "r", 20, "测速结果集数量")
 
     flag.BoolVar(&disableDownload, "disable-download", false, "禁用下载测速")
-    flag.BoolVar(&ipv6Mode, "ipv6", false, "测试IPv6")
+    flag.BoolVarP(&ipv6Mode, "ipv6", "6", false, "测试IPv6")
     flag.BoolVarP(&testAll, "test-all", "a", false, "测速全部IP")
 
     flag.BoolVarP(&storeToFile, "store-to-file", "w", false, "是否将测试结果写入文件")
@@ -324,7 +326,7 @@ func main() {
     // start ping worker
     for i := 0; i < pingWorkerThread; i++ {
         if pingViaHttp {
-            go DownloadWorker(pingTaskChan, pingTaskOutChan, &wg, urlStr,
+            go DownloadWorker(pingTaskChan, pingTaskOutChan, &wg, urlStr, port ,
                 pingTimeoutDuration, downloadTimeMaxDuration, pingTry, interval, true)
         } else {
             go TcppingWorker(pingTaskChan, pingTaskOutChan, &wg, hostName, port,
@@ -335,7 +337,7 @@ func main() {
     // start download worker if don't do ping only
     if disableDownload == false {
         for i := 0; i < downloadThread; i++ {
-            go DownloadWorker(downloadTaskChan, downloadOutChan, &wg, urlStr,
+            go DownloadWorker(downloadTaskChan, downloadOutChan, &wg, urlStr, port,
                 HttpRspTimeoutDuration, downloadTimeMaxDuration, downloadTry, interval, false)
             wg.Add(1)
         }
@@ -357,33 +359,6 @@ func main() {
     myLogger.Println(LogLevelInfo, "All Result(Reverse Order):")
     fmt.Println()
     PrintFinalStat(verifyResultsSlice, disableDownload)
-    // store result to db
-    if len(verifyResultsSlice) > 0 && storeToDB {
-        dbRecords := make([]CFTestDetail, 0)
-        ASN, city := getASNAndCity()
-        for _, v := range verifyResultsSlice {
-            record := CFTestDetail{}
-            record.ASN = ASN
-            record.City = city
-            record.Label = suffixLabel
-            record.TestTimeStr = v.TestTime.Format("2006-01-02 15:04:05")
-            record.IP = v.IP
-            record.PingCount = v.PingCount
-            record.PingSuccessCount = v.PingSuccessCount
-            record.PingSuccessRate = v.PingSuccessRate
-            record.PingDurationAvg = v.PingDurationAvg
-            record.PingDurationMin = v.PingDurationMin
-            record.PingDurationMax = v.PingDurationMax
-            record.DownloadCount = v.DownloadCount
-            record.DownloadSuccessCount = v.DownloadSuccessCount
-            record.DownloadSuccessRatio = v.DownloadSuccessRatio
-            record.DownloadSpeedAvg = v.DownloadSpeedAvg
-            record.DownloadSize = v.DownloadSize
-            record.DownloadDurationSec = v.DownloadDurationSec
-            dbRecords = append(dbRecords, record)
-        }
-        InsertData(dbRecords, dbFile)
-    }
 }
 
 func controllerWorker(pingTaskChan chan string, pingTaskOutChan chan SingleVerifyResult, downloadTaskChan chan string,
@@ -452,8 +427,10 @@ LOOP:
                     OverAllStatTimer = time.Now()
                     // write result csv
                     if storeToFile {
-                        WriteResult(resultFile, []VerifyResults{tVerifyResult})
+                        WriteResult([]VerifyResults{tVerifyResult}, resultFile)
                     }
+                    // write to db
+                    InsertIntoDb([]VerifyResults{tVerifyResult}, dbFile)
                     // all work ready done
                     if len(verifyResultsMap) >= resultMax {
                         WorkReadyDone = true
@@ -514,8 +491,10 @@ LOOP:
                     }
                     // write result csv
                     if storeToFile {
-                        WriteResult(resultFile, []VerifyResults{v})
+                        WriteResult([]VerifyResults{v}, resultFile)
                     }
+                    // write to db
+                    InsertIntoDb([]VerifyResults{tVerifyResult}, dbFile)
                     myLogger.PrintSingleStat(LoggerContent{LogLevelInfo, []VerifyResults{v}},
                         OverAllStat{allPingTasks, pingTaskDone,
                             allDownloadTasks, downloadTaskDone, len(ips),

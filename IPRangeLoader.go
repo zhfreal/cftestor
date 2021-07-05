@@ -40,13 +40,13 @@ func ExtractIPCIDRHosts(netw string, num uint) []string {
         if maskLength >= 64 {
             // if mask length is larger than 64 and the amount is less than we expect, then return all hosts
             // when mask length is lager than 64, the amount of hosts can be represented by a uint64 number
-            subnetBytes := ipNet.Mask[maskLength:]
+            // subnetBytes := ipNet.Mask[hostByteInWhole:]
             // because mask length is larger than 64, the host size transfer a uint64 var
-            subnetSize := binary.BigEndian.Uint64(subnetBytes)
+            // subnetSize := binary.BigEndian.Uint64(subnetBytes)
             // the start of subnet
             var start = uint64(0)
             // the end of subnet
-            var finish = uint64(1<<(128-subnetSize+1) - 1)
+            var finish = uint64(1<<(128-maskLength+1) - 1)
             // loop through addresses as uint32.
             // I used "start + 1" and "finish - 1" to discard the network and broadcast addresses.
             for i := start; i <= finish; i++ {

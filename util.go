@@ -470,7 +470,7 @@ func fileExists(filename string) bool {
     return !info.IsDir()
 }
 
-func WriteResult(filePath string, data []VerifyResults) {
+func WriteResult(data []VerifyResults, filePath string) {
     var fp = &os.File{}
     var err error
     var w = &csv.Writer{}
@@ -551,6 +551,11 @@ func initRandSeed() {
 }
 
 func getASNAndCity()(ASN int, city string) {
+    if defaultASN > 0 {
+        ASN = defaultASN
+        city = defaultCity
+        return
+    }
     for i := 0; i < 3; i++ {
         response, err := http.Get("https://speed.cloudflare.com/__down")
         // pingect is failed(network error), won't continue
@@ -577,6 +582,8 @@ func getASNAndCity()(ASN int, city string) {
                 city = values[0]
             }
         }
+        defaultASN = ASN
+        defaultCity = city
         break
     }
     return
@@ -622,5 +629,34 @@ func PrintFinalStat(v []VerifyResults, disableDownload bool) {
         fmt.Printf("%-11.2f%s", v[i].PingSuccessRate*100, myLogger.Space)
         // close line, LatestLogLength should be 0
         fmt.Println()
+    }
+}
+
+func InsertIntoDb (verifyResultsSlice []VerifyResults, dbFile string) {
+    if len(verifyResultsSlice) > 0 && storeToDB {
+        dbRecords := make([]CFTestDetail, 0)
+        ASN, city := getASNAndCity()
+        for _, v := range verifyResultsSlice {
+            record := CFTestDetail{}
+            record.ASN = ASN
+            record.City = city
+            record.Label = suffixLabel
+            record.TestTimeStr = v.TestTime.Format("2006-01-02 15:04:05")
+            record.IP = v.IP
+            record.PingCount = v.PingCount
+            record.PingSuccessCount = v.PingSuccessCount
+            record.PingSuccessRate = v.PingSuccessRate
+            record.PingDurationAvg = v.PingDurationAvg
+            record.PingDurationMin = v.PingDurationMin
+            record.PingDurationMax = v.PingDurationMax
+            record.DownloadCount = v.DownloadCount
+            record.DownloadSuccessCount = v.DownloadSuccessCount
+            record.DownloadSuccessRatio = v.DownloadSuccessRatio
+            record.DownloadSpeedAvg = v.DownloadSpeedAvg
+            record.DownloadSize = v.DownloadSize
+            record.DownloadDurationSec = v.DownloadDurationSec
+            dbRecords = append(dbRecords, record)
+        }
+        InsertData(dbRecords, dbFile)
     }
 }

@@ -20,13 +20,13 @@ func GetDialContextByAddr(fakeSourceAddr string) func(ctx context.Context, netwo
 }
 
 // Mine
-func downloadHandler(ip net.IP, tUrl string, HttpRspTimeoutDuration time.Duration, downloadTimeMaxDuration time.Duration,
+func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration time.Duration, downloadTimeMaxDuration time.Duration,
     DownloadTry int, interval int, testPingOnly bool) []SingleResultSlice {
     var fullAddress string
     if ip.To4() != nil { //IPv4
-        fullAddress = ip.String() + ":443"
+        fullAddress = ip.String() + ":" + strconv.Itoa(tcpport)
     } else { //
-        fullAddress = "[" + ip.String() + "]:443"
+        fullAddress = "[" + ip.String() + "]:" + strconv.Itoa(tcpport)
     }
     var client = http.Client{
         Transport:     nil,
@@ -119,7 +119,7 @@ func downloadHandler(ip net.IP, tUrl string, HttpRspTimeoutDuration time.Duratio
 }
 
 func DownloadWorker(chanIn chan string, chanOut chan SingleVerifyResult, wg *sync.WaitGroup,
-    tUrl string, HttpRspTimeoutDuration time.Duration, downloadTimeMaxDuration time.Duration,
+    tUrl string, tcpport int, HttpRspTimeoutDuration time.Duration, downloadTimeMaxDuration time.Duration,
     DownloadTry int, interval int, testPingOnly bool) {
     defer wg.Done()
 LOOP:
@@ -131,7 +131,7 @@ LOOP:
                 break LOOP
             }
             Ip := net.ParseIP(ip)
-            tResultSlice := downloadHandler(Ip, tUrl, HttpRspTimeoutDuration, downloadTimeMaxDuration, DownloadTry, interval, testPingOnly)
+            tResultSlice := downloadHandler(Ip, tcpport, tUrl, HttpRspTimeoutDuration, downloadTimeMaxDuration, DownloadTry, interval, testPingOnly)
             tVerifyResult := SingleVerifyResult{time.Now(), Ip, tResultSlice}
             chanOut <- tVerifyResult
             break
@@ -147,7 +147,7 @@ func tcppingHandler(ip net.IP, hostName string, tcpPort int, pingTimeoutDuration
     }
     fullAddress := ip.String()
     if ip.To4() == nil && ip.To16() != nil { //
-        fullAddress = "[" + fullAddress+ "]:"
+        fullAddress = "[" + fullAddress+ "]"
     }
     fullAddress += ":" + strconv.Itoa(tcpPort)
     var allResult = make([]SingleResultSlice, 0)
