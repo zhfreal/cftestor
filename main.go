@@ -52,7 +52,7 @@ var (
 func init() {
 	var printVersion bool
 
-	version = "v1.2.4"
+	version = "v1.2.5"
 	var help = `
     cftestor ` + version + `
     测试Cloudflare IP的延迟和速度，获取最快的IP！
@@ -526,20 +526,20 @@ LOOP:
 				// we put ping task to download queue
 				// if disableDownload || (len(downloadQueueBuffer)+allDownloadTasks-downloadTaskDone) < DownloadControlFactor*downloadThread {
 				// simplify algorithm
-				//if disableDownload || estimatedTimeSinglePing >= math.Ceil(float64(len(downloadQueueBuffer) + allDownloadTasks-downloadTaskDone)/float64(downloadThread))*estimatedTimeSingleDownload*DownloadControlFactor {
-				for i := 0; i < pingWorkerThread; i++ {
-					if len(ips) == 0 {
-						break
-					}
-					allPingTasks += 1
-					pingTaskChan <- ips[0]
-					if len(ips) > 1 {
-						ips = ips[1:]
-					} else {
-						ips = []string{}
+				if disableDownload || (len(downloadQueueBuffer)+allDownloadTasks-downloadTaskDone) < downloadThread {
+					for i := 0; i < pingWorkerThread; i++ {
+						if len(ips) == 0 {
+							break
+						}
+						allPingTasks += 1
+						pingTaskChan <- ips[0]
+						if len(ips) > 1 {
+							ips = ips[1:]
+						} else {
+							ips = []string{}
+						}
 					}
 				}
-				//}
 			}
 		}
 		// Print overall stat during waiting time and reset OverAllStatTimer
