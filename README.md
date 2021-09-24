@@ -22,7 +22,7 @@ $ cd cftestor
 $ CGO_ENABLED=1 go build .
 $ ./cftestor -h
 
-     cftestor v1.2.3
+     cftestor v1.2.4
     测试Cloudflare IP的延迟和速度，获取最快的IP！
     https://github.com/zhfreal/cftestor
 

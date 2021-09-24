@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	flag "github.com/spf13/pflag"
 	"math"
 	"os"
 	"regexp"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	flag "github.com/spf13/pflag"
 )
 
 const (
@@ -51,7 +52,7 @@ var (
 func init() {
 	var printVersion bool
 
-	version = "v1.2.3"
+	version = "v1.2.4"
 	var help = `
     cftestor ` + version + `
     测试Cloudflare IP的延迟和速度，获取最快的IP！
