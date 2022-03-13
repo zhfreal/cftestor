@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/csv"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"strconv"
@@ -15,11 +19,12 @@ import (
 )
 
 const (
-	LogLevelDebug  = 15
-	LogLevelInfo   = 7
-	LogLevelError  = 3
-	LogLevelFatal  = 1
-	MyLoggerSpacer = "    "
+	LogLevelDebug   = 31
+	LogLevelInfo    = 15
+	LogLevelWarning = 7
+	LogLevelError   = 3
+	LogLevelFatal   = 1
+	MyLoggerSpacer  = "    "
 )
 
 var (
@@ -133,6 +138,19 @@ type MyLogger struct {
 	HeaderPrinted   bool
 }
 
+type ResultHttp struct {
+	dnsStartAt      time.Time
+	dnsEndAt        time.Time
+	tcpStartAt      time.Time
+	tcpEndAt        time.Time
+	tlsStartAt      time.Time
+	tlsEndAt        time.Time
+	httpReqAt       time.Time
+	httpRspAt       time.Time
+	bodyReadStartAt time.Time
+	bodyReadEndAt   time.Time
+}
+
 type SingleResultSlice struct {
 	PingSuccess       bool
 	PingTimeDuration  time.Duration
@@ -181,20 +199,38 @@ type OverAllStat struct {
 	VerifyResults    int
 }
 
-func (myLogger *MyLogger) getLogLevelString(logContent LoggerContent) string {
-	if logContent.LogLevel == LogLevelInfo {
-		return "INFO "
-	}
-	if logContent.LogLevel == LogLevelDebug {
+func (myLogger *MyLogger) getLogLevelString(lv LogLevel) string {
+	if lv == LogLevelDebug {
 		return "DEBUG"
 	}
-	if logContent.LogLevel == LogLevelError {
+	if lv == LogLevelInfo {
+		return "INFO"
+	}
+	if lv == LogLevelWarning {
+		return "WARNING"
+	}
+	if lv == LogLevelError {
 		return "ERROR"
 	}
-	if logContent.LogLevel == LogLevelFatal {
+	if lv == LogLevelFatal {
 		return "FATAL"
 	}
-	return "INFO "
+	if myLogger.LoggerLevel == LogLevelDebug {
+		return "DEBUG"
+	}
+	if myLogger.LoggerLevel == LogLevelInfo {
+		return "INFO"
+	}
+	if myLogger.LoggerLevel == LogLevelWarning {
+		return "WARNING"
+	}
+	if myLogger.LoggerLevel == LogLevelError {
+		return "ERROR"
+	}
+	if myLogger.LoggerLevel == LogLevelFatal {
+		return "FATAL"
+	}
+	return "INFO"
 }
 
 func (myLogger *MyLogger) getPattern(ipv6Mode bool) []int {
@@ -214,77 +250,69 @@ func getTimeNowStrSuffix() string {
 	return strings.ReplaceAll(s, ".", "")
 }
 
-func (myLogger *MyLogger) NewLogger() MyLogger {
-	return MyLogger{loggerLevel, 0, MyLoggerSpacer, []int{}, false}
+func (myLogger *MyLogger) NewLogger(lv LogLevel) MyLogger {
+	return MyLogger{lv, 0, MyLoggerSpacer, []int{}, false}
 }
 
-func (myLogger *MyLogger) debug(debugStr string, newline bool) {
-	if (myLogger.LoggerLevel & LogLevelDebug) != LogLevelDebug {
-		return
-	}
+func (myLogger *MyLogger) print_indent_newline(lv LogLevel, log_str string, newline bool, align bool) {
 	if myLogger.LatestLogLength > 0 {
-		fmt.Printf("\r%s \r", strings.Repeat(" ", myLogger.LatestLogLength))
+		EraseLine(myLogger.LatestLogLength)
 	}
 	fmt.Print(getTimeNowStr())
 	fmt.Print(myLogger.Space)
-	fmt.Print("DEBUG")
-	fmt.Print(myLogger.Space)
-	fmt.Print(debugStr)
-	if newline {
-		fmt.Println()
+	t_log_type_str := myLogger.getLogLevelString(lv)
+	if align {
+		fmt.Printf("%-8v", t_log_type_str)
+	} else {
+		fmt.Print(t_log_type_str)
 	}
-}
-
-func (myLogger *MyLogger) info(infoStr string, newline bool) {
-	if (myLogger.LoggerLevel & LogLevelInfo) != LogLevelInfo {
-		return
-	}
-	if myLogger.LatestLogLength > 0 {
-		fmt.Printf("\r%s \r", strings.Repeat(" ", myLogger.LatestLogLength))
-	}
-	fmt.Print(getTimeNowStr())
 	fmt.Print(myLogger.Space)
-	fmt.Print("INFO ")
-	fmt.Print(myLogger.Space)
-	fmt.Print(infoStr)
+	fmt.Print(log_str)
 	if newline {
 		fmt.Println()
 		myLogger.LatestLogLength = 0
 	}
 }
 
+func (myLogger *MyLogger) debug(debugStr string, newline bool) {
+	myLogger.print_indent_newline(LogLevelDebug, debugStr, newline, false)
+}
+
+func (myLogger *MyLogger) debugIndent(debugStr string, newline bool) {
+	myLogger.print_indent_newline(LogLevelDebug, debugStr, newline, true)
+}
+
+func (myLogger *MyLogger) info(infoStr string, newline bool) {
+	myLogger.print_indent_newline(LogLevelInfo, infoStr, newline, false)
+}
+
+func (myLogger *MyLogger) infoIndent(infoStr string, newline bool) {
+	myLogger.print_indent_newline(LogLevelInfo, infoStr, newline, true)
+}
+
+func (myLogger *MyLogger) warning(warnStr string, newline bool) {
+	myLogger.print_indent_newline(LogLevelWarning, warnStr, newline, false)
+}
+
+func (myLogger *MyLogger) warningIndent(warnStr string, newline bool) {
+	myLogger.print_indent_newline(LogLevelWarning, warnStr, newline, true)
+}
+
 func (myLogger *MyLogger) error(errStr string, newline bool) {
-	if (myLogger.LoggerLevel & LogLevelError) != LogLevelError {
-		return
-	}
-	if myLogger.LatestLogLength > 0 {
-		fmt.Printf("\r%s \r", strings.Repeat(" ", myLogger.LatestLogLength))
-	}
-	fmt.Print(getTimeNowStr())
-	fmt.Print(myLogger.Space)
-	fmt.Print("ERROR")
-	fmt.Print(myLogger.Space)
-	fmt.Print(errStr)
-	if newline {
-		fmt.Println()
-	}
+	myLogger.print_indent_newline(LogLevelError, errStr, newline, false)
+}
+
+func (myLogger *MyLogger) errorIndent(errStr string, newline bool) {
+	myLogger.print_indent_newline(LogLevelError, errStr, newline, true)
 }
 
 func (myLogger *MyLogger) fatal(fatalStr string, newline bool) {
-	if (myLogger.LoggerLevel & LogLevelFatal) != LogLevelFatal {
-		return
-	}
-	if myLogger.LatestLogLength > 0 {
-		fmt.Printf("\r%s \r", strings.Repeat(" ", myLogger.LatestLogLength))
-	}
-	fmt.Print(getTimeNowStr())
-	fmt.Print(myLogger.Space)
-	fmt.Print("FATAL")
-	fmt.Print(myLogger.Space)
-	fmt.Print(fatalStr)
-	if newline {
-		fmt.Println()
-	}
+	myLogger.print_indent_newline(LogLevelFatal, fatalStr, newline, false)
+	os.Exit(1)
+}
+
+func (myLogger *MyLogger) fatalIndent(fatalStr string, newline bool) {
+	myLogger.print_indent_newline(LogLevelFatal, fatalStr, newline, true)
 	os.Exit(1)
 }
 
@@ -297,6 +325,15 @@ func (myLogger *MyLogger) Debug(info ...interface{}) {
 	myLogger.debug(s, true)
 }
 
+func (myLogger *MyLogger) DebugIndent(info ...interface{}) {
+	var s string
+	for _, t := range info {
+		s += fmt.Sprintf("%v%s", t, MyLoggerSpacer)
+	}
+	s = strings.TrimSpace(s)
+	myLogger.debugIndent(s, true)
+}
+
 func (myLogger *MyLogger) Info(info ...interface{}) {
 	var s string
 	for _, t := range info {
@@ -304,6 +341,33 @@ func (myLogger *MyLogger) Info(info ...interface{}) {
 	}
 	s = strings.TrimSpace(s)
 	myLogger.info(s, true)
+}
+
+func (myLogger *MyLogger) InfoIndent(info ...interface{}) {
+	var s string
+	for _, t := range info {
+		s += fmt.Sprintf("%v%s", t, MyLoggerSpacer)
+	}
+	s = strings.TrimSpace(s)
+	myLogger.infoIndent(s, true)
+}
+
+func (myLogger *MyLogger) Warning(info ...interface{}) {
+	var s string
+	for _, t := range info {
+		s += fmt.Sprintf("%v%s", t, MyLoggerSpacer)
+	}
+	s = strings.TrimSpace(s)
+	myLogger.warning(s, true)
+}
+
+func (myLogger *MyLogger) WarningIndent(info ...interface{}) {
+	var s string
+	for _, t := range info {
+		s += fmt.Sprintf("%v%s", t, MyLoggerSpacer)
+	}
+	s = strings.TrimSpace(s)
+	myLogger.warningIndent(s, true)
 }
 
 func (myLogger *MyLogger) Error(info ...interface{}) {
@@ -315,6 +379,15 @@ func (myLogger *MyLogger) Error(info ...interface{}) {
 	myLogger.error(s, true)
 }
 
+func (myLogger *MyLogger) ErrorIndent(info ...interface{}) {
+	var s string
+	for _, t := range info {
+		s += fmt.Sprintf("%v%s", t, MyLoggerSpacer)
+	}
+	s = strings.TrimSpace(s)
+	myLogger.errorIndent(s, true)
+}
+
 func (myLogger *MyLogger) Fatal(info ...interface{}) {
 	var s string
 	for _, t := range info {
@@ -324,14 +397,22 @@ func (myLogger *MyLogger) Fatal(info ...interface{}) {
 	myLogger.fatal(s, true)
 }
 
-func (myLogger *MyLogger) Println(logLevel LogLevel, info string) {
-	if (myLogger.LoggerLevel & logLevel) != logLevel {
-		return
+func (myLogger *MyLogger) FatalIndent(info ...interface{}) {
+	var s string
+	for _, t := range info {
+		s += fmt.Sprintf("%v%s", t, MyLoggerSpacer)
 	}
+	s = strings.TrimSpace(s)
+	myLogger.fatalIndent(s, true)
+}
+
+func (myLogger *MyLogger) Println(logLevel LogLevel, info string) {
 	if logLevel == LogLevelDebug {
 		myLogger.debug(info, true)
 	} else if logLevel == LogLevelInfo {
 		myLogger.info(info, true)
+	} else if logLevel == LogLevelWarning {
+		myLogger.warning(info, true)
 	} else if logLevel == LogLevelError {
 		myLogger.error(info, true)
 	} else if logLevel == LogLevelFatal {
@@ -341,14 +422,29 @@ func (myLogger *MyLogger) Println(logLevel LogLevel, info string) {
 	}
 }
 
-func (myLogger *MyLogger) Print(logLevel LogLevel, info string) {
-	if (myLogger.LoggerLevel & logLevel) != logLevel {
+func (myLogger *MyLogger) PrintlnIndent(logLevel LogLevel, info string) {
+	if logLevel == LogLevelDebug {
+		myLogger.debugIndent(info, true)
+	} else if logLevel == LogLevelInfo {
+		myLogger.infoIndent(info, true)
+	} else if logLevel == LogLevelWarning {
+		myLogger.warningIndent(info, true)
+	} else if logLevel == LogLevelError {
+		myLogger.errorIndent(info, true)
+	} else if logLevel == LogLevelFatal {
+		myLogger.fatalIndent(info, true)
+	} else {
 		return
 	}
+}
+
+func (myLogger *MyLogger) Print(logLevel LogLevel, info string) {
 	if logLevel == LogLevelDebug {
 		myLogger.debug(info, false)
 	} else if logLevel == LogLevelInfo {
 		myLogger.info(info, false)
+	} else if logLevel == LogLevelWarning {
+		myLogger.warning(info, true)
 	} else if logLevel == LogLevelError {
 		myLogger.error(info, false)
 	} else if logLevel == LogLevelFatal {
@@ -358,9 +454,25 @@ func (myLogger *MyLogger) Print(logLevel LogLevel, info string) {
 	}
 }
 
-func (myLogger *MyLogger) PrintSingleStat(v LoggerContent, oV OverAllStat, disableDownload bool) {
+func (myLogger *MyLogger) PrintIntent(logLevel LogLevel, info string) {
+	if logLevel == LogLevelDebug {
+		myLogger.debugIndent(info, false)
+	} else if logLevel == LogLevelInfo {
+		myLogger.infoIndent(info, false)
+	} else if logLevel == LogLevelWarning {
+		myLogger.warningIndent(info, true)
+	} else if logLevel == LogLevelError {
+		myLogger.errorIndent(info, false)
+	} else if logLevel == LogLevelFatal {
+		myLogger.fatalIndent(info, false)
+	} else {
+		return
+	}
+}
+
+func (myLogger *MyLogger) PrintSingleStat(v LoggerContent, oV OverAllStat) {
 	myLogger.PrintStat(v, disableDownload)
-	myLogger.PrintOverAllStat(oV, disableDownload)
+	myLogger.PrintOverAllStat(oV)
 }
 
 func (myLogger *MyLogger) PrintStat(v LoggerContent, disableDownload bool) {
@@ -381,7 +493,7 @@ func (myLogger *MyLogger) PrintStat(v LoggerContent, disableDownload bool) {
 		myLogger.Space = MyLoggerSpacer
 	}
 	if myLogger.LatestLogLength > 0 {
-		fmt.Printf("\r%s \r", strings.Repeat(" ", myLogger.LatestLogLength))
+		EraseLine(myLogger.LatestLogLength)
 	}
 	lc := v.V
 	var ipv6 = false
@@ -392,40 +504,40 @@ func (myLogger *MyLogger) PrintStat(v LoggerContent, disableDownload bool) {
 			break
 		}
 	}
-	if myLogger.HeaderPrinted == false {
-		if ipv6 == false {
-			myLogger.Print(v.LogLevel, fmt.Sprintf("%-15v%s", "IP", myLogger.Space))
+	if !myLogger.HeaderPrinted {
+		if !ipv6 {
+			myLogger.PrintIntent(LogLevelInfo, fmt.Sprintf("%-15v%s", "IP", myLogger.Space))
 		} else {
-			myLogger.Print(v.LogLevel, fmt.Sprintf("%-39v%s", "IP", myLogger.Space))
+			myLogger.PrintIntent(LogLevelInfo, fmt.Sprintf("%-39v%s", "IP", myLogger.Space))
 		}
-		if disableDownload == false {
-			fmt.Print(fmt.Sprintf("%-11v%s", "Speed(KB/s)", myLogger.Space))
+		if !disableDownload {
+			fmt.Printf("%-11v%s", "Speed(KB/s)", myLogger.Space)
 		}
 
-		fmt.Print(fmt.Sprintf("%-11v%s", "PingRTT(ms)", myLogger.Space))
-		fmt.Print(fmt.Sprintf("%-11v%s", "PingSR(%)", myLogger.Space))
+		fmt.Printf("%-11v%s", "PingRTT(ms)", myLogger.Space)
+		fmt.Printf("%-11v%s", "PingSR(%)", myLogger.Space)
 		// close line, LatestLogLength should be 0
 		fmt.Println()
 		myLogger.HeaderPrinted = true
 	}
 	for i := 0; i < len(lc); i++ {
-		if ipv6 == false {
-			myLogger.Print(v.LogLevel, fmt.Sprintf("%-15v%s", lc[i].IP, myLogger.Space))
+		if !ipv6 {
+			myLogger.PrintIntent(v.LogLevel, fmt.Sprintf("%-15v%s", lc[i].IP, myLogger.Space))
 		} else {
-			myLogger.Print(v.LogLevel, fmt.Sprintf("%-39v%s", lc[i].IP, myLogger.Space))
+			myLogger.PrintIntent(v.LogLevel, fmt.Sprintf("%-39v%s", lc[i].IP, myLogger.Space))
 		}
-		if disableDownload == false {
-			fmt.Print(fmt.Sprintf("%-11.2f%s", lc[i].DownloadSpeedAvg, myLogger.Space))
+		if !disableDownload {
+			fmt.Printf("%-11.2f%s", lc[i].DownloadSpeedAvg, myLogger.Space)
 		}
-		fmt.Print(fmt.Sprintf("%-11.0f%s", lc[i].PingDurationAvg, myLogger.Space))
-		fmt.Print(fmt.Sprintf("%-11.2f%s", lc[i].PingSuccessRate*100, myLogger.Space))
+		fmt.Printf("%-11.0f%s", lc[i].PingDurationAvg, myLogger.Space)
+		fmt.Printf("%-11.2f%s", lc[i].PingSuccessRate*100, myLogger.Space)
 		// close line, LatestLogLength should be 0
 		fmt.Println()
 	}
 	myLogger.LatestLogLength = 0
 }
 
-func (myLogger *MyLogger) PrintOverAllStat(v OverAllStat, disableDownload bool) {
+func (myLogger *MyLogger) PrintOverAllStat(v OverAllStat) {
 	// append enough pattern
 	if len(myLogger.Pattern) == 0 {
 		myLogger.Pattern = myLogger.getPattern(false)
@@ -436,17 +548,19 @@ func (myLogger *MyLogger) PrintOverAllStat(v OverAllStat, disableDownload bool) 
 	}
 	var t = make([]string, 0)
 	t = append(t, getTimeNowStr()+myLogger.Space)
-	t = append(t, myLogger.getLogLevelString(LoggerContent{LogLevelInfo, nil})+myLogger.Space)
+	t = append(t, myLogger.getLogLevelString(LogLevelInfo)+myLogger.Space)
 	t = append(t, fmt.Sprintf("TotalQualified:%-5d%s", v.VerifyResults, myLogger.Space))
-	t = append(t, fmt.Sprintf("TotalforPingTest:%-5d%s", v.IPsForPing+v.AllPingTasks-v.PingTaskDone, myLogger.Space))
-	t = append(t, fmt.Sprintf("TotalPingTested:%-5d%s", v.PingTaskDone, myLogger.Space))
-	if disableDownload == false {
+	if ! downloadOnly {
+		t = append(t, fmt.Sprintf("TotalforPingTest:%-5d%s", v.IPsForPing+v.AllPingTasks-v.PingTaskDone, myLogger.Space))
+		t = append(t, fmt.Sprintf("TotalPingTested:%-5d%s", v.PingTaskDone, myLogger.Space))
+	}
+	if ! pingOnly {
 		t = append(t, fmt.Sprintf("TotalforSpeedTest:%-5d%s", v.IPsForDown+v.AllDownloadTasks-v.DownloadTaskDone, myLogger.Space))
 		t = append(t, fmt.Sprintf("TotalSpeedTested:%-5d%s", v.DownloadTaskDone, myLogger.Space))
 	}
 	//fix the latest un-closed line
 	if myLogger.LatestLogLength > 0 {
-		fmt.Printf("\r%s \r", strings.Repeat(" ", myLogger.LatestLogLength))
+		EraseLine(myLogger.LatestLogLength)
 	}
 	// zero padding according pattern, and print
 	var thisLength = 0
@@ -473,7 +587,7 @@ func WriteResult(data []VerifyResults, filePath string) {
 	var fp = &os.File{}
 	var err error
 	var w = &csv.Writer{}
-	if fileExists(filePath) == false {
+	if !fileExists(filePath) {
 		fp, err = os.Create(filePath)
 		if err != nil {
 			log.Fatalf("Create File %v failed with: %v", filePath, err)
@@ -602,12 +716,12 @@ func PrintFinalStat(v []VerifyResults, disableDownload bool) {
 		}
 	}
 	fmt.Printf("%-19v%s", "TestTime", myLogger.Space)
-	if ipv6 == false {
+	if !ipv6 {
 		fmt.Printf("%-15v%s", "IP", myLogger.Space)
 	} else {
 		fmt.Printf("%-39v%s", "IP", myLogger.Space)
 	}
-	if disableDownload == false {
+	if !disableDownload {
 		fmt.Printf("%-11v%s", "Speed(KB/s)", myLogger.Space)
 	}
 	fmt.Printf("%-11v%s", "PingRTT(ms)", myLogger.Space)
@@ -616,12 +730,12 @@ func PrintFinalStat(v []VerifyResults, disableDownload bool) {
 	fmt.Println()
 	for i := 0; i < len(v); i++ {
 		fmt.Printf("%-19v%s", v[i].TestTime.Format("2006-01-02 15:04:05"), myLogger.Space)
-		if ipv6 == false {
+		if !ipv6 {
 			fmt.Printf("%-15v%s", v[i].IP, myLogger.Space)
 		} else {
 			fmt.Printf("%-39v%s", v[i].IP, myLogger.Space)
 		}
-		if disableDownload == false {
+		if !disableDownload {
 			fmt.Printf("%-11.2f%s", v[i].DownloadSpeedAvg, myLogger.Space)
 		}
 		fmt.Printf("%-11.0f%s", v[i].PingDurationAvg, myLogger.Space)
@@ -658,4 +772,105 @@ func InsertIntoDb(verifyResultsSlice []VerifyResults, dbFile string) {
 		}
 		InsertData(dbRecords, dbFile)
 	}
+}
+
+func WithHTTPStat(ctx context.Context, r *ResultHttp) context.Context {
+	return httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		DNSStart: func(i httptrace.DNSStartInfo) {
+			r.dnsStartAt = time.Now()
+		},
+		DNSDone: func(i httptrace.DNSDoneInfo) {
+			r.dnsEndAt = time.Now()
+		},
+		ConnectStart: func(_, _ string) {
+			r.tcpStartAt = time.Now()
+			// When connecting to IP (When no DNS lookup)
+			if r.dnsStartAt.IsZero() {
+				r.dnsStartAt = r.tcpStartAt
+				r.dnsEndAt = r.tcpStartAt
+			}
+		},
+		ConnectDone: func(network, addr string, err error) {
+			r.tcpEndAt = time.Now()
+		},
+		TLSHandshakeStart: func() {
+			r.tlsStartAt = time.Now()
+		},
+		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+			r.tlsEndAt = time.Now()
+		},
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			r.httpReqAt = time.Now()
+			if r.dnsStartAt.IsZero() && r.tcpStartAt.IsZero() {
+				now := r.httpReqAt
+				r.dnsStartAt = now
+				r.dnsEndAt = now
+				r.tcpStartAt = now
+				r.tcpEndAt = now
+			}
+		},
+		GotFirstResponseByte: func() {
+			r.httpRspAt = time.Now()
+			r.bodyReadStartAt = r.httpRspAt
+		},
+	})
+}
+
+func GetDialContextByAddr(addrPort string) func(ctx context.Context, network, address string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		c, e := (&net.Dialer{}).DialContext(ctx, network, addrPort)
+		return c, e
+	}
+}
+
+func singleResultStatistic(out SingleVerifyResult, statisticDownload bool) VerifyResults {
+	var tVerifyResult = VerifyResults{out.TestTime, "", 0, 0, 0.0,
+		0.0, 0.0, 0.0, 0,
+		0, 0.0, 0.0, 0, 0.0}
+	tVerifyResult.IP = out.IP.String()
+	if len(out.ResultSlice) == 0 {
+		return tVerifyResult
+	}
+	tVerifyResult.PingCount = len(out.ResultSlice)
+	var tDurationsAll = 0.0
+	var tDownloadDurations float64
+	var tDownloadSizes int64
+	for _, v := range out.ResultSlice {
+		if v.PingSuccess {
+			tVerifyResult.PingSuccessCount += 1
+			tVerifyResult.DownloadCount += 1
+			tDuration := float64(v.PingTimeDuration) / float64(time.Millisecond)
+			tDurationsAll = tDurationsAll + tDuration
+			if tDuration > tVerifyResult.PingDurationMax {
+				tVerifyResult.PingDurationMax = tDuration
+			}
+			if tVerifyResult.PingDurationMin <= 0.0 || tDuration < tVerifyResult.PingDurationMin {
+				tVerifyResult.PingDurationMin = tDuration
+			}
+			if statisticDownload && v.DownloadPerformed && v.DownloadSuccess {
+				tVerifyResult.DownloadSuccessCount += 1
+				tDownloadDurations += math.Round(float64(v.DownloadDuration) / float64(time.Second))
+				tDownloadSizes += v.DownloadSize
+			}
+		}
+	}
+	if tVerifyResult.PingSuccessCount > 0 {
+		tVerifyResult.PingDurationAvg = tDurationsAll / float64(tVerifyResult.PingSuccessCount)
+		tVerifyResult.PingSuccessRate = float64(tVerifyResult.PingSuccessCount) / float64(tVerifyResult.PingCount)
+	}
+	// we statistic download speed while the downloaded file size is greater than DownloadSizeMin
+	if statisticDownload && tVerifyResult.DownloadSuccessCount > 0 && tDownloadSizes > DownloadSizeMin {
+		tVerifyResult.DownloadSpeedAvg = float64(tDownloadSizes) / tDownloadDurations / 1000
+		tVerifyResult.DownloadSuccessRatio = float64(tVerifyResult.DownloadSuccessCount) / float64(tVerifyResult.DownloadCount)
+		tVerifyResult.DownloadSize = tDownloadSizes
+		tVerifyResult.DownloadDurationSec = tDownloadDurations
+	}
+	return tVerifyResult
+}
+
+func EraseLine(n int) {
+	if n <= 0 {
+		return
+	}
+	fmt.Printf("%s", strings.Repeat("\b \b", n))
 }

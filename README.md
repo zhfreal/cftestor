@@ -22,7 +22,7 @@ $ cd cftestor
 $ CGO_ENABLED=1 go build .
 $ ./cftestor -h
 
-     cftestor v1.2.5
+     cftestor v1.2.6
     测试Cloudflare IP的延迟和速度，获取最快的IP！
     https://github.com/zhfreal/cftestor
 
@@ -38,7 +38,7 @@ $ ./cftestor -h
         -p, --port                  int     测速端口(默认 443)
                                             当使用SSL握手方式测试延时且不进行下载测试时，需要根据此参数测试；其余
                                             情况则是使用"--url"提供的参数进行测试。
-            --hostname              string  SSL握手时使用的hostname(默认: "cf.zhfreal.nl")
+            --hostname              string  SSL握手时使用的hostname(默认: "cf.9999876.xyz")
                                             当使用SSL握手方式测试延时且不进行下载测试时，需要根据此参数测试；其余
                                             情况则是使用"--url"提供的参数进行测试。
 
@@ -49,12 +49,12 @@ $ ./cftestor -h
         -n, --download-thread       int     下测试线程数(默认 1)
         -d, --download-max-duration int     单次下载测速最长时间(s)(默认 10s)
         -b, --download-try          int     尝试下载次数(默认 1)
-        -u, --url                   string  下载测速地址(默认 "https://cf.zhfreal.nl/500mb.dat")。
+        -u, --url                   string  下载测速地址(默认 "https://cf.9999876.xyz/500mb.dat")。
                                             自定义下载文件建议使用压缩文件，避免CF或者HTTP容器设置压缩时使测试速度
                                             异常大；另外请在CF上关闭对此文件的缓存或者在服务器上将此文件加上用户名
                                             和密码实现访问控制，这样可以测试经过CF后到实际服务器整个链路的速度。当
                                             在服务器上对下载文件加上用户名和密码的访问控制时，可以如下格式传入url:
-                                            "https://<用户名>:<密码>@cf.zhfreal.nl/500mb.dat", "<用户名>"
+                                            "https://<用户名>:<密码>@cf.9999876.xyz/500mb.dat", "<用户名>"
                                             和"<密码>"请用实际值替换。
             --interval              int     测试间隔时间(ms)(默认 100ms)
         -k, --time-limit            int     平均延时上限(ms)(默认 800ms)
@@ -64,7 +64,9 @@ $ ./cftestor -h
         -r, --result                int     测速结果集数量(默认 20)
                                             当符合条件的IP数量超过此值时，结束测试。但是如果开启"--testall"，此值
                                             不再生效。
-            --disable-download              禁用下载测速开关(默认关闭，即需进行下载测试)
+                                            不再生效。
+            --ping-only                     只进行延迟测试，不进行下载测速开关(默认关闭)
+            --download-only                 不单独使用延迟测试，直接使用下载测试，但-k|--time-limit参数仍然可用来过滤结果（默认关闭）
         -6, --ipv6                          测试IPv6开关(默认关闭，即进行IPv4测试，仅不携带-i且不携带-s时有效)
         -a  --test-all                      测试全部IP开关(默认关闭，仅不携带-s且不携带-i时有效)
         -w, --store-to-file                 是否将测试结果写入文件开关(默认关闭)
@@ -145,7 +147,7 @@ $
 ### 自定义测试地址，找到符合自己的最佳IP
 默认测试中--url参数中对应的文件已经在CF上缓存，测试结果未必适用于您的服务器。若需找到最佳IP，建议使用自己的测试地址。 <br>
 1、自行在落地服务器上创建测试文件，测试文件最好压缩。避免CF或者HTTP容器(nginx/apache/caddy等)使用压缩方式传输数据时测试速度异常大。<br>
-2、在CF上通过设置页面规则关闭对此测试文件的缓存，或者在HTTP容器中对此文件进行用户名和密码的访问控制(此时可按此传入: "-u https://<用户名>:<密码>@cf.zhfreal.nl/500mb.dat", "<用户名>"和"<密码>"请用实际值替换)。<br>
+2、在CF上通过设置页面规则关闭对此测试文件的缓存，或者在HTTP容器中对此文件进行用户名和密码的访问控制(此时可按此传入: "-u https://<用户名>:<密码>@cf.9999876.xyz/500mb.dat", "<用户名>"和"<密码>"请用实际值替换)。<br>
 3、因CF没有缓存，请注意落地服务器的流量消耗。<br>
 
 ### 使用"--ping-via-http"参数测试延时

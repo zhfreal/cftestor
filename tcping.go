@@ -1,22 +1,15 @@
 package main
 
 import (
-	"context"
 	"crypto/tls"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 )
-
-func GetDialContextByAddr(fakeSourceAddr string) func(ctx context.Context, network, address string) (net.Conn, error) {
-	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		c, e := (&net.Dialer{}).DialContext(ctx, network, fakeSourceAddr)
-		return c, e
-	}
-}
 
 // Mine
 func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration time.Duration, downloadTimeMaxDuration time.Duration,
@@ -27,27 +20,32 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 	} else { //
 		fullAddress = "[" + ip.String() + "]:" + strconv.Itoa(tcpport)
 	}
-	var client = http.Client{
-		Transport:     nil,
-		CheckRedirect: nil,
-		Jar:           nil,
-		Timeout:       HttpRspTimeoutDuration,
-	}
 
-	if testPingOnly == false {
-		client.Timeout += downloadTimeMaxDuration
-	}
-	client.Transport = &http.Transport{
-		DialContext: GetDialContextByAddr(fullAddress),
-		//ResponseHeaderTimeout: HttpRspTimeoutDuration,
-	}
 	var allResult = make([]SingleResultSlice, 0)
 	// loop for test
 	for i := 0; i < DownloadTry; i++ {
+		tReq, err := http.NewRequest("GET", tUrl, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		var tResultHttp ResultHttp
+		tCtx := WithHTTPStat(tReq.Context(), &tResultHttp)
+		tReq = tReq.WithContext(tCtx)
+		var client = http.Client{
+			Transport:     nil,
+			CheckRedirect: nil,
+			Jar:           nil,
+			Timeout:       HttpRspTimeoutDuration,
+		}
+		if !testPingOnly {
+			client.Timeout += downloadTimeMaxDuration
+		}
+		client.Transport = &http.Transport{
+			DialContext: GetDialContextByAddr(fullAddress),
+			//ResponseHeaderTimeout: HttpRspTimeoutDuration,
+		}
 		var currentResult = SingleResultSlice{false, 0, false, false, 0, 0}
-		// pingection time duration begin:
-		var timeStart = time.Now()
-		response, err := client.Get(tUrl)
+		response, err := client.Do(tReq)
 		// pingect is failed(network error), won't continue
 		if err != nil {
 			allResult = append(allResult, currentResult)
@@ -55,9 +53,9 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 			continue
 		}
 		currentResult.PingSuccess = true
-		currentResult.PingTimeDuration = time.Now().Sub(timeStart)
+		currentResult.PingTimeDuration = tResultHttp.httpRspAt.Sub(tResultHttp.tcpStartAt)
 		// pingection test only, won't do download test
-		if testPingOnly == true {
+		if testPingOnly {
 			allResult = append(allResult, currentResult)
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			continue
@@ -71,8 +69,8 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 			continue
 		}
 		// start timing for download test
-		timeStart = time.Now()
-		timeEndExpected := timeStart.Add(downloadTimeMaxDuration)
+		tResultHttp.bodyReadStartAt = time.Now()
+		timeEndExpected := tResultHttp.bodyReadStartAt.Add(downloadTimeMaxDuration)
 		contentLength := response.ContentLength
 		if contentLength == -1 {
 			contentLength = FileDefaultSize
@@ -108,7 +106,8 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 			downloadSuccess = true
 		}
 		currentResult.DownloadSuccess = downloadSuccess
-		currentResult.DownloadDuration = time.Now().Sub(timeStart)
+		tResultHttp.bodyReadEndAt = time.Now()
+		currentResult.DownloadDuration = tResultHttp.bodyReadEndAt.Sub(tResultHttp.bodyReadStartAt)
 		currentResult.DownloadSize = contentRead
 		allResult = append(allResult, currentResult)
 		_ = response.Body.Close()
@@ -122,7 +121,7 @@ func DownloadWorker(chanIn chan string, chanOut chan SingleVerifyResult, wg *syn
 	DownloadTry int, interval int, testPingOnly bool) {
 	defer wg.Done()
 LOOP:
-	for true {
+	for {
 		select {
 		case ip := <-chanIn:
 			if ip == WorkerStopSignal {
@@ -145,7 +144,7 @@ func tcppingHandler(ip net.IP, hostName string, tcpPort int, pingTimeoutDuration
 		ServerName: hostName,
 	}
 	fullAddress := ip.String()
-	if ip.To4() == nil && ip.To16() != nil { //
+	if ip.To4() == nil && ip.To16() != nil {
 		fullAddress = "[" + fullAddress + "]"
 	}
 	fullAddress += ":" + strconv.Itoa(tcpPort)
@@ -181,7 +180,7 @@ func TcppingWorker(chanIn chan string, chanOut chan SingleVerifyResult, wg *sync
 	hostName string, tcpport int, pingTimeoutDuration time.Duration, totalRound int, interval int) {
 	defer wg.Done()
 LOOP:
-	for true {
+	for {
 		select {
 		case ip := <-chanIn:
 			if ip == WorkerStopSignal {

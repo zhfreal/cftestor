@@ -136,7 +136,6 @@ func IsValidIPs(ips string) bool {
 	_, _, err := net.ParseCIDR(ips)
 	if err != nil {
 		tIP := net.ParseIP(ips)
-		// valid IP
 		if tIP != nil {
 			return true
 		}
