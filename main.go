@@ -190,7 +190,7 @@ func init() {
 			if len(tIp) == 0 {
 				continue
 			}
-			if !IsValidIPs(tIp) {
+			if IsValidIPs(tIp) {
 				srcIPS = append(srcIPS, tIp)
 			} else {
 				myLogger.Error(tIp + " is not IP or CIDR.")
