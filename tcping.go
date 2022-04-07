@@ -1,19 +1,76 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"strconv"
 	"sync"
 	"time"
 )
 
-// Mine
-func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration time.Duration, downloadTimeMaxDuration time.Duration,
-	DownloadTry int, interval int, testPingOnly bool) []SingleResultSlice {
+type ResultHttp struct {
+	dnsStartAt      time.Time
+	dnsEndAt        time.Time
+	tcpStartAt      time.Time
+	tcpEndAt        time.Time
+	tlsStartAt      time.Time
+	tlsEndAt        time.Time
+	httpReqAt       time.Time
+	httpRspAt       time.Time
+	bodyReadStartAt time.Time
+	bodyReadEndAt   time.Time
+}
+
+func WithHTTPStat(ctx context.Context, r *ResultHttp) context.Context {
+	return httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		DNSStart: func(i httptrace.DNSStartInfo) {
+			r.dnsStartAt = time.Now()
+		},
+		DNSDone: func(i httptrace.DNSDoneInfo) {
+			r.dnsEndAt = time.Now()
+		},
+		ConnectStart: func(_, _ string) {
+			r.tcpStartAt = time.Now()
+			// When connecting to IP (When no DNS lookup)
+			if r.dnsStartAt.IsZero() {
+				r.dnsStartAt = r.tcpStartAt
+				r.dnsEndAt = r.tcpStartAt
+			}
+		},
+		ConnectDone: func(network, addr string, err error) {
+			r.tcpEndAt = time.Now()
+		},
+		TLSHandshakeStart: func() {
+			r.tlsStartAt = time.Now()
+		},
+		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+			r.tlsEndAt = time.Now()
+		},
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			r.httpReqAt = time.Now()
+			if r.dnsStartAt.IsZero() && r.tcpStartAt.IsZero() {
+				now := r.httpReqAt
+				r.dnsStartAt = now
+				r.dnsEndAt = now
+				r.tcpStartAt = now
+				r.tcpEndAt = now
+			}
+		},
+		GotFirstResponseByte: func() {
+			r.httpRspAt = time.Now()
+			r.bodyReadStartAt = r.httpRspAt
+		},
+	})
+}
+
+// download test core
+func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration time.Duration, dltMaxDuration time.Duration,
+	dltCount int, interval int, dtOnly bool) []singleResult {
 	var fullAddress string
 	if ip.To4() != nil { //IPv4
 		fullAddress = ip.String() + ":" + strconv.Itoa(tcpport)
@@ -21,9 +78,9 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 		fullAddress = "[" + ip.String() + "]:" + strconv.Itoa(tcpport)
 	}
 
-	var allResult = make([]SingleResultSlice, 0)
+	var allResult = make([]singleResult, 0)
 	// loop for test
-	for i := 0; i < DownloadTry; i++ {
+	for i := 0; i < dltCount; i++ {
 		tReq, err := http.NewRequest("GET", tUrl, nil)
 		if err != nil {
 			log.Fatal(err)
@@ -37,14 +94,14 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 			Jar:           nil,
 			Timeout:       HttpRspTimeoutDuration,
 		}
-		if !testPingOnly {
-			client.Timeout += downloadTimeMaxDuration
+		if !dtOnly {
+			client.Timeout += dltMaxDuration
 		}
 		client.Transport = &http.Transport{
 			DialContext: GetDialContextByAddr(fullAddress),
 			//ResponseHeaderTimeout: HttpRspTimeoutDuration,
 		}
-		var currentResult = SingleResultSlice{false, 0, false, false, 0, 0}
+		var currentResult = singleResult{false, 0, 0, false, false, 0, 0}
 		response, err := client.Do(tReq)
 		// pingect is failed(network error), won't continue
 		if err != nil {
@@ -52,16 +109,17 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			continue
 		}
-		currentResult.PingSuccess = true
-		currentResult.PingTimeDuration = tResultHttp.httpRspAt.Sub(tResultHttp.tcpStartAt)
+		currentResult.dTPassedCount = true
+		currentResult.dTDuration = tResultHttp.tlsEndAt.Sub(tResultHttp.tcpStartAt)
+		currentResult.httpRRDuration = tResultHttp.httpRspAt.Sub(tResultHttp.httpReqAt)
 		// pingection test only, won't do download test
-		if testPingOnly {
+		if dtOnly {
 			allResult = append(allResult, currentResult)
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			continue
 		}
 		// if download test permitted, set DownloadPerformed to true
-		currentResult.DownloadPerformed = true
+		currentResult.dLTWasDone = true
 		// pingect is not make(uri error or server error), won't do download test
 		if response.StatusCode != 200 {
 			allResult = append(allResult, currentResult)
@@ -70,12 +128,12 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 		}
 		// start timing for download test
 		tResultHttp.bodyReadStartAt = time.Now()
-		timeEndExpected := tResultHttp.bodyReadStartAt.Add(downloadTimeMaxDuration)
+		timeEndExpected := tResultHttp.bodyReadStartAt.Add(dltMaxDuration)
 		contentLength := response.ContentLength
 		if contentLength == -1 {
-			contentLength = FileDefaultSize
+			contentLength = fileDefaultSize
 		}
-		buffer := make([]byte, DownloadBufferSize)
+		buffer := make([]byte, downloadBufferSize)
 		var contentRead int64 = 0
 		var downloadSuccess = false
 		// just read  the length of content which indicated in response and read before time expire
@@ -105,10 +163,10 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 			contentRead += int64(bufferRead)
 			downloadSuccess = true
 		}
-		currentResult.DownloadSuccess = downloadSuccess
+		currentResult.dLTPassed = downloadSuccess
 		tResultHttp.bodyReadEndAt = time.Now()
-		currentResult.DownloadDuration = tResultHttp.bodyReadEndAt.Sub(tResultHttp.bodyReadStartAt)
-		currentResult.DownloadSize = contentRead
+		currentResult.dLTDuration = tResultHttp.bodyReadEndAt.Sub(tResultHttp.bodyReadStartAt)
+		currentResult.dLTDataSize = contentRead
 		allResult = append(allResult, currentResult)
 		_ = response.Body.Close()
 		time.Sleep(time.Duration(interval) * time.Millisecond)
@@ -116,30 +174,27 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 	return allResult
 }
 
-func DownloadWorker(chanIn chan string, chanOut chan SingleVerifyResult, wg *sync.WaitGroup,
-	tUrl string, tcpport int, HttpRspTimeoutDuration time.Duration, downloadTimeMaxDuration time.Duration,
-	DownloadTry int, interval int, testPingOnly bool) {
-	defer wg.Done()
+func downloadWorker(chanIn chan string, chanOut chan singleVerifyResult, wg *sync.WaitGroup,
+	tUrl string, tcpport int, HttpRspTimeoutDuration time.Duration, dltMaxDuration time.Duration,
+	dltCount int, interval int, dtOnly bool) {
+	defer (*wg).Done()
 LOOP:
 	for {
-		select {
-		case ip := <-chanIn:
-			if ip == WorkerStopSignal {
-				//log.Println("Download task finished!")
-				break LOOP
-			}
-			Ip := net.ParseIP(ip)
-			tResultSlice := downloadHandler(Ip, tcpport, tUrl, HttpRspTimeoutDuration, downloadTimeMaxDuration, DownloadTry, interval, testPingOnly)
-			tVerifyResult := SingleVerifyResult{time.Now(), Ip, tResultSlice}
-			chanOut <- tVerifyResult
-			break
+		ip := <-chanIn
+		if ip == workerStopSignal {
+			//log.Println("Download task finished!")
+			break LOOP
 		}
+		Ip := net.ParseIP(ip)
+		tResultSlice := downloadHandler(Ip, tcpport, tUrl, HttpRspTimeoutDuration, dltMaxDuration, dltCount, interval, dtOnly)
+		tVerifyResult := singleVerifyResult{time.Now(), Ip, tResultSlice}
+		chanOut <- tVerifyResult
 		time.Sleep(time.Duration(interval) * time.Millisecond)
 	}
 }
 
-func tcppingHandler(ip net.IP, hostName string, tcpPort int, pingTimeoutDuration time.Duration,
-	totalRound int, interval int) []SingleResultSlice {
+func sslDTHandler(ip net.IP, hostName string, tcpPort int, dtTimeoutDuration time.Duration,
+	totalRound int, interval int) []singleResult {
 	conf := &tls.Config{
 		ServerName: hostName,
 	}
@@ -148,13 +203,13 @@ func tcppingHandler(ip net.IP, hostName string, tcpPort int, pingTimeoutDuration
 		fullAddress = "[" + fullAddress + "]"
 	}
 	fullAddress += ":" + strconv.Itoa(tcpPort)
-	var allResult = make([]SingleResultSlice, 0)
+	var allResult = make([]singleResult, 0)
 	// loop for test
 	for i := 0; i < totalRound; i++ {
-		var currentResult = SingleResultSlice{false, 0, false, false, 0, 0}
+		var currentResult = singleResult{false, 0, 0, false, false, 0, 0}
 		// pingection time duration begin:
 		var timeStart = time.Now()
-		conn, tErr := net.DialTimeout("tcp", fullAddress, pingTimeoutDuration)
+		conn, tErr := net.DialTimeout("tcp", fullAddress, dtTimeoutDuration)
 		if tErr != nil {
 			allResult = append(allResult, currentResult)
 			time.Sleep(time.Duration(interval) * time.Millisecond)
@@ -167,8 +222,8 @@ func tcppingHandler(ip net.IP, hostName string, tcpPort int, pingTimeoutDuration
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			continue
 		}
-		currentResult.PingSuccess = true
-		currentResult.PingTimeDuration = time.Since(timeStart)
+		currentResult.dTPassedCount = true
+		currentResult.dTDuration = time.Since(timeStart)
 		allResult = append(allResult, currentResult)
 		_ = pingTLS.Close()
 		time.Sleep(time.Duration(interval) * time.Millisecond)
@@ -176,22 +231,19 @@ func tcppingHandler(ip net.IP, hostName string, tcpPort int, pingTimeoutDuration
 	return allResult
 }
 
-func TcppingWorker(chanIn chan string, chanOut chan SingleVerifyResult, wg *sync.WaitGroup,
-	hostName string, tcpport int, pingTimeoutDuration time.Duration, totalRound int, interval int) {
-	defer wg.Done()
+func sslDTWorker(chanIn chan string, chanOut chan singleVerifyResult, wg *sync.WaitGroup,
+	hostName string, tcpport int, dtTimeoutDuration time.Duration, totalRound int, interval int) {
+	defer (*wg).Done()
 LOOP:
 	for {
-		select {
-		case ip := <-chanIn:
-			if ip == WorkerStopSignal {
-				break LOOP
-			}
-			Ip := net.ParseIP(ip)
-			tResultSlice := tcppingHandler(Ip, hostName, tcpport, pingTimeoutDuration, totalRound, interval)
-			tVerifyResult := SingleVerifyResult{time.Now(), Ip, tResultSlice}
-			chanOut <- tVerifyResult
-			break
+		ip := <-chanIn
+		if ip == workerStopSignal {
+			break LOOP
 		}
+		Ip := net.ParseIP(ip)
+		tResultSlice := sslDTHandler(Ip, hostName, tcpport, dtTimeoutDuration, totalRound, interval)
+		tVerifyResult := singleVerifyResult{time.Now(), Ip, tResultSlice}
+		chanOut <- tVerifyResult
 		time.Sleep(time.Duration(interval) * time.Millisecond)
 	}
 }
