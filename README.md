@@ -113,7 +113,7 @@ TestTime  IP               Speed(KB/s)  DelayAvg(ms)  Stability(%)
 这种方式下因延迟测试的过程实际上是在做HTTP(s)请求和响应交互，请根据落地服务器的实际性能和CF的限制，降低延迟测试和下载测试的线程数。
 
 ### 3. Sqlite数据库存储测试结果
-#### 表：CFTestDetails，字段如下：
+#### 表：CFTD，字段如下：
 ```
     TestTime      datetime     测试时间                         
     ASN           int          测试所使用本地网络的ASN          
