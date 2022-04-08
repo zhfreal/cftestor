@@ -1305,7 +1305,7 @@ func printDebugListWithoutSync() {
 		printOneRow(0, titleDebugRow, contentStyle, *titleDebug)
 		t_len := len(*debugStrSlice)
 		t_low := 0
-		if t_len > maxResultsDisplay {
+		if t_len > maxDebugDisplay {
 			t_low = t_len - maxDebugDisplay
 		}
 		for i := t_len - 1; i >= t_low; i-- {
