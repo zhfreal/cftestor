@@ -126,7 +126,6 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
-          file: |
-            dist/cftestor-*.zip
-            dist/cftestor-*.dgst
+          overwrite: true
+          file: ./dist/cftestor-*
           tag: ${{ github.ref }}
