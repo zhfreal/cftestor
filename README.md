@@ -136,6 +136,9 @@ TestTime  IP               Speed(KB/s)  DelayAvg(ms)  Stability(%)
 ```
 #### 数据库目前存储结果，可自行通过sqlite命令行等方式查询使用结果，方便测试结果的追踪和重复使用。
 ## 感谢:
-> https://github.com/Spedoske/CloudflareScanner
-> https://github.com/XIU2/CloudflareSpeedTest
-> https://github.com/gdamore/tcell
+> <a href="https://github.com/Spedoske/CloudflareScanner">github.com/Spedoske/CloudflareScanner</a>
+> 
+> <a href="https://github.com/XIU2/CloudflareSpeedTest">github.com/XIU2/CloudflareSpeedTest</a>
+> 
+> <a href="https://github.com/gdamore/tcell">github.com/gdamore/tcell</a>
+> 

@@ -3,6 +3,9 @@ name: Release
 on:
   release:
     types: [prereleased]
+  push:
+    paths:
+      - ".github/workflows/*.yml"
 
 jobs:
   build:
@@ -41,12 +44,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install toolchains
-        run:  |
-          sudo apt install gcc gcc-i686-linux-gnu  gcc-arm-linux-gnueabi gcc-aarch64-linux-gnu gcc-mingw-w64 gcc-mingw-w64-i686 gcc-mingw-w64-x86-64 -y
-          mkdir -p dist
-          echo "CGO_ENABLED=1" >> $GITHUB_ENV
-
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
@@ -55,51 +52,68 @@ jobs:
       - name: Get project dependencies
         run: go mod download
 
-      - name: Prepare for Build
-        if: ${{ ($GOOS == 'windows') && ($GOARCH == 'amd64') }}
+      - name: Prepare for Build windows amd64
+        if: ${{ (matrix.goos == 'windows') && (matrix.goarch == 'amd64') }}
         run: |
           echo "CC=/usr/bin/x86_64-w64-mingw32-gcc" >> $GITHUB_ENV
           echo "PREFIX=cftestor-windows-amd64" >> $GITHUB_ENV
-          echo "BINARY=dist/$PREFIX.exe" >> $GITHUB_ENV
-        if: ${{ ($GOOS == 'windows') && ($GOARCH == '386') }}
+          echo "BINARY=cftestor-windows-amd64.exe" >> $GITHUB_ENV
+          sudo apt install -y gcc-mingw-w64-x86-64
+
+      - name: Prepare for Build windows x86
+        if: ${{ (matrix.goos == 'windows') && (matrix.goarch == '386') }}
         run: |
           echo "CC=/usr/bin/i686-w64-mingw32-gcc" >> $GITHUB_ENV
           echo "PREFIX=cftestor-windows-x86" >> $GITHUB_ENV
-          echo "BINARY=dist/$PREFIX.exe" >> $GITHUB_ENV
-        if: ${{ ($GOOS == 'linux') && ($GOARCH == 'amd64') }}
+          echo "BINARY=cftestor-windows-x86.exe" >> $GITHUB_ENV
+          sudo apt install -y gcc-mingw-w64-i686
+
+      - name: Prepare for Build linux amd64
+        if: ${{ (matrix.goos == 'linux') && (matrix.goarch == 'amd64') }}
         run: |
           echo "CC=/usr/bin/x86_64-linux-gnu-gcc" >> $GITHUB_ENV
           echo "PREFIX=cftestor-linux-amd64" >> $GITHUB_ENV
-          echo "BINARY=dist/$PREFIX" >> $GITHUB_ENV
-        if: ${{ ($GOOS == 'linux') && ($GOARCH == '386') }}
+          echo "BINARY=dist/cftestor-linux-amd64" >> $GITHUB_ENV
+          sudo apt install -y gcc
+
+      - name: Prepare for Build linux x86
+        if: ${{ (matrix.goos == 'linux') && (matrix.goarch == '386') }}
         run: |
           echo "CC=/usr/bin/i686-linux-gnu-gcc" >> $GITHUB_ENV
           echo "PREFIX=cftestor-linux-x86" >> $GITHUB_ENV
-          echo "BINARY=dist/$PREFIX" >> $GITHUB_ENV
-        if: ${{ ($GOOS == 'linux') && ($GOARCH == 'arm64') }}
+          echo "BINARY=cftestor-linux-x86" >> $GITHUB_ENV
+          sudo apt install -y gcc-i686-linux-gnu
+
+      - name: Prepare for Build linux arm64
+        if: ${{ (matrix.goos == 'linux') && (matrix.goarch == 'arm64') }}
         run: |
           echo "CC=/usr/bin/aarch64-linux-gnu-gcc" >> $GITHUB_ENV
           echo "PREFIX=cftestor-linux-arm64" >> $GITHUB_ENV
-          echo "BINARY=dist/$PREFIX" >> $GITHUB_ENV
-        if: ${{ ($GOOS == 'linux') && ($GOARCH == 'arm[567]') }}
+          echo "BINARY=cftestor-linux-arm64" >> $GITHUB_ENV
+          sudo apt install -y gcc-aarch64-linux-gnu
+
+      - name: Prepare for Build linux arm5 arm6 arm7
+        if: ${{ (matrix.goos == 'linux') && (matrix.goarch == 'arm') }}
         run: |
           echo "CC=/usr/bin/arm-linux-gnueabi-gcc" >> $GITHUB_ENV
-          echo "PREFIX=cftestor-linux-$GOARCH" >> $GITHUB_ENV
-          echo "BINARY=dist/$PREFIX" >> $GITHUB_ENV
+          echo "PREFIX=cftestor-linux-arm$GOARM" >> $GITHUB_ENV
+          echo "BINARY=cftestor-linux-arm$GOARM" >> $GITHUB_ENV
+          sudo apt install -y gcc-arm-linux-gnueabi
 
       - name: Show workflow information
         run: |
-          echo "GOOS: $GOOS, GOARCH: $GOARCH, GOARM: $GOARM, RELEASE_NAME: $BINARY"
+          echo "GOOS: matrix.goos, GOARCH: matrix.goarch, GOARM: matrix.goarm, RELEASE_NAME: dist/$BINARY"
 
       - name: Build
         run: |
-          go build -v -o $BINARY -trimpath -ldflags "-s -w -buildid=" ..
+          mkdir -p dist
+          go build -v -o dist/$BINARY -trimpath -ldflags "-s -w -buildid=" .
 
       - name: Create ZIP archive
         run: |
-          zip -9vr dist/$PREFIX.zip $BINARY
-          DGST=$PREFIX.dgst
           cd dist
+          zip -9vr $PREFIX.zip $BINARY
+          DGST=$PREFIX.dgst
           openssl dgst -md5    $PREFIX.zip | sed 's/([^)]*)//g' >>$DGST
           openssl dgst -sha1   $PREFIX.zip | sed 's/([^)]*)//g' >>$DGST
           openssl dgst -sha256 $PREFIX.zip | sed 's/([^)]*)//g' >>$DGST
