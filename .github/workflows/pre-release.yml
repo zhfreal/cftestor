@@ -73,7 +73,7 @@ jobs:
         run: |
           echo "CC=/usr/bin/x86_64-linux-gnu-gcc" >> $GITHUB_ENV
           echo "PREFIX=cftestor-linux-amd64" >> $GITHUB_ENV
-          echo "BINARY=dist/cftestor-linux-amd64" >> $GITHUB_ENV
+          echo "BINARY=cftestor-linux-amd64" >> $GITHUB_ENV
           sudo apt install -y gcc
 
       - name: Prepare for Build linux x86
