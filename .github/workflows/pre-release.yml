@@ -113,6 +113,7 @@ jobs:
         run: |
           cd dist
           zip -9vr $PREFIX.zip $BINARY
+          rm $BINARY
           DGST=$PREFIX.dgst
           openssl dgst -md5    $PREFIX.zip | sed 's/([^)]*)//g' >>$DGST
           openssl dgst -sha1   $PREFIX.zip | sed 's/([^)]*)//g' >>$DGST
