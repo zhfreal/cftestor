@@ -12,113 +12,45 @@ jobs:
     strategy:
       matrix:
         # Include amd64 on all platforms.
-        goos: [windows, linux]
-        goarch: [amd64, 386]
-        include:
-          # BEGIN Linux ARM 5 6 7 64
-          - goos: linux
-            goarch: arm
-            goarm: 7
-          - goos: linux
-            goarch: arm
-            goarm: 6
-          - goos: linux
-            goarch: arm
-            goarm: 5
-          - goos: linux
-            goarch: arm64
-          # END Linux ARM 5 6 7 64
-          # END Other architectures
+        go_version:
+          - 1.18.0
       fail-fast: false
-
     runs-on: ubuntu-latest
-    env:
-      GOOS: ${{ matrix.goos }}
-      GOARCH: ${{ matrix.goarch }}
-      GOARM: ${{ matrix.goarm }}
-      CGO_ENABLED: 1
-
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v2
-        with:
-          go-version: ^1.18
-
-      - name: Get project dependencies
-        run: go mod download
-
-      - name: Prepare for Build windows amd64
-        if: ${{ (matrix.goos == 'windows') && (matrix.goarch == 'amd64') }}
-        run: |
-          echo "CC=/usr/bin/x86_64-w64-mingw32-gcc" >> $GITHUB_ENV
-          echo "PREFIX=cftestor-windows-amd64" >> $GITHUB_ENV
-          echo "BINARY=cftestor-windows-amd64.exe" >> $GITHUB_ENV
-          sudo apt install -y gcc-mingw-w64-x86-64
-
-      - name: Prepare for Build windows x86
-        if: ${{ (matrix.goos == 'windows') && (matrix.goarch == '386') }}
-        run: |
-          echo "CC=/usr/bin/i686-w64-mingw32-gcc" >> $GITHUB_ENV
-          echo "PREFIX=cftestor-windows-x86" >> $GITHUB_ENV
-          echo "BINARY=cftestor-windows-x86.exe" >> $GITHUB_ENV
-          sudo apt install -y gcc-mingw-w64-i686
-
-      - name: Prepare for Build linux amd64
-        if: ${{ (matrix.goos == 'linux') && (matrix.goarch == 'amd64') }}
-        run: |
-          echo "CC=/usr/bin/x86_64-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "PREFIX=cftestor-linux-amd64" >> $GITHUB_ENV
-          echo "BINARY=cftestor-linux-amd64" >> $GITHUB_ENV
-          sudo apt install -y gcc
-
-      - name: Prepare for Build linux x86
-        if: ${{ (matrix.goos == 'linux') && (matrix.goarch == '386') }}
-        run: |
-          echo "CC=/usr/bin/i686-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "PREFIX=cftestor-linux-x86" >> $GITHUB_ENV
-          echo "BINARY=cftestor-linux-x86" >> $GITHUB_ENV
-          sudo apt install -y gcc-i686-linux-gnu
-
-      - name: Prepare for Build linux arm64
-        if: ${{ (matrix.goos == 'linux') && (matrix.goarch == 'arm64') }}
-        run: |
-          echo "CC=/usr/bin/aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "PREFIX=cftestor-linux-arm64" >> $GITHUB_ENV
-          echo "BINARY=cftestor-linux-arm64" >> $GITHUB_ENV
-          sudo apt install -y gcc-aarch64-linux-gnu
-
-      - name: Prepare for Build linux arm5 arm6 arm7
-        if: ${{ (matrix.goos == 'linux') && (matrix.goarch == 'arm') }}
-        run: |
-          echo "CC=/usr/bin/arm-linux-gnueabi-gcc" >> $GITHUB_ENV
-          echo "PREFIX=cftestor-linux-arm$GOARM" >> $GITHUB_ENV
-          echo "BINARY=cftestor-linux-arm$GOARM" >> $GITHUB_ENV
-          sudo apt install -y gcc-arm-linux-gnueabi
-
-      - name: Show workflow information
-        run: |
-          echo "GOOS: matrix.goos, GOARCH: matrix.goarch, GOARM: matrix.goarm, RELEASE_NAME: dist/$BINARY"
-
-      - name: Build
+      - name: Prepare
         run: |
           mkdir -p dist
-          go build -v -o dist/$BINARY -trimpath -ldflags "-s -w -buildid=" .
+
+      - name: build with xgo
+        uses: crazy-max/ghaction-xgo@v1
+        with:
+          xgo_version: latest
+          go_version: ${{ matrix.go_version }}
+          dest: dist
+          prefix: cftestor
+          targets: */*
+          v: true
+          x: false
+          race: false
+          ldflags: -s -w
+          buildmode: default
 
       - name: Create ZIP archive
         run: |
           cd dist
-          zip -9vr $PREFIX.zip $BINARY
-          rm $BINARY
-          DGST=$PREFIX.dgst
-          openssl dgst -md5    $PREFIX.zip | sed 's/([^)]*)//g' >>$DGST
-          openssl dgst -sha1   $PREFIX.zip | sed 's/([^)]*)//g' >>$DGST
-          openssl dgst -sha256 $PREFIX.zip | sed 's/([^)]*)//g' >>$DGST
-          openssl dgst -sha512 $PREFIX.zip | sed 's/([^)]*)//g' >>$DGST
+          for item in cftestor-*; do \
+              prefix=$(echo "${item}" | sed 's/\.exe$//' | sed 's/windows-4\.0-/windows-/') \
+              zip -9vr ${prefix}.zip "${item}" \
+              for t in md5 sha1 sha256 sha512; do \
+                  openssl dgst -${t} ${prefix}.zip | sed 's/([^)]*)//g' | sed 's/= /=/' >> ${prefix}.zip.dgst \
+              done \
+              rm "${item}" \
+          done          
           cd ..
 
       - name: Upload files to GitHub release
