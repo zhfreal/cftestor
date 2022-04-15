@@ -33,7 +33,6 @@ jobs:
           go_version: ${{ matrix.go_version }}
           dest: dist
           prefix: cftestor
-          targets: */*
           v: true
           x: false
           race: false
