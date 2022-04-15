@@ -42,13 +42,13 @@ jobs:
       - name: Create ZIP archive
         run: |
           cd dist
-          for item in cftestor-*; do \
-              prefix=$(echo "${item}" | sed 's/\.exe$//' | sed 's/windows-4\.0-/windows-/') \
-              zip -9vr ${prefix}.zip "${item}" \
-              for t in md5 sha1 sha256 sha512; do \
-                  openssl dgst -${t} ${prefix}.zip | sed 's/([^)]*)//g' | sed 's/= /=/' >> ${prefix}.zip.dgst \
-              done \
-              rm "${item}" \
+          for item in cftestor-*; do
+              prefix=$(echo "${item}" | sed 's/\.exe$//' | sed 's/windows-4\.0-/windows-/')
+              zip -9vr ${prefix}.zip "${item}"
+              for t in md5 sha1 sha256 sha512; do
+                  openssl dgst -${t} ${prefix}.zip | sed 's/([^)]*)//g' | sed 's/= /=/' >> ${prefix}.zip.dgst
+              done
+              rm "${item}"
           done          
           cd ..
 
