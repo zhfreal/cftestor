@@ -242,9 +242,9 @@ func init() {
 	}
 	if len(ipStr) == 0 && len(ipFile) == 0 {
 		if !ipv6Mode {
-			srcIPS = append(srcIPS, cfIPV4...)
+			srcIPS = append(srcIPS, CFIPV4...)
 		} else {
-			srcIPS = append(srcIPS, cfIPV6FULL...)
+			srcIPS = append(srcIPS, CFIPV6...)
 		}
 	}
 	// init srcIPR
