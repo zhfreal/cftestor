@@ -410,7 +410,6 @@ LOOP:
 			updateTasksStat(dtTasks, dtDoneTasks,
 				dltTasks, dltDoneasks, len(dtTaskCacher),
 				len(dltTaskCacher), len(verifyResultsMap))
-			OverAllStatTimer = time.Now()
 			break LOOP
 		}
 		// there are ping thread working

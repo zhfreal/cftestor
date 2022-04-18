@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -65,7 +64,7 @@ func openDB(dbFile string) *sql.DB {
 	}
 	db, err := sql.Open("sqlite3", dbFile)
 	if err != nil {
-		log.Fatal(fmt.Sprintf("%v\n", err))
+		log.Fatalf("%v\n", err)
 	}
 	return db
 }
@@ -76,7 +75,7 @@ func dbExec(db *sql.DB, sql string, closeDB bool) *sql.Result {
 	}
 	r, err := db.Exec(sql)
 	if err != nil {
-		log.Fatal(fmt.Sprintf("%v\n", err))
+		log.Fatalf("%v\n", err)
 	}
 	return &r
 }
@@ -92,7 +91,7 @@ func QueryData(sql string, dbFile string) *[]cfTestDetail {
 	cfDetails := make([]cfTestDetail, 0)
 	rows, err := db.Query(sql)
 	if err != nil {
-		log.Fatal(fmt.Sprintf("%v\n", err))
+		log.Fatalf("%v\n", err)
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
