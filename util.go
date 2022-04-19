@@ -116,6 +116,7 @@ var (
 		"DLTPassedCount(DLTPC)",
 		"DLTPassedRate(DLPR, %)",
 	}
+	cfURL = "https://speed.cloudflare.com/__down"
 )
 
 type arrayFlags []string
@@ -682,13 +683,80 @@ func getASNAndCity() (ASN int, city string) {
 		return
 	}
 	for i := 0; i < 3; i++ {
-		response, err := http.Get("https://speed.cloudflare.com/__down")
+		response, err := http.Get(cfURL)
+		// connect is failedwith network error, won't continue
+		if err != nil {
+			myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
+			time.Sleep(time.Duration(interval) * time.Millisecond)
+			continue
+		}
+		if response == nil {
+			myLogger.Error("An error occurred while request ASN and city info from cloudflare: response is empty")
+			time.Sleep(time.Duration(interval) * time.Millisecond)
+			continue
+		}
+		//fmt.Printf("%T - %v", response.Header, response.Header)
+		if values, ok := response.Header["Cf-Meta-Asn"]; ok {
+			if len(values) > 0 {
+				if ASN, err = strconv.Atoi(values[0]); err != nil {
+					myLogger.Error(fmt.Sprintf("An error occurred while convert ASN for header: %T, %v", values[0], values[0]))
+				}
+			}
+		}
+		if values, ok := response.Header["Cf-Meta-City"]; ok {
+			if len(values) > 0 {
+				city = values[0]
+			}
+		}
+		defaultASN = ASN
+		defaultCity = city
+		break
+	}
+	return
+}
+
+func getASNAndCityWithIP(ip net.IP) (ASN int, city string) {
+	if defaultASN > 0 {
+		ASN = defaultASN
+		city = defaultCity
+		return
+	}
+	var fullAddress string
+	if ip.To4() != nil { //IPv4
+		fullAddress = ip.String() + ":443"
+	} else { //
+		fullAddress = "[" + ip.String() + "]:443"
+	}
+	// try 3 times
+	for i := 0; i < 3; i++ {
+		tReq, err := http.NewRequest("GET", cfURL, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		var tResultHttp ResultHttp
+		tCtx := WithHTTPStat(tReq.Context(), &tResultHttp)
+		tReq = tReq.WithContext(tCtx)
+		var client = http.Client{
+			Transport:     nil,
+			CheckRedirect: nil,
+			Jar:           nil,
+			Timeout:       HttpRspTimeoutDuration,
+		}
+		if !dtOnly {
+			client.Timeout += 1 * time.Second
+		}
+		client.Transport = &http.Transport{
+			DialContext: GetDialContextByAddr(fullAddress),
+			//ResponseHeaderTimeout: HttpRspTimeoutDuration,
+		}
+		response, err := client.Do(tReq)
 		// pingect is failed(network error), won't continue
 		if err != nil {
 			myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			continue
 		}
+		//
 		if response == nil {
 			myLogger.Error("An error occurred while request ASN and city info from cloudflare: response is empty")
 			time.Sleep(time.Duration(interval) * time.Millisecond)
@@ -760,7 +828,16 @@ func PrintFinalStat(v []VerifyResults, disableDownload bool) {
 func InsertIntoDb(verifyResultsSlice []VerifyResults, dbFile string) {
 	if len(verifyResultsSlice) > 0 && storeToDB {
 		dbRecords := make([]cfTestDetail, 0)
+
 		ASN, city := getASNAndCity()
+		if len(city) == 0 {
+			ASN, city = getASNAndCityWithIP(net.ParseIP(verifyResultsSlice[0].ip))
+		}
+		if len(city) == 0 {
+			myLogger.Warning("Fail to get ASN and city via " + cfURL)
+			ASN = -1
+			city = ""
+		}
 		for _, v := range verifyResultsSlice {
 			record := cfTestDetail{}
 			record.asn = ASN
