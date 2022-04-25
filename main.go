@@ -400,11 +400,13 @@ LOOP:
 			if !dltOnly {
 				for len(*dtTaskChan) > 0 {
 					<-(*dtTaskChan)
+					dtTasks--
 				}
 			}
 			if !dtOnly {
 				for len(*dltTaskChan) > 0 {
 					<-(*dltTaskChan)
+					dltTasks--
 				}
 			}
 			// update tasks statistic
