@@ -543,7 +543,7 @@ LOOP:
 					//     overAllStat{dtTasks, dtDoneTasks,
 					//         dltTasks, dltDoneasks, len(dtTaskCacher),
 					//         len(dltTaskCacher), len(verifyResultsMap)})
-					updateResult(tVerifyResult, dtTasks, dtDoneTasks,
+					updateResult(v, dtTasks, dtDoneTasks,
 						dltTasks, dltDoneasks, len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 					OverAllStatTimer = time.Now()
@@ -552,7 +552,7 @@ LOOP:
 					//     overAllStat{dtTasks, dtDoneTasks,
 					//         dltTasks, dltDoneasks, len(dtTaskCacher),
 					//         len(dltTaskCacher), len(verifyResultsMap)})
-					updateDebug(tVerifyResult, dtTasks, dtDoneTasks,
+					updateDebug(v, dtTasks, dtDoneTasks,
 						dltTasks, dltDoneasks, len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 					OverAllStatTimer = time.Now()
