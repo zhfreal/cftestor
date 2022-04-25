@@ -425,6 +425,12 @@ LOOP:
 						// put ping test result to cacheResultMap for later
 						cacheResultMap[tVerifyResult.ip] = tVerifyResult
 						dltTaskCacher = append(dltTaskCacher, tVerifyResult.ip)
+						// add debug output
+						updateDebug(tVerifyResult, dtTasks, dtDoneTasks,
+							dltTasks, dltDoneasks, len(dtTaskCacher),
+							len(dltTaskCacher), len(verifyResultsMap))
+						// reset timer
+						OverAllStatTimer = time.Now()
 					} else { // Download test disabled
 						// print
 						// myLogger.PrintSingleStat(loggerContent{logLevelInfo, []VerifyResults{tVerifyResult}},
@@ -441,7 +447,6 @@ LOOP:
 						if !testAll && len(verifyResultsMap) >= resultMin {
 							haveEnoughResult = true
 						}
-
 					}
 				} else if debug { // debug print
 					// myLogger.PrintSingleStat(loggerContent{logLevelDebug, []VerifyResults{tVerifyResult}},
