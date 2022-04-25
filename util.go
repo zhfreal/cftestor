@@ -1421,7 +1421,7 @@ func initTitleStr() {
 	} else {
 		tIntroMSG3 = fmt.Sprintf("%-39v%s", "IP", myIndent)
 	}
-	if !disableDownload {
+	if !dtOnly {
 		tIntroMSG3 += fmt.Sprintf("%-11v%s", "Speed(KB/s)", myIndent)
 	}
 	tIntroMSG3 += fmt.Sprintf("%-12v%s", "DelayAvg(ms)", myIndent)
@@ -1475,7 +1475,7 @@ func updateResultStrList(v VerifyResults) {
 	} else {
 		sb.WriteString(fmt.Sprintf("%-39v%s", v.ip, myIndent))
 	}
-	if !disableDownload {
+	if !dtOnly {
 		sb.WriteString(fmt.Sprintf("%-11.2f%s", v.dls, myIndent))
 	}
 	sb.WriteString(fmt.Sprintf("%-12.0f%s", v.da, myIndent))
@@ -1498,7 +1498,7 @@ func updateDebugStrList(v VerifyResults) {
 	} else {
 		sb.WriteString(fmt.Sprintf("%-39v%s", v.ip, myIndent))
 	}
-	if !disableDownload {
+	if !dtOnly {
 		sb.WriteString(fmt.Sprintf("%-11.2f%s", v.dls, myIndent))
 	}
 	sb.WriteString(fmt.Sprintf("%-12.0f%s", v.da, myIndent))
