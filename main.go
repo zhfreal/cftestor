@@ -21,6 +21,7 @@ import (
 const (
 	downloadBufferSize    = 1024 * 16
 	workerStopSignal      = "0"
+	controlerInterval     = 10
 	statisticTimer        = 10
 	fileDefaultSize       = 1024 * 1024 * 300
 	downloadSizeMin       = 1024 * 1024
@@ -612,7 +613,7 @@ LOOP:
 				len(dltTaskCacher), len(verifyResultsMap))
 			OverAllStatTimer = time.Now()
 		}
-		time.Sleep(time.Duration(interval) * time.Millisecond)
+		time.Sleep(time.Duration(controlerInterval) * time.Millisecond)
 	}
 	// myLogger.PrintOverAllStat(overAllStat{dtTasks, dtDoneTasks,
 	//     dltTasks, dltDoneasks, len(dtTaskCacher),
