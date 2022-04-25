@@ -385,7 +385,7 @@ func controllerWorker(dtTaskChan *chan string, dtResultChan *chan singleVerifyRe
 	dltTasks := 0
 	dtDoneTasks := 0
 	dtTaskCacher := make([]string, 0)
-	dltDoneasks := 0
+	dltDoneTasks := 0
 	dltTaskCacher := make([]string, 0)
 	cacheResultMap := make(map[string]VerifyResults)
 	haveEnoughResult := false
@@ -411,7 +411,7 @@ LOOP:
 			}
 			// update tasks statistic
 			updateTasksStat(dtTasks, dtDoneTasks,
-				dltTasks, dltDoneasks, len(dtTaskCacher),
+				dltTasks, dltDoneTasks, len(dtTaskCacher),
 				len(dltTaskCacher), len(verifyResultsMap))
 			// break LOOP
 		}
@@ -430,7 +430,7 @@ LOOP:
 						dltTaskCacher = append(dltTaskCacher, tVerifyResult.ip)
 						// add debug output
 						updateDebug(tVerifyResult, dtTasks, dtDoneTasks,
-							dltTasks, dltDoneasks, len(dtTaskCacher),
+							dltTasks, dltDoneTasks, len(dtTaskCacher),
 							len(dltTaskCacher), len(verifyResultsMap))
 						// reset timer
 						OverAllStatTimer = time.Now()
@@ -441,7 +441,7 @@ LOOP:
 						//         dltTasks, dltDoneasks, len(dtTaskCacher),
 						//         len(dltTaskCacher), len(verifyResultsMap)})
 						updateResult(tVerifyResult, dtTasks, dtDoneTasks,
-							dltTasks, dltDoneasks, len(dtTaskCacher),
+							dltTasks, dltDoneTasks, len(dtTaskCacher),
 							len(dltTaskCacher), len(verifyResultsMap))
 						// reset timer
 						OverAllStatTimer = time.Now()
@@ -457,7 +457,7 @@ LOOP:
 					//         dltTasks, dltDoneasks, len(dtTaskCacher),
 					//         len(dltTaskCacher), len(verifyResultsMap)})
 					updateDebug(tVerifyResult, dtTasks, dtDoneTasks,
-						dltTasks, dltDoneasks, len(dtTaskCacher),
+						dltTasks, dltDoneTasks, len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 					// reset timer
 					OverAllStatTimer = time.Now()
@@ -477,7 +477,7 @@ LOOP:
 				// when it's dt-only mode or, download tasks pool has less hosts than downloadThread
 				// we put ping task into dtTaskCacher
 				// simplify algorithm
-				if dtOnly || (len(dltTaskCacher)+dltTasks-dltDoneasks) < dltWorkerThread {
+				if dtOnly || (len(dltTaskCacher)+dltTasks-dltDoneTasks) < dltWorkerThread {
 					for i := 0; i < dtWorkerThread; i++ {
 						if len(dtTaskCacher) == 0 {
 							break
@@ -492,12 +492,13 @@ LOOP:
 					}
 					// update stat
 					updateTasksStat(dtTasks, dtDoneTasks,
-						dltTasks, dltDoneasks, len(dtTaskCacher),
+						dltTasks, dltDoneTasks, len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 				}
 			}
 			// we did all ping works in dt-only mode
-			if dtOnly && (cancelSigFromTerm || haveEnoughResult || noMoreSources) && dtTasks <= dtDoneTasks {
+			if dtOnly && (cancelSigFromTerm || haveEnoughResult || noMoreSources) {
+				// if dtOnly && (cancelSigFromTerm || haveEnoughResult || noMoreSources) && dtTasks <= dtDoneTasks {
 				break LOOP
 			}
 		}
@@ -506,7 +507,7 @@ LOOP:
 			select {
 			// check download result
 			case out := <-*dltResultChan:
-				dltDoneasks += 1
+				dltDoneTasks += 1
 				var tVerifyResult = singleResultStatistic(out, true)
 				var v = VerifyResults{}
 				if dltOnly {
@@ -547,7 +548,7 @@ LOOP:
 					//         dltTasks, dltDoneasks, len(dtTaskCacher),
 					//         len(dltTaskCacher), len(verifyResultsMap)})
 					updateResult(v, dtTasks, dtDoneTasks,
-						dltTasks, dltDoneasks, len(dtTaskCacher),
+						dltTasks, dltDoneTasks, len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 					OverAllStatTimer = time.Now()
 				} else if debug { // debug print
@@ -556,11 +557,10 @@ LOOP:
 					//         dltTasks, dltDoneasks, len(dtTaskCacher),
 					//         len(dltTaskCacher), len(verifyResultsMap)})
 					updateDebug(v, dtTasks, dtDoneTasks,
-						dltTasks, dltDoneasks, len(dtTaskCacher),
+						dltTasks, dltDoneTasks, len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 					OverAllStatTimer = time.Now()
 				}
-
 			default:
 			}
 			// Download task control
@@ -574,7 +574,7 @@ LOOP:
 					}
 				}
 				// put task to download chan when we have IPs from delay test and the download thread is available
-				if len(dltTaskCacher) > 0 && (dltTasks-dltDoneasks) < dltWorkerThread {
+				if len(dltTaskCacher) > 0 && (dltTasks-dltDoneTasks) < dltWorkerThread {
 					for i := 0; i < dltWorkerThread; i++ {
 						if len(dltTaskCacher) == 0 {
 							break
@@ -589,20 +589,27 @@ LOOP:
 					}
 					// update stat
 					updateTasksStat(dtTasks, dtDoneTasks,
-						dltTasks, dltDoneasks, len(dtTaskCacher),
+						dltTasks, dltDoneTasks, len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 				}
 			}
-			if dltTasks <= dltDoneasks {
-				if dltOnly { // we done in dlt-only mode
-					if cancelSigFromTerm || haveEnoughResult || noMoreSources {
-						break LOOP
-					}
-				} else if dtTasks <= dtDoneTasks { // we done in ping and download co-working mode
-					if cancelSigFromTerm || haveEnoughResult || (noMoreSources && len(dltTaskCacher) == 0) {
-						break LOOP
-					}
+			// if dltTasks <= dltDoneasks {
+			// 	if dltOnly { // we done in dlt-only mode
+			// 		if cancelSigFromTerm || haveEnoughResult || noMoreSources {
+			// 			break LOOP
+			// 		}
+			// 	} else if dtTasks <= dtDoneTasks { // we done in ping and download co-working mode
+			// 		if cancelSigFromTerm || haveEnoughResult || (noMoreSources && len(dltTaskCacher) == 0) {
+			// 			break LOOP
+			// 		}
+			// 	}
+			// }
+			if dltOnly { // we done in dlt-only mode
+				if cancelSigFromTerm || haveEnoughResult || noMoreSources {
+					break LOOP
 				}
+			} else if cancelSigFromTerm || haveEnoughResult { // we done in ping and download co-working mode
+				break LOOP
 			}
 		}
 		// Print overall stat during waiting time and reset OverAllStatTimer
@@ -611,7 +618,7 @@ LOOP:
 			//     dltTasks, dltDoneasks, len(dtTaskCacher),
 			//     len(dltTaskCacher), len(verifyResultsMap)})
 			updateTasksStat(dtTasks, dtDoneTasks,
-				dltTasks, dltDoneasks, len(dtTaskCacher),
+				dltTasks, dltDoneTasks, len(dtTaskCacher),
 				len(dltTaskCacher), len(verifyResultsMap))
 			OverAllStatTimer = time.Now()
 		}
@@ -621,7 +628,7 @@ LOOP:
 	//     dltTasks, dltDoneasks, len(dtTaskCacher),
 	//     len(dltTaskCacher), len(verifyResultsMap)})
 	updateTasksStat(dtTasks, dtDoneTasks,
-		dltTasks, dltDoneasks, len(dtTaskCacher),
+		dltTasks, dltDoneTasks, len(dtTaskCacher),
 		len(dltTaskCacher), len(verifyResultsMap))
 	// put stop signal to all delay test workers and download worker
 	if !dltOnly {

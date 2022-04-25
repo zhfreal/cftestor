@@ -180,7 +180,10 @@ func downloadWorker(chanIn chan string, chanOut chan singleVerifyResult, wg *syn
 	defer (*wg).Done()
 LOOP:
 	for {
-		ip := <-chanIn
+		ip, ok := <-chanIn
+		if !ok {
+			break LOOP
+		}
 		if ip == workerStopSignal {
 			//log.Println("Download task finished!")
 			break LOOP
@@ -236,7 +239,10 @@ func sslDTWorker(chanIn chan string, chanOut chan singleVerifyResult, wg *sync.W
 	defer (*wg).Done()
 LOOP:
 	for {
-		ip := <-chanIn
+		ip, ok := <-chanIn
+		if !ok {
+			break LOOP
+		}
 		if ip == workerStopSignal {
 			break LOOP
 		}
