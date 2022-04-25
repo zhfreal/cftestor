@@ -410,7 +410,7 @@ LOOP:
 			updateTasksStat(dtTasks, dtDoneTasks,
 				dltTasks, dltDoneasks, len(dtTaskCacher),
 				len(dltTaskCacher), len(verifyResultsMap))
-			break LOOP
+			// break LOOP
 		}
 		// there are ping thread working
 		if !dltOnly {
