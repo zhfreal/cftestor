@@ -677,7 +677,7 @@ LOOP:
 	}
 	(*termAll).Fini()
 	(*wg).Done()
-	// fmt.Println(titleWaitQuit)
+	fmt.Println(titleWaitQuit)
 }
 
 func confirmQuit() bool {
