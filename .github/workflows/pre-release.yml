@@ -10,7 +10,7 @@ jobs:
       matrix:
         # Include amd64 on all platforms.
         go_version:
-          - 1.18.0
+          - 1.18.1
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
