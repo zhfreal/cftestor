@@ -33,7 +33,7 @@ jobs:
           v: true
           x: false
           race: false
-          ldflags: -s -w
+          ldflags: -s -w -linkmode external -extldflags -static
           buildmode: default
 
       - name: Create ZIP archive
@@ -46,7 +46,7 @@ jobs:
                   openssl dgst -${t} ${prefix}.zip | sed 's/([^)]*)//g' | sed 's/= /=/' >> ${prefix}.zip.dgst
               done
               rm "${item}"
-          done          
+          done
           cd ..
 
       - name: Upload files to GitHub release
