@@ -99,7 +99,7 @@ func print_version() {
 func init() {
 	var printVersion bool
 
-	version = "v1.4.3.1"
+	//version = "v1.4.3.1"
 	var help = `
     cftestor ` + version + `
     测试Cloudflare IP的延迟和速度，获取最快的IP！
