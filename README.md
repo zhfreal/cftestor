@@ -22,7 +22,7 @@ $ cd cftestor
 $ CGO_ENABLED=1 go build .
 $ ./cftestor -h
 
-    cftestor v1.4.3
+    cftestor v1.4.4.1
     测试Cloudflare IP的延迟和速度，获取最快的IP！
     https://github.com/zhfreal/cftestor
 
@@ -45,11 +45,11 @@ $ ./cftestor -h
         -d, --dlt-period    int     单次下载测速最长时间(s)(默认 10s)
         -b, --dlt-count     int     尝试下载次数(默认 1)
         -u, --url           string  下载测速地址(默认 "https://cf.9999876.xyz/500mb.dat")。
-        -I  --interval      int     测试间隔时间(ms)(默认 100ms)
+        -I  --interval      int     测试间隔时间(ms)(默认 500ms)
         -k, --delay-limit   int     平均延时上限(ms)(默认 600ms). 平均延时超过此值不计入结
                                     果集，不进行下载测试。
         -S, --dtpr-limit    int     延迟测试成功率下限，当低于此值时不计入结果集，不进行下
-                                    载测试。默认80，即不低于80%。
+                                    载测试。默认1，即不低于1%。
         -l, --speed         float   下载平均速度下限(KB/s)(默认 2000KB/s). 下载平均速度低于
                                     此值时不计入结果集。
         -r, --result        int     测速结果集数量(默认 10). 当符合条件的IP数量超过此值时，

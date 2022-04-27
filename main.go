@@ -124,11 +124,11 @@ func init() {
         -d, --dlt-period    int     单次下载测速最长时间(s)(默认 10s)
         -b, --dlt-count     int     尝试下载次数(默认 1)
         -u, --url           string  下载测速地址(默认 "https://cf.9999876.xyz/500mb.dat")。
-        -I  --interval      int     测试间隔时间(ms)(默认 100ms)
+        -I  --interval      int     测试间隔时间(ms)(默认 500ms)
         -k, --delay-limit   int     平均延时上限(ms)(默认 600ms). 平均延时超过此值不计入结
                                     果集，不进行下载测试。
         -S, --dtpr-limit    int     延迟测试成功率下限，当低于此值时不计入结果集，不进行下
-                                    载测试。默认80，即不低于80%。
+                                    载测试。默认1，即不低于1%。
         -l, --speed         float   下载平均速度下限(KB/s)(默认 2000KB/s). 下载平均速度低于
                                     此值时不计入结果集。
         -r, --result        int     测速结果集数量(默认 10). 当符合条件的IP数量超过此值时，
@@ -164,10 +164,10 @@ func init() {
 	flag.IntVarP(&dltDurMax, "dl-period", "d", 10, "单次下载测速最长时间(s)")
 	flag.IntVarP(&dltCount, "dlt-count", "b", 1, "尝试下载次数")
 	flag.StringVarP(&urlStr, "url", "u", defaultTestUrl, "下载测速地址")
-	flag.IntVarP(&interval, "interval", "I", 100, "间隔时间(ms)")
+	flag.IntVarP(&interval, "interval", "I", 500, "间隔时间(ms)")
 
 	flag.IntVarP(&delayMax, "delay-limit", "k", 600, "平均延迟上限(ms)")
-	flag.IntVarP(&dtPassedRateMin, "dtpr-limit", "S", 80, "延迟测试成功率下限(%)")
+	flag.IntVarP(&dtPassedRateMin, "dtpr-limit", "S", 1, "延迟测试成功率下限(%)")
 	flag.Float64VarP(&speedMinimal, "speed", "l", 6000, "下载速度下限(KB/s)")
 	flag.IntVarP(&resultMin, "result", "r", 10, "测速结果集数量")
 
@@ -608,7 +608,11 @@ LOOP:
 				if cancelSigFromTerm || haveEnoughResult || noMoreSources {
 					break LOOP
 				}
-			} else if cancelSigFromTerm || haveEnoughResult { // we done in ping and download co-working mode
+			} else if cancelSigFromTerm || haveEnoughResult {
+				// we done in ping and download co-working mode while we have enough results or cancel from terminal
+				break LOOP
+			} else if noMoreSources && dtDoneTasks >= dtTasks && len(dtTaskCacher) == 0 && dltDoneTasks >= dltTasks && len(dltTaskCacher) == 0 {
+				// we done in ping and download co-working mode while we have no subject to test
 				break LOOP
 			}
 		}
@@ -675,6 +679,8 @@ LOOP:
 			initScreen()
 		}
 	}
+	printQuitWaiting()
+	time.Sleep(5 * time.Second)
 	(*termAll).Fini()
 	(*wg).Done()
 	fmt.Println(titleWaitQuit)
