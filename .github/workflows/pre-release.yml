@@ -8,44 +8,93 @@ jobs:
   build:
     strategy:
       matrix:
-        # Include amd64 on all platforms.
-        go_version:
-          - 1.18.1
+        # enbale windows linux darwin on amd64 386 and arm64
+        goos: [windows, linux, darwin]
+        goarch: [amd64, 386, arm64]
+        include:
+          # include linux on arm5, arm6, arm7
+          - goos: linux
+            goarch: arm
+            goarm: 7
+          - goos: linux
+            goarch: arm
+            goarm: 6
+          - goos: linux
+            goarch: arm
+            goarm: 5
+          - goos: linux
+            goarch: arm64
+          # include linux on riscv64
+          - goos: linux
+            goarch: riscv64
+          # include freebsd on amd64
+          - goos: freebsd
+            goarch: amd64
+        exclude:
+          # exclude darwin on 386
+          - goos: darwin
+            goarch: 386
       fail-fast: false
+
     runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ github.ref_name }}
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      GOARM: ${{ matrix.goarm }}
+      CGO_ENABLED: 0
+
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
-      - name: Prepare
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.18
+
+      - name: Get project dependencies
+        run: go mod download
+        
+      - name: Prepare for Build
+        run: |
+          echo "BINARY=cftestor-${GOOS}-${GOARCH}${GOARM}" >> $GITHUB_ENV
+
+      - name: Prepare for Build windows
+        if: ${{ matrix.goos == 'windows' }}
+        run: |
+          echo "BINARY=${BINARY}.exe" >> $GITHUB_ENV
+
+      - name: Prepare for x86
+        if: ${{ matrix.goarch == '386' }}
+        run: |
+          echo "BINARY=$(echo ${BINARY} | sed 's/386/x86/')" >> $GITHUB_ENV
+
+      - name: Show workflow information
+        run: |
+          if [ -n "${GOARM}" ]; then
+            echo "GOOS: ${GOOS}, GOARCH: ${GOARCH}, GOARM: ${GOARM}, RELEASE_VERSION: ${RELEASE_VERSION}, RELEASE_NAME: ${BINARY}"
+          else
+            echo "GOOS: ${GOOS}, GOARCH: ${GOARCH}, RELEASE_VERSION: ${RELEASE_VERSION}, RELEASE_NAME: ${BINARY}"
+          fi
+
+      - name: Build
         run: |
           mkdir -p dist
-
-      - name: build with xgo
-        uses: crazy-max/ghaction-xgo@v1
-        with:
-          xgo_version: latest
-          go_version: ${{ matrix.go_version }}
-          dest: dist
-          prefix: cftestor
-          v: true
-          x: false
-          race: false
-          ldflags: -s -w -linkmode external -extldflags -static
-          buildmode: default
+          go build -v -o dist/${BINARY} -trimpath -ldflags "-s -w -buildid= -X main.version=${RELEASE_VERSION}" .
 
       - name: Create ZIP archive
         run: |
           cd dist
-          for item in cftestor-*; do
-              prefix=$(echo "${item}" | sed 's/\.exe$//' | sed 's/windows-4\.0-/windows-/')
-              zip -9vr ${prefix}.zip "${item}"
-              for t in md5 sha1 sha256 sha512; do
-                  openssl dgst -${t} ${prefix}.zip | sed 's/([^)]*)//g' | sed 's/= /=/' >> ${prefix}.zip.dgst
-              done
-              rm "${item}"
+          PREFIX=${BINARY}
+          [ "$GOOS" == 'windows' ] && PREFIX=$(echo ${BINARY} | sed 's/\.exe$//')
+          zip -9vr ${PREFIX}.zip ${BINARY}
+          rm ${BINARY}
+          DGST=${PREFIX}.dgst
+          for t in md5 sha1 sha256 sha512; do
+            openssl dgst -${t} ${PREFIX}.zip | sed 's/([^)]*)= \+/\t/' >> ${PREFIX}.zip.dgst
           done
           cd ..
 
