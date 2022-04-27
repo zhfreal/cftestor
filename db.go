@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"log"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 const (
@@ -62,7 +62,7 @@ func openDB(dbFile string) *sql.DB {
 	if len(dbFile) == 0 {
 		dbFile = DBFile
 	}
-	db, err := sql.Open("sqlite3", dbFile)
+	db, err := sql.Open("sqlite", dbFile)
 	if err != nil {
 		log.Fatalf("%v\n", err)
 	}
