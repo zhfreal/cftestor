@@ -22,7 +22,7 @@ $ cd cftestor
 $ CGO_ENABLED=1 go build .
 $ ./cftestor -h
 
-    cftestor v1.4.4.1
+    cftestor v1.4.6
     测试Cloudflare IP的延迟和速度，获取最快的IP！
     https://github.com/zhfreal/cftestor
 
@@ -74,7 +74,7 @@ $
 ```
 ### 运行
 ```bash
-$./cftestor -l 10000 -r 5 -k 380
+$./cftestor -l 5000 -k 420
 
 运行画面：
 ```
@@ -82,14 +82,19 @@ $./cftestor -l 10000 -r 5 -k 380
 ```
 结果：
 
-11:48:36  INFO  All Results:
+14:57:07 INFO All Results:
 
-TestTime  IP               Speed(KB/s)  DelayAvg(ms)  Stability(%)
-11:48:25  104.16.191.236   15433.58     363           100.00
-11:47:26  173.245.49.21    14655.34     370           100.00
-11:47:58  104.20.163.186   14096.65     371           81.82
-11:47:37  104.21.80.120    13862.35     377           100.00
-11:48:36  104.19.81.8      12625.36     367           100.00
+TestTime IP              Speed(KB/s) DelayAvg(ms) Stability(%)
+14:54:14 104.21.206.168  9038.91     371          100.00
+14:57:04 104.20.79.64    7280.90     380          90.91
+14:55:34 104.19.84.73    6338.82     390          100.00
+14:53:30 104.18.38.10    6229.05     367          100.00
+14:55:00 188.114.98.66   5930.86     382          100.00
+14:53:52 104.20.137.83   5927.58     369          100.00
+14:56:07 104.16.16.241   5526.18     402          100.00
+14:56:53 104.20.2.209    5447.53     377          90.91
+14:53:41 104.17.107.17   5309.09     366          100.00
+14:54:03 104.17.149.135  5099.37     366          100.00
 
 ```
 因对输出进行了格式化对齐，中英文混合很难动态计算长度、对齐，故测试过程和结果没有使用中文。好在测试结果简单，只需关注测试数据即可。
@@ -141,4 +146,4 @@ TestTime  IP               Speed(KB/s)  DelayAvg(ms)  Stability(%)
 > <a href="https://github.com/XIU2/CloudflareSpeedTest">github.com/XIU2/CloudflareSpeedTest</a>
 > 
 > <a href="https://github.com/gdamore/tcell">github.com/gdamore/tcell</a>
-> 
+>
