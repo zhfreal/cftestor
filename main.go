@@ -10,6 +10,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,10 +20,15 @@ import (
 )
 
 const (
-	downloadBufferSize    = 1024 * 16
-	workerStopSignal      = "0"
-	controlerInterval     = 10
-	statisticTimer        = 10
+	downloadBufferSize = 1024 * 16
+	workerStopSignal   = "0"
+	workOnGoing        = 1
+	// millisecond
+	controlerInterval = 10
+	// millisecond
+	statisticInterval = 1000
+	// second
+	quitWaitingTime       = 3
 	fileDefaultSize       = 1024 * 1024 * 300
 	downloadSizeMin       = 1024 * 1024
 	defaultTestUrl        = "https://cf.9999876.xyz/500mb.dat"
@@ -65,8 +71,8 @@ var (
 	myRand                                 = rand.New(rand.NewSource(0))
 	titleRuntime, titlePre                 *string
 	titleResult, titleDebug                *string
-	titleTasksStat                         *string
-	resultStrSlice, debugStrSlice          *[]string
+	titleTasksStat                         [2]*string
+	resultStrSlice, debugStrSlice          []*string
 	termAll                                *tcell.Screen
 	titleStyle                             = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorWhite)
 	titleStyleCancel                       = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorGray)
@@ -81,15 +87,17 @@ var (
 	titleResultRow                         = titleResultHintRow + 1
 	titleDebugHintRow                      = titleResultRow + maxResultsDisplay + 2
 	titleDebugRow                          = titleDebugHintRow + 1
-	taskStatistic                          = overAllStat{0, 0, 0, 0, 0, 0, 0}
+	taskStatistic                          = overAllStat{0, 0, 0, 0, 0, 0, 0, 0, 0}
 	titleCancel                            = "Press ESC to cancel!"
 	titleCancelComfirm                     = "Are you sure to cancel it?(ENTER to confirm; Any other key to quit)"
 	titleWaitQuit                          = "Waiting for exit..."
 	titleExitHint                          = "Press any key to exit!"
-	titleResultHint                        = "Results:"
+	titleResultHint                        = "Result List:"
 	titleDebugHint                         = "Debug:"
 	cancelSigFromTerm                      = false
 	terminateComfirm                       = false
+	resultNumLen, resultStatIndent         = 0, 0
+	dtThreadNumLen, dltThreadNumLen        = 0, 0
 )
 
 func print_version() {
@@ -276,12 +284,16 @@ func init() {
 	if resultMin <= 0 {
 		resultMin = 20
 	}
+	resultNumLen = len(strconv.Itoa(resultMin)) + 1
+	resultStatIndent = 18 + resultNumLen
+	dtThreadNumLen = len(strconv.Itoa(dtWorkerThread))
 	if dtCount <= 0 {
 		dtCount = 60
 	}
 	if dltWorkerThread <= 0 {
 		dltWorkerThread = 1
 	}
+	dltThreadNumLen = len(strconv.Itoa(dltWorkerThread))
 	if dltCount <= 0 {
 		dltCount = 4
 	}
@@ -348,10 +360,10 @@ func init() {
 		}
 	}
 	// init
-	tResultStrSlice := make([]string, 0)
-	resultStrSlice = &tResultStrSlice
-	tDebugStrSlice := make([]string, 0)
-	debugStrSlice = &tDebugStrSlice
+	tResultStrSlice := make([]*string, 0)
+	resultStrSlice = tResultStrSlice
+	tDebugStrSlice := make([]*string, 0)
+	debugStrSlice = tDebugStrSlice
 	// reset the position of debugHint and debugTitle
 	if resultMin < maxResultsDisplay {
 		maxResultsDisplay = resultMin
@@ -375,7 +387,7 @@ func init() {
 }
 
 func controllerWorker(dtTaskChan *chan string, dtResultChan *chan singleVerifyResult, dltTaskChan *chan string,
-	dltResultChan *chan singleVerifyResult, wg *sync.WaitGroup) {
+	dltResultChan *chan singleVerifyResult, wg *sync.WaitGroup, dtOnGoingChan *chan int, dltOnGoingChan *chan int) {
 	defer func() {
 		// send terminate sigal to
 		terminateComfirm = true
@@ -410,10 +422,10 @@ LOOP:
 				}
 			}
 			// update tasks statistic
-			updateTasksStat(dtTasks, dtDoneTasks,
-				dltTasks, dltDoneTasks, len(dtTaskCacher),
+			updateTasksStat(dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+				dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 				len(dltTaskCacher), len(verifyResultsMap))
-			// break LOOP
+			OverAllStatTimer = time.Now()
 		}
 		// there are ping thread working
 		if !dltOnly {
@@ -429,19 +441,14 @@ LOOP:
 						cacheResultMap[tVerifyResult.ip] = tVerifyResult
 						dltTaskCacher = append(dltTaskCacher, tVerifyResult.ip)
 						// add debug output
-						updateDebug(tVerifyResult, dtTasks, dtDoneTasks,
-							dltTasks, dltDoneTasks, len(dtTaskCacher),
+						updateDebug(tVerifyResult, dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+							dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 							len(dltTaskCacher), len(verifyResultsMap))
 						// reset timer
 						OverAllStatTimer = time.Now()
 					} else { // Download test disabled
-						// print
-						// myLogger.PrintSingleStat(loggerContent{logLevelInfo, []VerifyResults{tVerifyResult}},
-						//     overAllStat{dtTasks, dtDoneTasks,
-						//         dltTasks, dltDoneasks, len(dtTaskCacher),
-						//         len(dltTaskCacher), len(verifyResultsMap)})
-						updateResult(tVerifyResult, dtTasks, dtDoneTasks,
-							dltTasks, dltDoneTasks, len(dtTaskCacher),
+						updateResult(tVerifyResult, dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+							dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 							len(dltTaskCacher), len(verifyResultsMap))
 						// reset timer
 						OverAllStatTimer = time.Now()
@@ -452,12 +459,8 @@ LOOP:
 						}
 					}
 				} else if debug { // debug print
-					// myLogger.PrintSingleStat(loggerContent{logLevelDebug, []VerifyResults{tVerifyResult}},
-					//     overAllStat{dtTasks, dtDoneTasks,
-					//         dltTasks, dltDoneasks, len(dtTaskCacher),
-					//         len(dltTaskCacher), len(verifyResultsMap)})
-					updateDebug(tVerifyResult, dtTasks, dtDoneTasks,
-						dltTasks, dltDoneTasks, len(dtTaskCacher),
+					updateDebug(tVerifyResult, dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+						dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 					// reset timer
 					OverAllStatTimer = time.Now()
@@ -491,14 +494,14 @@ LOOP:
 						}
 					}
 					// update stat
-					updateTasksStat(dtTasks, dtDoneTasks,
-						dltTasks, dltDoneTasks, len(dtTaskCacher),
+					updateTasksStat(dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+						dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
+					OverAllStatTimer = time.Now()
 				}
 			}
 			// we did all ping works in dt-only mode
-			if dtOnly && (cancelSigFromTerm || haveEnoughResult || noMoreSources) {
-				// if dtOnly && (cancelSigFromTerm || haveEnoughResult || noMoreSources) && dtTasks <= dtDoneTasks {
+			if dtOnly && (cancelSigFromTerm || haveEnoughResult || noMoreSources) && len(*dtOnGoingChan) == 0 && dtTasks <= dtDoneTasks {
 				break LOOP
 			}
 		}
@@ -543,21 +546,13 @@ LOOP:
 					if !testAll && len(verifyResultsMap) >= resultMin {
 						haveEnoughResult = true
 					}
-					// myLogger.PrintSingleStat(loggerContent{logLevelInfo, []VerifyResults{v}},
-					//     overAllStat{dtTasks, dtDoneTasks,
-					//         dltTasks, dltDoneasks, len(dtTaskCacher),
-					//         len(dltTaskCacher), len(verifyResultsMap)})
-					updateResult(v, dtTasks, dtDoneTasks,
-						dltTasks, dltDoneTasks, len(dtTaskCacher),
+					updateResult(tVerifyResult, dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+						dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 					OverAllStatTimer = time.Now()
 				} else if debug { // debug print
-					// myLogger.PrintSingleStat(loggerContent{logLevelDebug, []VerifyResults{v}},
-					//     overAllStat{dtTasks, dtDoneTasks,
-					//         dltTasks, dltDoneasks, len(dtTaskCacher),
-					//         len(dltTaskCacher), len(verifyResultsMap)})
-					updateDebug(v, dtTasks, dtDoneTasks,
-						dltTasks, dltDoneTasks, len(dtTaskCacher),
+					updateDebug(tVerifyResult, dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+						dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 					OverAllStatTimer = time.Now()
 				}
@@ -588,51 +583,37 @@ LOOP:
 						}
 					}
 					// update stat
-					updateTasksStat(dtTasks, dtDoneTasks,
-						dltTasks, dltDoneTasks, len(dtTaskCacher),
+					updateTasksStat(dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+						dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
+					OverAllStatTimer = time.Now()
 				}
 			}
-			// if dltTasks <= dltDoneasks {
-			// 	if dltOnly { // we done in dlt-only mode
-			// 		if cancelSigFromTerm || haveEnoughResult || noMoreSources {
-			// 			break LOOP
-			// 		}
-			// 	} else if dtTasks <= dtDoneTasks { // we done in ping and download co-working mode
-			// 		if cancelSigFromTerm || haveEnoughResult || (noMoreSources && len(dltTaskCacher) == 0) {
-			// 			break LOOP
-			// 		}
-			// 	}
-			// }
 			if dltOnly { // we done in dlt-only mode
-				if cancelSigFromTerm || haveEnoughResult || noMoreSources {
+				if len(*dltOnGoingChan) == 0 && (cancelSigFromTerm || haveEnoughResult || noMoreSources) {
 					break LOOP
 				}
-			} else if cancelSigFromTerm || haveEnoughResult {
-				// we done in ping and download co-working mode while we have enough results or cancel from terminal
-				break LOOP
-			} else if noMoreSources && dtDoneTasks >= dtTasks && len(dtTaskCacher) == 0 && dltDoneTasks >= dltTasks && len(dltTaskCacher) == 0 {
-				// we done in ping and download co-working mode while we have no subject to test
-				break LOOP
+			} else if len(*dtOnGoingChan) == 0 && len(*dltOnGoingChan) == 0 {
+				if cancelSigFromTerm || haveEnoughResult {
+					// we done in ping and download co-working mode while we have enough results or cancel from terminal
+					break LOOP
+				} else if noMoreSources && dtDoneTasks >= dtTasks && len(dtTaskCacher) == 0 && dltDoneTasks >= dltTasks && len(dltTaskCacher) == 0 {
+					// we done in ping and download co-working mode while we have no subject to test
+					break LOOP
+				}
 			}
 		}
 		// Print overall stat during waiting time and reset OverAllStatTimer
-		if time.Since(OverAllStatTimer) > time.Duration(statisticTimer)*time.Second {
-			// myLogger.PrintOverAllStat(overAllStat{dtTasks, dtDoneTasks,
-			//     dltTasks, dltDoneasks, len(dtTaskCacher),
-			//     len(dltTaskCacher), len(verifyResultsMap)})
-			updateTasksStat(dtTasks, dtDoneTasks,
-				dltTasks, dltDoneTasks, len(dtTaskCacher),
+		if time.Since(OverAllStatTimer) > time.Duration(statisticInterval)*time.Millisecond {
+			updateTasksStat(dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+				dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 				len(dltTaskCacher), len(verifyResultsMap))
 			OverAllStatTimer = time.Now()
 		}
 		time.Sleep(time.Duration(controlerInterval) * time.Millisecond)
 	}
-	// myLogger.PrintOverAllStat(overAllStat{dtTasks, dtDoneTasks,
-	//     dltTasks, dltDoneasks, len(dtTaskCacher),
-	//     len(dltTaskCacher), len(verifyResultsMap)})
-	updateTasksStat(dtTasks, dtDoneTasks,
-		dltTasks, dltDoneTasks, len(dtTaskCacher),
+	updateTasksStat(dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+		dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 		len(dltTaskCacher), len(verifyResultsMap))
 	// put stop signal to all delay test workers and download worker
 	if !dltOnly {
@@ -679,11 +660,9 @@ LOOP:
 			initScreen()
 		}
 	}
-	printQuitWaiting()
-	time.Sleep(5 * time.Second)
+	QuitingCountDown(quitWaitingTime)
 	(*termAll).Fini()
 	(*wg).Done()
-	fmt.Println(titleWaitQuit)
 }
 
 func confirmQuit() bool {
@@ -708,23 +687,25 @@ func main() {
 	var wg sync.WaitGroup
 	var dtTaskChan = make(chan string, dtWorkerThread*2)
 	var dtResultChan = make(chan singleVerifyResult, dtWorkerThread*2)
+	var dtOnGoingChan = make(chan int, dtWorkerThread)
 	var dltTaskChan = make(chan string, dltWorkerThread*2)
 	var dltResultChan = make(chan singleVerifyResult, dltWorkerThread*2)
+	var dltOnGoingChan = make(chan int, dltWorkerThread)
 
 	go termControl(&wg)
 	wg.Add(1)
 	// start controller worker
-	go controllerWorker(&dtTaskChan, &dtResultChan, &dltTaskChan, &dltResultChan, &wg)
+	go controllerWorker(&dtTaskChan, &dtResultChan, &dltTaskChan, &dltResultChan, &wg, &dtOnGoingChan, &dltOnGoingChan)
 
 	wg.Add(1)
 	// start ping worker
 	if !dltOnly {
 		for i := 0; i < dtWorkerThread; i++ {
 			if dtHttps {
-				go downloadWorker(dtTaskChan, dtResultChan, &wg, urlStr, port,
+				go downloadWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, urlStr, port,
 					dtTimeoutDuration, downloadTimeMaxDuration, dtCount, interval, true)
 			} else {
-				go sslDTWorker(dtTaskChan, dtResultChan, &wg, hostName, port,
+				go sslDTWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, hostName, port,
 					dtTimeoutDuration, dtCount, interval)
 			}
 			wg.Add(1)
@@ -734,7 +715,7 @@ func main() {
 	// start download worker if don't do ping only
 	if !dtOnly {
 		for i := 0; i < dltWorkerThread; i++ {
-			go downloadWorker(dltTaskChan, dltResultChan, &wg, urlStr, port,
+			go downloadWorker(dltTaskChan, dltResultChan, dltOnGoingChan, &wg, urlStr, port,
 				HttpRspTimeoutDuration, downloadTimeMaxDuration, dltCount, interval, false)
 			wg.Add(1)
 		}

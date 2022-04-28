@@ -25,7 +25,7 @@ const (
 	logLevelWarning = 7
 	logLevelError   = 3
 	logLevelFatal   = 1
-	myIndent        = "  "
+	myIndent        = " "
 )
 
 var (
@@ -191,8 +191,10 @@ func (a resultSpeedSorter) Less(i, j int) bool { return a[i].dls < a[j].dls }
 type overAllStat struct {
 	allDTTasks    int
 	dtTasksDoned  int
+	dtOnGoing     int
 	allDLTTasks   int
 	dltTasksDoned int
+	dltOnGoing    int
 	dtCached      int
 	dltCached     int
 	verifyResults int
@@ -1340,6 +1342,14 @@ func printQuitWaiting() {
 	(*termAll).Show()
 }
 
+func QuitingCountDown(sec int) {
+	for i := sec; i > 0; i-- {
+		printOneRow(0, titleCancelRow, titleStyleCancel, fmt.Sprintf("Quit in %d second...", i))
+		(*termAll).Show()
+		time.Sleep(time.Second)
+	}
+}
+
 func printExitHint() {
 	printOneRow(0, titleCancelRow, titleStyleCancel, titleExitHint)
 	(*termAll).Show()
@@ -1355,39 +1365,47 @@ func printTitleResultWithoutSync() {
 }
 
 func printTasksStatWithoutSync() {
-	printOneRow(0, titleTasksStatRow, contentStyle, *titleTasksStat)
+	if !dltOnly {
+		printOneRow(0, titleTasksStatRow, contentStyle, *titleTasksStat[0])
+		if !dtOnly {
+			// start from row 23
+			printOneRow(resultStatIndent, titleTasksStatRow+1, contentStyle, *titleTasksStat[1])
+		}
+	} else {
+		printOneRow(0, titleTasksStatRow, contentStyle, *titleTasksStat[1])
+	}
 }
 
 func printResultListWithoutSync() {
 	defer func() { (*termAll).Show() }()
-	if *resultStrSlice == nil || len(*resultStrSlice) == 0 {
+	if len(resultStrSlice) == 0 {
 		return
 	}
-	t_len := len(*resultStrSlice)
+	t_len := len(resultStrSlice)
 	t_lowest := 0
 	if t_len > maxResultsDisplay {
 		t_lowest = t_len - maxResultsDisplay
 	}
 	for i := t_len - 1; i >= t_lowest; i-- {
-		printOneRow(0, titleResultRow+t_len-i, contentStyle, (*resultStrSlice)[i])
+		printOneRow(0, titleResultRow+t_len-i, contentStyle, *resultStrSlice[i])
 	}
 }
 
 func printDebugListWithoutSync() {
 	defer func() { (*termAll).Show() }()
 	if debug {
-		if *debugStrSlice == nil || len(*debugStrSlice) == 0 {
+		if len(debugStrSlice) == 0 {
 			return
 		}
 		printOneRow(0, titleDebugHintRow, contentStyle, titleDebugHint)
 		printOneRow(0, titleDebugRow, contentStyle, *titleDebug)
-		t_len := len(*debugStrSlice)
+		t_len := len(debugStrSlice)
 		t_low := 0
 		if t_len > maxDebugDisplay {
 			t_low = t_len - maxDebugDisplay
 		}
 		for i := t_len - 1; i >= t_low; i-- {
-			printOneRow(0, titleDebugRow+t_len-i, contentStyle, (*debugStrSlice)[i])
+			printOneRow(0, titleDebugRow+t_len-i, contentStyle, *debugStrSlice[i])
 		}
 	}
 }
@@ -1402,14 +1420,12 @@ func updateScreen() {
 func initTitleStr() {
 	var tIntroMSG string
 	if dtOnly {
-		tIntroMSG = fmt.Sprintf("Start Delay(%v) Test -- DelayMax:%v DTPassedRateMin:%v ResultMin:%v DTWorker:%v\n",
-			dtSource, delayMax, dtPassedRateMin, resultMin, dtWorkerThread)
+		tIntroMSG = fmt.Sprintf("Start Delay(%v) Test -- Result Expected:%v DelayMax:%v\n", dtSource, resultMin, delayMax)
 	} else if dltOnly {
-		tIntroMSG = fmt.Sprintf("Start Speed Test -- SpeedMin(kB/s):%v ResultMin:%v DLTWorker:%v\n",
-			speedMinimal, resultMin, dltWorkerThread)
+		tIntroMSG = fmt.Sprintf("Start Speed Test -- Result Expected:%v SpeedMin(kB/s):%v \n", resultMin, speedMinimal)
 	} else {
-		tIntroMSG = fmt.Sprintf("Start Delay(%v) and Speed Test -- SpeedMin(kB/s):%v DelayMax:%v DTPassedRateMin:%v Result:%v DTWorker:%v DLTWorker:%v\n",
-			dtSource, speedMinimal, delayMax, dtPassedRateMin, resultMin, dtWorkerThread, dltWorkerThread)
+		tIntroMSG = fmt.Sprintf("Start Delay(%v) and Speed Test -- Result Expected:%v SpeedMin(kB/s):%v DelayMax:%v \n",
+			dtSource, resultMin, speedMinimal, delayMax)
 	}
 	titlePre = &tIntroMSG
 	tIntroMSG2 := fmt.Sprintf("%v - %v\n", runTIME, version)
@@ -1427,47 +1443,67 @@ func initTitleStr() {
 	tIntroMSG3 += fmt.Sprintf("%-12v%s", "DelayAvg(ms)", myIndent)
 	tIntroMSG3 += fmt.Sprintf("%-16v%s", "Stability(DTPR, %)", myIndent)
 	titleResult = &tIntroMSG3
-	updateTasksStatStr(0, 0, 0, 0, 0, 0, 0)
+	updateTasksStatStr(0, 0, 0, 0, 0, 0, 0, 0, 0)
 	if debug {
 		titleDebug = &tIntroMSG3
 	}
 }
 
-func updateTasksStatStr(allDTTasks, dtTasksDone, allDLTTasks, dltTasksDone, dtCached, dltCached, verifyResults int) {
-	updateTasksStaticData(allDTTasks, dtTasksDone, allDLTTasks, dltTasksDone, dtCached, dltCached, verifyResults)
+func updateTasksStatStr(allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults int) {
+	updateTasksStaticData(allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults)
 	var t = strings.Builder{}
+	var t1 = strings.Builder{}
 	t.WriteString(getTimeNowStr())
 	t.WriteString(myIndent)
-	t.WriteString(fmt.Sprintf("Results:%-5d%s", taskStatistic.verifyResults, myIndent))
+	t.WriteString(fmt.Sprintf("Results:%-*d%s", resultNumLen, taskStatistic.verifyResults, myIndent))
+	t_dtCachedS := taskStatistic.dtCached + taskStatistic.allDTTasks - taskStatistic.dtTasksDoned
+	t_dltCachedS := taskStatistic.dltCached + taskStatistic.allDLTTasks - taskStatistic.dltTasksDoned
+	t_dtCachedSNumLen := len(strconv.Itoa(t_dtCachedS))
+	t_dltCachedSNumLen := len(strconv.Itoa(t_dltCachedS))
+	t_dtDoneNumLen := len(strconv.Itoa(taskStatistic.dtTasksDoned))
+	t_dltDoneNumLen := len(strconv.Itoa(taskStatistic.dltTasksDoned))
+	t_indent := MaxInt(dtThreadNumLen, dltThreadNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
 	if !dltOnly {
-		t.WriteString(fmt.Sprintf("IPsCached(delay):%-5d%s", taskStatistic.dtCached+taskStatistic.allDTTasks-taskStatistic.dtTasksDoned, myIndent))
-		t.WriteString(fmt.Sprintf("IPsTested(delay):%-5d%s", taskStatistic.dtTasksDoned, myIndent))
+		t.WriteString(fmt.Sprintf("D T - IPsCached:%-*d%s", t_indent, t_dtCachedS, myIndent))
+		t.WriteString(fmt.Sprintf("IPsTested:%-*d%s", t_indent, taskStatistic.dtTasksDoned, myIndent))
+		t.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, taskStatistic.dtOnGoing, myIndent))
+		ts := t.String()
+		titleTasksStat[0] = &ts
+		if !dtOnly {
+			t1.WriteString(fmt.Sprintf("DLT - IPsCached:%-*d%s", t_indent, t_dltCachedS, myIndent))
+			t1.WriteString(fmt.Sprintf("IPsTested:%-*d%s", t_indent, taskStatistic.dltTasksDoned, myIndent))
+			t1.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, taskStatistic.dltOnGoing, myIndent))
+			ts1 := t1.String()
+			titleTasksStat[1] = &ts1
+		}
+	} else {
+		t.WriteString(fmt.Sprintf("DLT - IPsCached:%-*d%s", t_indent, t_dltCachedS, myIndent))
+		t.WriteString(fmt.Sprintf("IPsTested:%-*d%s", t_indent, taskStatistic.dltTasksDoned, myIndent))
+		t.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, taskStatistic.dltOnGoing, myIndent))
+		ts := t.String()
+		titleTasksStat[0] = &ts
 	}
-	if !dtOnly {
-		t.WriteString(fmt.Sprintf("IPsCached(speed):%-5d%s", taskStatistic.dltCached+taskStatistic.allDLTTasks-taskStatistic.dltTasksDoned, myIndent))
-		t.WriteString(fmt.Sprintf("IPsTested(speed):%-5d%s", taskStatistic.dltTasksDoned, myIndent))
-	}
-	ts := t.String()
-	titleTasksStat = &ts
 }
 
 //allPingTasks, pingTestedTasks,
 //allDownloadTasks, downloadTestedTasks, len(pingCaches),
 //len(downloadCaches), len(verifyResultsMap)
-func updateTasksStaticData(allDTTasks, dtTasksDone, allDLTTasks, dltTasksDone, dtCached, dltCached, verifyResults int) {
+func updateTasksStaticData(allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults int) {
 	taskStatistic.allDTTasks = allDTTasks
 	taskStatistic.dtTasksDoned = dtTasksDone
+	taskStatistic.dtOnGoing = dtOnGoing
 	taskStatistic.allDLTTasks = allDLTTasks
 	taskStatistic.dltTasksDoned = dltTasksDone
+	taskStatistic.dltOnGoing = dltOnGoing
 	taskStatistic.dtCached = dtCached
 	taskStatistic.dltCached = dltCached
 	taskStatistic.verifyResults = verifyResults
 }
 
 func updateResultStrList(v VerifyResults) {
-	t := *resultStrSlice
-	if len(*resultStrSlice) > maxResultsDisplay {
-		t = (*resultStrSlice)[(len(*resultStrSlice) - maxResultsDisplay):]
+	t := resultStrSlice
+	if len(resultStrSlice) > maxResultsDisplay {
+		t = (resultStrSlice)[(len(resultStrSlice) - maxResultsDisplay):]
 	}
 	sb := strings.Builder{}
 	if !haveIPv6() {
@@ -1480,17 +1516,18 @@ func updateResultStrList(v VerifyResults) {
 	}
 	sb.WriteString(fmt.Sprintf("%-12.0f%s", v.da, myIndent))
 	sb.WriteString(fmt.Sprintf("%-16.2f%s", v.dtpr*100, myIndent))
-	t = append(t, sb.String())
-	resultStrSlice = &t
+	ts := sb.String()
+	t = append(t, &ts)
+	resultStrSlice = t
 }
 
 func updateDebugStrList(v VerifyResults) {
 	if !debug {
 		return
 	}
-	t := *debugStrSlice
-	if len(*debugStrSlice) > maxDebugDisplay {
-		t = (*debugStrSlice)[(len(*debugStrSlice) - maxDebugDisplay):]
+	t := debugStrSlice
+	if len(debugStrSlice) > maxDebugDisplay {
+		t = debugStrSlice[(len(debugStrSlice) - maxDebugDisplay):]
 	}
 	sb := strings.Builder{}
 	if !haveIPv6() {
@@ -1503,27 +1540,28 @@ func updateDebugStrList(v VerifyResults) {
 	}
 	sb.WriteString(fmt.Sprintf("%-12.0f%s", v.da, myIndent))
 	sb.WriteString(fmt.Sprintf("%-16.2f%s", v.dtpr*100, myIndent))
-	t = append(t, sb.String())
-	debugStrSlice = &t
+	ts := sb.String()
+	t = append(t, &ts)
+	debugStrSlice = t
 }
 
-func updateResult(v VerifyResults, allDTTasks, dtTasksDone, allDLTTasks, dltTasksDone, dtCached, dltCached, verifyResults int) {
+func updateResult(v VerifyResults, allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults int) {
 	defer (*termAll).Show()
-	updateTasksStat(allDTTasks, dtTasksDone, allDLTTasks, dltTasksDone, dtCached, dltCached, verifyResults)
+	updateTasksStat(allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults)
 	updateResultStrList(v)
 	printResultListWithoutSync()
 }
 
-func updateDebug(v VerifyResults, allDTTasks, dtTasksDone, allDLTTasks, dltTasksDone, dtCached, dltCached, verifyResults int) {
+func updateDebug(v VerifyResults, allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults int) {
 	defer (*termAll).Show()
-	updateTasksStat(allDTTasks, dtTasksDone, allDLTTasks, dltTasksDone, dtCached, dltCached, verifyResults)
+	updateTasksStat(allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults)
 	updateDebugStrList(v)
 	printDebugListWithoutSync()
 }
 
-func updateTasksStat(allDTTasks, dtTasksDone, allDLTTasks, dltTasksDone, dtCached, dltCached, verifyResults int) {
+func updateTasksStat(allDTTasks, dtTasksDone, dtTaskOnGoing, allDLTTasks, dltTasksDone, dltTaskOnGoing, dtCached, dltCached, verifyResults int) {
 	defer (*termAll).Show()
-	updateTasksStatStr(allDTTasks, dtTasksDone, allDLTTasks, dltTasksDone, dtCached, dltCached, verifyResults)
+	updateTasksStatStr(allDTTasks, dtTasksDone, dtTaskOnGoing, allDLTTasks, dltTasksDone, dltTaskOnGoing, dtCached, dltCached, verifyResults)
 	printTasksStatWithoutSync()
 }
 
@@ -1534,4 +1572,22 @@ func haveIPv6() bool {
 		}
 	}
 	return false
+}
+
+func MaxInt(num ...int) (t int) {
+	for _, i := range num {
+		if i > t {
+			t = i
+		}
+	}
+	return
+}
+
+func MinInt(num ...int) (t int) {
+	for _, i := range num {
+		if i < t {
+			t = i
+		}
+	}
+	return
 }

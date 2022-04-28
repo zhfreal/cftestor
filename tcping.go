@@ -174,7 +174,7 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 	return allResult
 }
 
-func downloadWorker(chanIn chan string, chanOut chan singleVerifyResult, wg *sync.WaitGroup,
+func downloadWorker(chanIn chan string, chanOut chan singleVerifyResult, chanOnGoing chan int, wg *sync.WaitGroup,
 	tUrl string, tcpport int, HttpRspTimeoutDuration time.Duration, dltMaxDuration time.Duration,
 	dltCount int, interval int, dtOnly bool) {
 	defer (*wg).Done()
@@ -189,10 +189,15 @@ LOOP:
 			break LOOP
 		}
 		Ip := net.ParseIP(ip)
+		// push an element to chanOnGoing, means that there is a test ongoing.
+		chanOnGoing <- workOnGoing
 		tResultSlice := downloadHandler(Ip, tcpport, tUrl, HttpRspTimeoutDuration, dltMaxDuration, dltCount, interval, dtOnly)
 		tVerifyResult := singleVerifyResult{time.Now(), Ip, tResultSlice}
 		chanOut <- tVerifyResult
-		time.Sleep(time.Duration(interval) * time.Millisecond)
+		// pull out an element from chanOnGoing, means that a test work is finished.
+		<-chanOnGoing
+		// nanrrowed the gap between two different task by controlerInterval
+		time.Sleep(time.Duration(controlerInterval) * time.Millisecond)
 	}
 }
 
@@ -234,7 +239,7 @@ func sslDTHandler(ip net.IP, hostName string, tcpPort int, dtTimeoutDuration tim
 	return allResult
 }
 
-func sslDTWorker(chanIn chan string, chanOut chan singleVerifyResult, wg *sync.WaitGroup,
+func sslDTWorker(chanIn chan string, chanOut chan singleVerifyResult, chanOnGoing chan int, wg *sync.WaitGroup,
 	hostName string, tcpport int, dtTimeoutDuration time.Duration, totalRound int, interval int) {
 	defer (*wg).Done()
 LOOP:
@@ -247,9 +252,14 @@ LOOP:
 			break LOOP
 		}
 		Ip := net.ParseIP(ip)
+		// push an element to chanOnGoing, means that there is a test ongoing.
+		chanOnGoing <- workOnGoing
 		tResultSlice := sslDTHandler(Ip, hostName, tcpport, dtTimeoutDuration, totalRound, interval)
 		tVerifyResult := singleVerifyResult{time.Now(), Ip, tResultSlice}
 		chanOut <- tVerifyResult
-		time.Sleep(time.Duration(interval) * time.Millisecond)
+		// pull out an element from chanOnGoing, means that a test work is finished.
+		<-chanOnGoing
+		// nanrrowed the gap between two different task by controlerInterval
+		time.Sleep(time.Duration(controlerInterval) * time.Millisecond)
 	}
 }
