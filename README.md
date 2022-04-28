@@ -14,12 +14,11 @@
 ### 下载、编译
 
 请在[release](https://github.com/XIU2/CloudflareSpeedTest/releases)
-中下载最新的预编译文件或自行编译。需要注意的是，由于使用[go-sqlite3](https://github.com/mattn/go-sqlite3)
-编译时需要打开CGO，交叉编译时请使用CC和CXX变量传入gcc和g++工具链。
+中下载最新的预编译文件或自行编译。
 ```bash
 $ git clone https://github.com/zhfreal/cftestor.git
 $ cd cftestor
-$ CGO_ENABLED=1 go build .
+$ go build .
 $ ./cftestor -h
 
     cftestor v1.4.6
