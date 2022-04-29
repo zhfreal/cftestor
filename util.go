@@ -1456,8 +1456,8 @@ func updateTasksStatStr(allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTask
 	t.WriteString(getTimeNowStr())
 	t.WriteString(myIndent)
 	t.WriteString(fmt.Sprintf("Results:%-*d%s", resultNumLen, taskStatistic.verifyResults, myIndent))
-	t_dtCachedS := taskStatistic.dtCached + taskStatistic.allDTTasks - taskStatistic.dtTasksDoned
-	t_dltCachedS := taskStatistic.dltCached + taskStatistic.allDLTTasks - taskStatistic.dltTasksDoned
+	t_dtCachedS := taskStatistic.dtCached + taskStatistic.allDTTasks - taskStatistic.dtTasksDoned - dtOnGoing
+	t_dltCachedS := taskStatistic.dltCached + taskStatistic.allDLTTasks - taskStatistic.dltTasksDoned - dltOnGoing
 	t_dtCachedSNumLen := len(strconv.Itoa(t_dtCachedS))
 	t_dltCachedSNumLen := len(strconv.Itoa(t_dltCachedS))
 	t_dtDoneNumLen := len(strconv.Itoa(taskStatistic.dtTasksDoned))
