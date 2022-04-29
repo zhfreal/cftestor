@@ -539,19 +539,19 @@ LOOP:
 					}
 				}
 				// check when delay test duration and download speed
-				if tVerifyResult.dls >= speedMinimal && tVerifyResult.dlds > downloadSizeMin {
-					// put tVerifyResult into verifyResultsMap
-					verifyResultsMap[tVerifyResult.ip] = v
+				if v.dls >= speedMinimal && v.dlds > downloadSizeMin {
+					// put v into verifyResultsMap
+					verifyResultsMap[v.ip] = v
 					// we have expected result
 					if !testAll && len(verifyResultsMap) >= resultMin {
 						haveEnoughResult = true
 					}
-					updateResult(tVerifyResult, dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+					updateResult(v, dtTasks, dtDoneTasks, len(*dtOnGoingChan),
 						dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 					OverAllStatTimer = time.Now()
 				} else if debug { // debug print
-					updateDebug(tVerifyResult, dtTasks, dtDoneTasks, len(*dtOnGoingChan),
+					updateDebug(v, dtTasks, dtDoneTasks, len(*dtOnGoingChan),
 						dltTasks, dltDoneTasks, len(*dltOnGoingChan), len(dtTaskCacher),
 						len(dltTaskCacher), len(verifyResultsMap))
 					OverAllStatTimer = time.Now()
