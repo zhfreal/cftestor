@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/csv"
 	"fmt"
@@ -20,40 +21,100 @@ import (
 )
 
 const (
-	logLevelDebug   = 31
-	logLevelInfo    = 15
-	logLevelWarning = 7
-	logLevelError   = 3
-	logLevelFatal   = 1
+	logLevelDebug   = 1<<5 - 1
+	logLevelInfo    = 1<<4 - 1
+	logLevelWarning = 1<<3 - 1
+	logLevelError   = 1<<2 - 1
+	logLevelFatal   = 1<<1 - 1
 	myIndent        = " "
 )
 
 var (
 	CFIPV4 = []string{
-		"1.1.1.0/24",
-		"1.0.0.0/24",
-		"173.245.48.0/20",
-		"103.21.244.0/22",
-		"103.22.200.0/22",
-		"103.31.4.0/22",
+		"103.21.244.0/24",
+		"104.16.0.0/16",
+		"104.17.0.0/16",
+		"104.18.0.0/16",
+		"104.19.0.0/16",
+		"104.20.0.0/16",
+		"104.21.0.0/17",
+		"104.21.192.0/19",
+		"104.21.224.0/20",
+		"104.22.0.0/18",
+		"104.22.64.0/20",
+		"104.23.128.0/20",
+		"104.23.96.0/19",
+		"104.24.0.0/18",
+		"104.24.128.0/17",
+		"104.24.64.0/19",
+		"104.25.0.0/16",
+		"104.26.0.0/20",
+		"104.27.0.0/17",
+		"104.27.192.0/20",
+		"108.162.220.0/24",
+		"141.101.103.0/24",
+		"141.101.104.0/23",
+		"141.101.106.0/24",
+		"141.101.120.0/22",
+		"141.101.90.0/24",
+		"162.158.253.0/24",
+		"162.159.128.0/21",
+		"162.159.136.0/23",
+		"162.159.138.0/24",
+		"162.159.152.0/23",
+		"162.159.160.0/24",
+		"162.159.192.0/22",
+		"162.159.196.0/24",
+		"162.159.200.0/24",
+		"162.159.204.0/24",
+		"162.159.240.0/20",
+		"162.159.36.0/24",
+		"162.159.46.0/24",
+		"172.64.128.0/19",
+		"172.64.160.0/20",
+		"172.64.192.0/20",
+		"172.64.228.0/20",
+		"172.64.68.0/24",
+		"172.64.69.0/24",
+		"172.64.80.0/20",
+		"172.64.96.0/20",
+		"172.65.0.0/18",
+		"172.65.128.0/20",
+		"172.65.160.0/19",
+		"172.65.192.0/18",
+		"172.65.96.0/19",
+		"172.66.40.0/21",
+		"172.67.0.0/16",
+		"173.245.49.0/24",
+		"188.114.96.0/22",
+		"190.93.244.0/22",
+		"198.41.192.0/20",
+		"198.41.208.0/23",
+		"198.41.211.0/24",
+		"198.41.212.0/24",
+		"198.41.214.0/23",
+		"198.41.216.0/21",
+	}
+	CFIPV4FULL = []string{
+		"172.64.0.0/13",
+		"104.16.0.0/13",
+		"104.24.0.0/14",
+		"162.158.0.0/15",
+		"198.41.128.0/17",
 		"141.101.64.0/18",
 		"108.162.192.0/18",
+		"173.245.48.0/20",
 		"190.93.240.0/20",
 		"188.114.96.0/20",
 		"197.234.240.0/22",
-		"198.41.128.0/17",
-		"162.158.0.0/15",
-		"104.16.0.0/13",
-		"104.24.0.0/14",
-		"172.64.0.0/13",
 		"131.0.72.0/22",
+		"103.21.244.0/22",
+		"103.22.200.0/22",
+		"103.31.4.0/22",
+		"1.0.0.0/24",
+		"1.1.1.0/24",
 	}
 	CFIPV6 = []string{
-		"2606:4700::6810:0/111",
-		"2606:4700::6812:0/111",
-		"2606:4700:10::6814:0/112",
-		"2606:4700:10::6816:0/112",
-		"2606:4700:10::6817:0/112",
 		"2606:4700:f1::/48",
 		"2606:4700:f4::/48",
 		"2606:4700:130::/44",
@@ -90,6 +151,11 @@ var (
 		"2a06:98c1:3121::/48",
 		"2a06:98c1:3122::/48",
 		"2a06:98c1:3123::/48",
+		"2606:4700::6810:0/111",
+		"2606:4700::6812:0/111",
+		"2606:4700:10::6814:0/112",
+		"2606:4700:10::6816:0/112",
+		"2606:4700:10::6817:0/112",
 	}
 	CFIPV6FULL = []string{
 		"2400:cb00::/32",
@@ -104,17 +170,17 @@ var (
 	resultCsvHeader = []string{
 		"TestTime",
 		"IP",
-		"DLSpeed(DLS, KB/s)",
-		"DelayAvg(DA, ms)",
+		"DLSpeed(DLS,KB/s)",
+		"DelayAvg(DA,ms)",
 		"DelaySource(DS)",
-		"DTPassedRate(DTPR, %)",
+		"DTPassedRate(DTPR,%)",
 		"DTCount(DTC)",
 		"DTPassedCount(DTPC)",
-		"DelayMin(DMI, ms)",
-		"DelayMax(DMX, ms)",
+		"DelayMin(DMI,ms)",
+		"DelayMax(DMX,ms)",
 		"DLTCount(DLTC)",
 		"DLTPassedCount(DLTPC)",
-		"DLTPassedRate(DLPR, %)",
+		"DLTPassedRate(DLPR,%)",
 	}
 	cfURL = "https://speed.cloudflare.com/__down"
 )
@@ -122,7 +188,7 @@ var (
 type arrayFlags []string
 
 func (i *arrayFlags) String() string {
-	return "my string representation"
+	return fmt.Sprintf("%v", *i)
 }
 
 func (i *arrayFlags) Set(value string) error {
@@ -136,27 +202,19 @@ func (i *arrayFlags) Type() string {
 
 type LogLevel int
 
-type loggerContent struct {
-	loglevel LogLevel
-	v        []VerifyResults
-}
-
 type MyLogger struct {
-	loggerLevel     LogLevel
-	latestLogLength int
-	indent          string
-	pattern         []int
-	headerPrinted   bool
+	loggerLevel LogLevel
+	indent      string
 }
 
 type singleResult struct {
-	dTPassedCount  bool
-	dTDuration     time.Duration
-	httpRRDuration time.Duration
-	dLTWasDone     bool
-	dLTPassed      bool
-	dLTDuration    time.Duration
-	dLTDataSize    int64
+	dTPassed      bool          // Delay Test (DT) passed (yes) or not (no)
+	dTDuration    time.Duration // DT time escaped
+	httpReqRspDur time.Duration // pure time escaped between http request send and response after tls negotiation
+	dLTWasDone    bool          // Download Test (DLT) was done or not
+	dLTPassed     bool          // DLT passed or not
+	dLTDuration   time.Duration // DLT escaped times
+	dLTDataSize   int64         // DLT download data size, in byte
 }
 
 type singleVerifyResult struct {
@@ -166,20 +224,20 @@ type singleVerifyResult struct {
 }
 
 type VerifyResults struct {
-	testTime time.Time
-	ip       string
-	dtc      int
-	dtpc     int
-	dtpr     float64
-	da       float64
-	dmi      float64
-	dmx      float64
-	dltc     int
-	dltpc    int
-	dltpr    float64
-	dls      float64
-	dlds     int64
-	dltd     float64
+	testTime time.Time // test time
+	ip       *string   // ip address in string
+	dtc      int       // Delay Test(DT) tried count
+	dtpc     int       // DT passed count
+	dtpr     float64   // DT passed rate, in decimal
+	da       float64   // average delay, in ms
+	dmi      float64   // minimal delay, in ms
+	dmx      float64   // max delay, in ms
+	dltc     int       // Download Test(DLT) tried count
+	dltpc    int       // DLT passed count
+	dltpr    float64   // DLT passed rate, in decimal
+	dls      float64   // DLT average speed, in KB/s
+	dlds     int64     // DLT download data size, in byte
+	dltd     float64   // DLT escaped times, in second
 }
 
 type resultSpeedSorter []VerifyResults
@@ -189,56 +247,43 @@ func (a resultSpeedSorter) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a resultSpeedSorter) Less(i, j int) bool { return a[i].dls < a[j].dls }
 
 type overAllStat struct {
-	allDTTasks    int
-	dtTasksDoned  int
-	dtOnGoing     int
-	allDLTTasks   int
-	dltTasksDoned int
-	dltOnGoing    int
-	dtCached      int
-	dltCached     int
-	verifyResults int
+	dtTasksDone  int
+	dtOnGoing    int
+	dtCached     int
+	dltTasksDone int
+	dltOnGoing   int
+	dltCached    int
+	resultCount  int
 }
 
 func (myLogger *MyLogger) getLogLevelString(lv LogLevel) string {
-	if lv == logLevelDebug {
+	switch lv {
+	case logLevelDebug:
 		return "DEBUG"
-	}
-	if lv == logLevelInfo {
+	case logLevelInfo:
 		return "INFO"
-	}
-	if lv == logLevelWarning {
+	case logLevelWarning:
 		return "WARNING"
-	}
-	if lv == logLevelError {
+	case logLevelError:
 		return "ERROR"
-	}
-	if lv == logLevelFatal {
+	case logLevelFatal:
 		return "FATAL"
+	default:
 	}
-	if myLogger.loggerLevel == logLevelDebug {
+	switch myLogger.loggerLevel {
+	case logLevelDebug:
 		return "DEBUG"
-	}
-	if myLogger.loggerLevel == logLevelInfo {
+	case logLevelInfo:
 		return "INFO"
-	}
-	if myLogger.loggerLevel == logLevelWarning {
+	case logLevelWarning:
 		return "WARNING"
-	}
-	if myLogger.loggerLevel == logLevelError {
+	case logLevelError:
 		return "ERROR"
-	}
-	if myLogger.loggerLevel == logLevelFatal {
+	case logLevelFatal:
 		return "FATAL"
+	default:
 	}
 	return "INFO"
-}
-
-func (myLogger *MyLogger) getPattern() []int {
-	if haveIPv6() {
-		return []int{19, 5, 39, 32, 38, 27, 27, 30, 32, 32, 27, 27, 32}
-	}
-	return []int{19, 5, 20, 32, 38, 27, 27, 30, 32, 32, 27, 27, 32}
 }
 
 func getTimeNowStr() string {
@@ -252,328 +297,262 @@ func getTimeNowStrSuffix() string {
 }
 
 func (myLogger *MyLogger) newLogger(lv LogLevel) MyLogger {
-	return MyLogger{lv, 0, myIndent, []int{}, false}
+	return MyLogger{lv, myIndent}
 }
 
-func (myLogger *MyLogger) print_indent_newline(lv LogLevel, log_str string, newline bool, align bool) {
-	if myLogger.latestLogLength > 0 {
-		EraseLine(myLogger.latestLogLength)
-	}
+func (myLogger *MyLogger) log_newline(lv LogLevel, newline bool, info ...any) {
 	fmt.Print(getTimeNowStr())
 	fmt.Print(myLogger.indent)
 	t_log_type_str := myLogger.getLogLevelString(lv)
-	if align {
-		fmt.Printf("%-8v", t_log_type_str)
-	} else {
-		fmt.Print(t_log_type_str)
-	}
+	fmt.Printf("%v", t_log_type_str)
 	fmt.Print(myLogger.indent)
-	fmt.Print(log_str)
+	myLogger.print(newline, info...)
+}
+
+func (myLogger *MyLogger) log_newlinef(lv LogLevel, format string, info ...any) {
+	fmt.Print(getTimeNowStr())
+	fmt.Print(myLogger.indent)
+	t_log_type_str := myLogger.getLogLevelString(lv)
+	fmt.Printf("%v", t_log_type_str)
+	fmt.Print(myLogger.indent)
+	myLogger.printf(format, info...)
+}
+
+func (myLogger *MyLogger) print(newline bool, info ...any) {
+	if len(info) >= 1 {
+		fmt.Printf("%v", info[0])
+		if len(info) > 1 {
+			for _, t := range info[1:] {
+				fmt.Printf("%s%v", myLogger.indent, t)
+			}
+		}
+	}
 	if newline {
 		fmt.Println()
-		myLogger.latestLogLength = 0
 	}
 }
 
-func (myLogger *MyLogger) debug(debugStr string, newline bool) {
-	myLogger.print_indent_newline(logLevelDebug, debugStr, newline, false)
+func (myLogger *MyLogger) printf(format string, info ...any) {
+	fmt.Printf(format, info...)
 }
 
-func (myLogger *MyLogger) debugIndent(debugStr string, newline bool) {
-	myLogger.print_indent_newline(logLevelDebug, debugStr, newline, true)
+func (myLogger *MyLogger) debug(newline bool, info ...any) {
+	myLogger.log_newline(logLevelDebug, newline, info...)
 }
 
-func (myLogger *MyLogger) info(infoStr string, newline bool) {
-	myLogger.print_indent_newline(logLevelInfo, infoStr, newline, false)
+func (myLogger *MyLogger) debugf(format string, info ...any) {
+	myLogger.log_newlinef(logLevelDebug, format, info...)
 }
 
-func (myLogger *MyLogger) infoIndent(infoStr string, newline bool) {
-	myLogger.print_indent_newline(logLevelInfo, infoStr, newline, true)
+func (myLogger *MyLogger) info(newline bool, info ...any) {
+	myLogger.log_newline(logLevelInfo, newline, info...)
 }
 
-func (myLogger *MyLogger) warning(warnStr string, newline bool) {
-	myLogger.print_indent_newline(logLevelWarning, warnStr, newline, false)
+func (myLogger *MyLogger) infof(format string, info ...any) {
+	myLogger.log_newlinef(logLevelInfo, format, info...)
 }
 
-func (myLogger *MyLogger) warningIndent(warnStr string, newline bool) {
-	myLogger.print_indent_newline(logLevelWarning, warnStr, newline, true)
+func (myLogger *MyLogger) warning(newline bool, info ...any) {
+	myLogger.log_newline(logLevelWarning, newline, info...)
 }
 
-func (myLogger *MyLogger) error(errStr string, newline bool) {
-	myLogger.print_indent_newline(logLevelError, errStr, newline, false)
+func (myLogger *MyLogger) warningf(format string, info ...any) {
+	myLogger.log_newlinef(logLevelWarning, format, info...)
 }
 
-func (myLogger *MyLogger) errorIndent(errStr string, newline bool) {
-	myLogger.print_indent_newline(logLevelError, errStr, newline, true)
+func (myLogger *MyLogger) error(newline bool, info ...any) {
+	myLogger.log_newline(logLevelError, newline, info...)
 }
 
-func (myLogger *MyLogger) fatal(fatalStr string, newline bool) {
-	myLogger.print_indent_newline(logLevelFatal, fatalStr, newline, false)
+func (myLogger *MyLogger) errorf(format string, info ...any) {
+	myLogger.log_newlinef(logLevelError, format, info...)
+}
+
+func (myLogger *MyLogger) fatal(newline bool, info ...any) {
+	myLogger.log_newline(logLevelFatal, newline, info...)
 	os.Exit(1)
 }
 
-func (myLogger *MyLogger) fatalIndent(fatalStr string, newline bool) {
-	myLogger.print_indent_newline(logLevelFatal, fatalStr, newline, true)
-	os.Exit(1)
+func (myLogger *MyLogger) fatalf(format string, info ...any) {
+	myLogger.log_newlinef(logLevelFatal, format, info...)
 }
 
-func (myLogger *MyLogger) Debug(info ...interface{}) {
-	var s string
-	for _, t := range info {
-		s += fmt.Sprintf("%v%s", t, myIndent)
-	}
-	s = strings.TrimSpace(s)
-	myLogger.debug(s, true)
-}
-
-func (myLogger *MyLogger) DebugIndent(info ...interface{}) {
-	var s string
-	for _, t := range info {
-		s += fmt.Sprintf("%v%s", t, myIndent)
-	}
-	s = strings.TrimSpace(s)
-	myLogger.debugIndent(s, true)
-}
-
-func (myLogger *MyLogger) Info(info ...interface{}) {
-	var s string
-	for _, t := range info {
-		s += fmt.Sprintf("%v%s", t, myIndent)
-	}
-	s = strings.TrimSpace(s)
-	myLogger.info(s, true)
-}
-
-func (myLogger *MyLogger) InfoIndent(info ...interface{}) {
-	var s string
-	for _, t := range info {
-		s += fmt.Sprintf("%v%s", t, myIndent)
-	}
-	s = strings.TrimSpace(s)
-	myLogger.infoIndent(s, true)
-}
-
-func (myLogger *MyLogger) Warning(info ...interface{}) {
-	var s string
-	for _, t := range info {
-		s += fmt.Sprintf("%v%s", t, myIndent)
-	}
-	s = strings.TrimSpace(s)
-	myLogger.warning(s, true)
-}
-
-func (myLogger *MyLogger) WarningIndent(info ...interface{}) {
-	var s string
-	for _, t := range info {
-		s += fmt.Sprintf("%v%s", t, myIndent)
-	}
-	s = strings.TrimSpace(s)
-	myLogger.warningIndent(s, true)
-}
-
-func (myLogger *MyLogger) Error(info ...interface{}) {
-	var s string
-	for _, t := range info {
-		s += fmt.Sprintf("%v%s", t, myIndent)
-	}
-	s = strings.TrimSpace(s)
-	myLogger.error(s, true)
-}
-
-func (myLogger *MyLogger) ErrorIndent(info ...interface{}) {
-	var s string
-	for _, t := range info {
-		s += fmt.Sprintf("%v%s", t, myIndent)
-	}
-	s = strings.TrimSpace(s)
-	myLogger.errorIndent(s, true)
-}
-
-func (myLogger *MyLogger) Fatal(info ...interface{}) {
-	var s string
-	for _, t := range info {
-		s += fmt.Sprintf("%v%s", t, myIndent)
-	}
-	s = strings.TrimSpace(s)
-	myLogger.fatal(s, true)
-}
-
-func (myLogger *MyLogger) FatalIndent(info ...interface{}) {
-	var s string
-	for _, t := range info {
-		s += fmt.Sprintf("%v%s", t, myIndent)
-	}
-	s = strings.TrimSpace(s)
-	myLogger.fatalIndent(s, true)
-}
-
-func (myLogger *MyLogger) Println(logLevel LogLevel, info string) {
-	if logLevel == logLevelDebug {
-		myLogger.debug(info, true)
-	} else if logLevel == logLevelInfo {
-		myLogger.info(info, true)
-	} else if logLevel == logLevelWarning {
-		myLogger.warning(info, true)
-	} else if logLevel == logLevelError {
-		myLogger.error(info, true)
-	} else if logLevel == logLevelFatal {
-		myLogger.fatal(info, true)
-	} else {
-		return
+func (myLogger *MyLogger) log(loglvl LogLevel, newline bool, info ...any) {
+	switch loglvl {
+	case logLevelDebug:
+		myLogger.debug(newline, info...)
+	case logLevelInfo:
+		myLogger.info(newline, info...)
+	case logLevelWarning:
+		myLogger.warning(newline, info...)
+	case logLevelError:
+		myLogger.error(newline, info...)
+	case logLevelFatal:
+		myLogger.fatal(newline, info...)
+	default:
 	}
 }
 
-func (myLogger *MyLogger) PrintlnIndent(logLevel LogLevel, info string) {
-	if logLevel == logLevelDebug {
-		myLogger.debugIndent(info, true)
-	} else if logLevel == logLevelInfo {
-		myLogger.infoIndent(info, true)
-	} else if logLevel == logLevelWarning {
-		myLogger.warningIndent(info, true)
-	} else if logLevel == logLevelError {
-		myLogger.errorIndent(info, true)
-	} else if logLevel == logLevelFatal {
-		myLogger.fatalIndent(info, true)
-	} else {
-		return
+func (myLogger *MyLogger) logf(loglvl LogLevel, format string, info ...any) {
+	switch loglvl {
+	case logLevelDebug:
+		myLogger.debugf(format, info...)
+	case logLevelInfo:
+		myLogger.infof(format, info...)
+	case logLevelWarning:
+		myLogger.warningf(format, info...)
+	case logLevelError:
+		myLogger.errorf(format, info...)
+	case logLevelFatal:
+		myLogger.fatalf(format, info...)
+	default:
 	}
 }
 
-func (myLogger *MyLogger) Print(logLevel LogLevel, info string) {
-	if logLevel == logLevelDebug {
-		myLogger.debug(info, false)
-	} else if logLevel == logLevelInfo {
-		myLogger.info(info, false)
-	} else if logLevel == logLevelWarning {
-		myLogger.warning(info, true)
-	} else if logLevel == logLevelError {
-		myLogger.error(info, false)
-	} else if logLevel == logLevelFatal {
-		myLogger.fatal(info, false)
-	} else {
-		return
-	}
+func (myLogger *MyLogger) Debug(info ...any) {
+	myLogger.debug(false, info...)
 }
 
-func (myLogger *MyLogger) PrintIntent(logLevel LogLevel, info string) {
-	if logLevel == logLevelDebug {
-		myLogger.debugIndent(info, false)
-	} else if logLevel == logLevelInfo {
-		myLogger.infoIndent(info, false)
-	} else if logLevel == logLevelWarning {
-		myLogger.warningIndent(info, true)
-	} else if logLevel == logLevelError {
-		myLogger.errorIndent(info, false)
-	} else if logLevel == logLevelFatal {
-		myLogger.fatalIndent(info, false)
-	} else {
-		return
-	}
+func (myLogger *MyLogger) Debugf(format string, info ...any) {
+	myLogger.debugf(format, info...)
 }
 
-func (myLogger *MyLogger) PrintSingleStat(v loggerContent, oV overAllStat) {
-	myLogger.PrintStat(v, disableDownload)
-	myLogger.PrintOverAllStat(oV)
+func (myLogger *MyLogger) Debugln(info ...any) {
+	myLogger.debug(true, info...)
 }
 
-func (myLogger *MyLogger) PrintStat(v loggerContent, disableDownload bool) {
+func (myLogger *MyLogger) Info(info ...any) {
+	myLogger.info(false, info...)
+}
+
+func (myLogger *MyLogger) Infof(format string, info ...any) {
+	myLogger.infof(format, info...)
+}
+
+func (myLogger *MyLogger) Infoln(info ...any) {
+	myLogger.info(true, info...)
+}
+
+func (myLogger *MyLogger) Warning(info ...any) {
+	myLogger.warning(false, info...)
+}
+
+func (myLogger *MyLogger) Warningf(format string, info ...any) {
+	myLogger.warningf(format, info...)
+}
+
+func (myLogger *MyLogger) Warningln(info ...any) {
+	myLogger.warning(true, info...)
+}
+
+func (myLogger *MyLogger) Error(info ...any) {
+	myLogger.error(false, info...)
+}
+
+func (myLogger *MyLogger) Errorf(format string, info ...any) {
+	myLogger.errorf(format, info...)
+}
+
+func (myLogger *MyLogger) Errorln(info ...any) {
+	myLogger.error(true, info...)
+}
+
+func (myLogger *MyLogger) Fatal(info ...any) {
+	myLogger.fatal(false, info...)
+}
+
+func (myLogger *MyLogger) Fatalf(format string, info ...any) {
+	myLogger.fatalf(format, info...)
+}
+
+func (myLogger *MyLogger) Fatalln(info ...any) {
+	myLogger.fatal(true, info...)
+}
+
+func (myLogger *MyLogger) Log(loglvl LogLevel, a ...any) {
+	myLogger.log(loglvl, false, a...)
+}
+
+func (myLogger *MyLogger) Logf(loglvl LogLevel, format string, a ...any) {
+	myLogger.logf(loglvl, format, a...)
+}
+
+func (myLogger *MyLogger) Logln(loglvl LogLevel, a ...any) {
+	myLogger.log(loglvl, true, a...)
+}
+
+func (myLogger *MyLogger) Print(info ...any) {
+	myLogger.print(false, info...)
+}
+
+func (myLogger *MyLogger) Printf(format string, info ...any) {
+	myLogger.printf(format, info...)
+}
+
+func (myLogger *MyLogger) Println(info ...any) {
+	myLogger.print(true, info...)
+}
+
+func (myLogger *MyLogger) PrintSingleStat(logLvl LogLevel, v []VerifyResults, ov overAllStat) {
+	myLogger.PrintDetails(logLvl, v)
+	myLogger.PrintOverAllStat(logLvl, ov)
+}
+
+// log when debug or info
+func (myLogger *MyLogger) PrintDetails(logLvl LogLevel, v []VerifyResults) {
 	// no data for print
-	if len(v.v) == 0 {
+	if len(v) == 0 {
 		return
 	}
-	// check log level
-	if (myLogger.loggerLevel & v.loglevel) != v.loglevel {
+
+	// print only when logLvl is permitted in myLogger
+	if myLogger.loggerLevel&logLvl != logLvl {
 		return
 	}
-	// append enough pattern
-	if len(myLogger.pattern) == 0 {
-		myLogger.pattern = myLogger.getPattern()
-	}
-	// fix space
+	// fix indent
 	if len(myLogger.indent) == 0 {
 		myLogger.indent = myIndent
 	}
-	if myLogger.latestLogLength > 0 {
-		EraseLine(myLogger.latestLogLength)
-	}
-	lc := v.v
-	var ipv6 = false
+	lc := v
 	for i := 0; i < len(lc); i++ {
-		tIP := net.ParseIP(lc[i].ip)
-		if tIP.To4() == nil {
-			ipv6 = true
-			break
+		myLogger.Logf(logLvl, "IP:%v%s", *lc[i].ip, myLogger.indent)
+		if !dtOnly {
+			myLogger.Printf("Speed(KB/s):%.2f%s", lc[i].dls, myLogger.indent)
+		}
+		myLogger.Printf("Delay(ms):%.0f", lc[i].da)
+		if !dltOnly {
+			myLogger.Printf("%sStab.(%%):%.2f", myLogger.indent, lc[i].dtpr*100)
 		}
 	}
-	if !myLogger.headerPrinted {
-		if !ipv6 {
-			myLogger.PrintIntent(logLevelInfo, fmt.Sprintf("%-15v%s", "IP", myLogger.indent))
-		} else {
-			myLogger.PrintIntent(logLevelInfo, fmt.Sprintf("%-39v%s", "IP", myLogger.indent))
-		}
-		if !disableDownload {
-			fmt.Printf("%-11v%s", "Speed(KB/s)", myLogger.indent)
-		}
-
-		fmt.Printf("%-12v%s", "DelayAvg(ms)", myLogger.indent)
-		fmt.Printf("%-12v%s", "Stability(%)", myLogger.indent)
-		// close line, LatestLogLength should be 0
-		fmt.Println()
-		myLogger.headerPrinted = true
-	}
-	for i := 0; i < len(lc); i++ {
-		if !ipv6 {
-			myLogger.PrintIntent(v.loglevel, fmt.Sprintf("%-15v%s", lc[i].ip, myLogger.indent))
-		} else {
-			myLogger.PrintIntent(v.loglevel, fmt.Sprintf("%-39v%s", lc[i].ip, myLogger.indent))
-		}
-		if !disableDownload {
-			fmt.Printf("%-11.2f%s", lc[i].dls, myLogger.indent)
-		}
-		fmt.Printf("%-12.0f%s", lc[i].da, myLogger.indent)
-		fmt.Printf("%-12.2f%s", lc[i].dtpr*100, myLogger.indent)
-		// close line, LatestLogLength should be 0
-		fmt.Println()
-	}
-	myLogger.latestLogLength = 0
+	myLogger.Println()
 }
 
-func (myLogger *MyLogger) PrintOverAllStat(v overAllStat) {
-	// append enough pattern
-	if len(myLogger.pattern) == 0 {
-		myLogger.pattern = myLogger.getPattern()
+// print OverAll statistic
+func (myLogger *MyLogger) PrintOverAllStat(logLvl LogLevel, ov overAllStat) {
+	// print only when logLvl is permitted in myLogger
+	if myLogger.loggerLevel&logLvl != logLvl {
+		return
 	}
 	// fix space
 	if len(myLogger.indent) == 0 {
 		myLogger.indent = myIndent
 	}
-	var t = make([]string, 0)
-	t = append(t, getTimeNowStr()+myLogger.indent)
-	t = append(t, myLogger.getLogLevelString(logLevelInfo)+myLogger.indent)
-	t = append(t, fmt.Sprintf("Qualified:%-5d%s", v.verifyResults, myLogger.indent))
+	myLogger.Logf(logLvl, "Result:%d%s ", ov.resultCount, myLogger.indent)
 	if !dltOnly {
-		t = append(t, fmt.Sprintf("IPsCached(delay):%-5d%s", v.dtCached+v.allDTTasks-v.dtTasksDoned, myLogger.indent))
-		t = append(t, fmt.Sprintf("IPsTested(delay):%-5d%s", v.dtTasksDoned, myLogger.indent))
+		myLogger.Printf("DT - Tested:%d%s", ov.dtTasksDone, myLogger.indent)
+		myLogger.Printf("OnGoing:%d%s", ov.dtOnGoing, myLogger.indent)
+		myLogger.Printf("Cached:%d", ov.dtCached)
+		// add more intent, while it's in both DT & DLT mode
+		if !dtOnly {
+			myLogger.Print("  ")
+		}
 	}
 	if !dtOnly {
-		t = append(t, fmt.Sprintf("IPsCached(speed):%-5d%s", v.dltCached+v.allDLTTasks-v.dltTasksDoned, myLogger.indent))
-		t = append(t, fmt.Sprintf("IPsTested(speed):%-5d%s", v.dltTasksDoned, myLogger.indent))
+		myLogger.Printf("DLT - Tested:%d%s", ov.dltTasksDone, myLogger.indent)
+		myLogger.Printf("OnGoing:%d%s", ov.dltOnGoing, myLogger.indent)
+		myLogger.Printf("Cached:%d", ov.dltCached)
 	}
-	//fix the latest un-closed line
-	if myLogger.latestLogLength > 0 {
-		EraseLine(myLogger.latestLogLength)
-	}
-	// zero padding according pattern, and print
-	var thisLength = 0
-	for tI := 0; tI < len(t); tI++ {
-		// fix pattern, when pattern don't have enough space
-		tV := t[tI]
-		fmt.Print(tV)
-		thisLength += len(tV)
-	}
-	// do not close line, LatestLogLength should be the length of this line
-	//fmt.Print("\n")
-	myLogger.latestLogLength = thisLength
+	myLogger.Println()
 }
 
 func fileExists(filename string) bool {
@@ -626,7 +605,7 @@ func WriteResult(data []VerifyResults, filePath string) {
 	for _, tD := range data {
 		err = w.Write([]string{
 			tD.testTime.Format("2006-01-02 15:04:05"),
-			tD.ip,
+			*tD.ip,
 			fmt.Sprintf("%.2f", tD.dls),
 			fmt.Sprintf("%.0f", tD.da),
 			dtSource,
@@ -678,56 +657,11 @@ func initRandSeed() {
 	myRand.Seed(time.Now().UnixNano())
 }
 
-func getASNAndCity() (ASN int, city string) {
-	if defaultASN > 0 {
+func getASNAndCityWithIP(ipStr *string) (ASN int, city string) {
+	if defaultASN > 0 || len(defaultCity) > 0 {
 		ASN = defaultASN
 		city = defaultCity
 		return
-	}
-	for i := 0; i < 3; i++ {
-		response, err := http.Get(cfURL)
-		// connect is failedwith network error, won't continue
-		if err != nil {
-			myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
-			time.Sleep(time.Duration(interval) * time.Millisecond)
-			continue
-		}
-		if response == nil {
-			myLogger.Error("An error occurred while request ASN and city info from cloudflare: response is empty")
-			time.Sleep(time.Duration(interval) * time.Millisecond)
-			continue
-		}
-		//fmt.Printf("%T - %v", response.Header, response.Header)
-		if values, ok := response.Header["Cf-Meta-Asn"]; ok {
-			if len(values) > 0 {
-				if ASN, err = strconv.Atoi(values[0]); err != nil {
-					myLogger.Error(fmt.Sprintf("An error occurred while convert ASN for header: %T, %v", values[0], values[0]))
-				}
-			}
-		}
-		if values, ok := response.Header["Cf-Meta-City"]; ok {
-			if len(values) > 0 {
-				city = values[0]
-			}
-		}
-		defaultASN = ASN
-		defaultCity = city
-		break
-	}
-	return
-}
-
-func getASNAndCityWithIP(ip net.IP) (ASN int, city string) {
-	if defaultASN > 0 {
-		ASN = defaultASN
-		city = defaultCity
-		return
-	}
-	var fullAddress string
-	if ip.To4() != nil { //IPv4
-		fullAddress = ip.String() + ":443"
-	} else { //
-		fullAddress = "[" + ip.String() + "]:443"
 	}
 	// try 3 times
 	for i := 0; i < 3; i++ {
@@ -735,46 +669,43 @@ func getASNAndCityWithIP(ip net.IP) (ASN int, city string) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		var tResultHttp ResultHttp
-		tCtx := WithHTTPStat(tReq.Context(), &tResultHttp)
-		tReq = tReq.WithContext(tCtx)
 		var client = http.Client{
 			Transport:     nil,
 			CheckRedirect: nil,
 			Jar:           nil,
-			Timeout:       HttpRspTimeoutDuration,
+			Timeout:       HttpRspTimeoutDuration + 1*time.Second,
 		}
-		if !dtOnly {
-			client.Timeout += 1 * time.Second
-		}
-		client.Transport = &http.Transport{
-			DialContext: GetDialContextByAddr(fullAddress),
-			//ResponseHeaderTimeout: HttpRspTimeoutDuration,
+		if len(*ipStr) > 0 && isValidIPs(*ipStr) {
+			fullAddress := getConnPeerAddressFromStr(*ipStr, 443)
+			client.Transport = &http.Transport{
+				DialContext: GetDialContextByAddr(fullAddress),
+				//ResponseHeaderTimeout: HttpRspTimeoutDuration,
+			}
 		}
 		response, err := client.Do(tReq)
 		// pingect is failed(network error), won't continue
-		if err != nil {
+		if err != nil || response == nil {
 			myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			continue
 		}
-		//
-		if response == nil {
-			myLogger.Error("An error occurred while request ASN and city info from cloudflare: response is empty")
-			time.Sleep(time.Duration(interval) * time.Millisecond)
-			continue
-		}
-		//fmt.Printf("%T - %v", response.Header, response.Header)
-		if values, ok := response.Header["Cf-Meta-Asn"]; ok {
+		if values, ok := (*response).Header["Cf-Meta-Asn"]; ok {
 			if len(values) > 0 {
 				if ASN, err = strconv.Atoi(values[0]); err != nil {
 					myLogger.Error(fmt.Sprintf("An error occurred while convert ASN for header: %T, %v", values[0], values[0]))
 				}
 			}
 		}
-		if values, ok := response.Header["Cf-Meta-City"]; ok {
+		if values, ok := (*response).Header["Cf-Meta-City"]; ok {
 			if len(values) > 0 {
 				city = values[0]
+			}
+		}
+		if len(city) == 0 { // no "Cf-Meta-City" in header, we get "Cf-Meta-Country" instead
+			if values, ok := (*response).Header["Cf-Meta-Country"]; ok {
+				if len(values) > 0 {
+					city = values[0]
+				}
 			}
 		}
 		defaultASN = ASN
@@ -791,7 +722,7 @@ func PrintFinalStat(v []VerifyResults, disableDownload bool) {
 	}
 	var ipv6 = false
 	for i := 0; i < len(v); i++ {
-		tIP := net.ParseIP(v[i].ip)
+		tIP := net.ParseIP(*v[i].ip)
 		if tIP.To4() == nil {
 			ipv6 = true
 			break
@@ -813,9 +744,9 @@ func PrintFinalStat(v []VerifyResults, disableDownload bool) {
 	for i := 0; i < len(v); i++ {
 		fmt.Printf("%-8v%s", v[i].testTime.Format("15:04:05"), myLogger.indent)
 		if !ipv6 {
-			fmt.Printf("%-15v%s", v[i].ip, myLogger.indent)
+			fmt.Printf("%-15v%s", *v[i].ip, myLogger.indent)
 		} else {
-			fmt.Printf("%-39v%s", v[i].ip, myLogger.indent)
+			fmt.Printf("%-39v%s", *v[i].ip, myLogger.indent)
 		}
 		if !disableDownload {
 			fmt.Printf("%-11.2f%s", v[i].dls, myLogger.indent)
@@ -825,20 +756,21 @@ func PrintFinalStat(v []VerifyResults, disableDownload bool) {
 		// close line, LatestLogLength should be 0
 		fmt.Println()
 	}
+	fmt.Println()
 }
 
 func InsertIntoDb(verifyResultsSlice []VerifyResults, dbFile string) {
 	if len(verifyResultsSlice) > 0 && storeToDB {
+		//get ASN and city
+		tRound := MinInt(3, len(verifyResultsSlice))
 		dbRecords := make([]cfTestDetail, 0)
-
-		ASN, city := getASNAndCity()
-		if len(city) == 0 {
-			ASN, city = getASNAndCityWithIP(net.ParseIP(verifyResultsSlice[0].ip))
-		}
-		if len(city) == 0 {
-			myLogger.Warning("Fail to get ASN and city via " + cfURL)
-			ASN = -1
-			city = ""
+		var ASN int
+		var city string
+		for _, item := range verifyResultsSlice[:tRound] {
+			ASN, city = getASNAndCityWithIP(item.ip)
+			if ASN > 0 || len(city) > 0 {
+				break
+			}
 		}
 		for _, v := range verifyResultsSlice {
 			record := cfTestDetail{}
@@ -873,10 +805,10 @@ func GetDialContextByAddr(addrPort string) func(ctx context.Context, network, ad
 }
 
 func singleResultStatistic(out singleVerifyResult, statisticDownload bool) VerifyResults {
-	var tVerifyResult = VerifyResults{out.testTime, "",
-		0, 0, 0.0, 0.0, 0.0, 0.0,
-		0, 0, 0.0, 0.0, 0, 0.0}
-	tVerifyResult.ip = out.ip.String()
+	var tVerifyResult = VerifyResults{}
+	tVerifyResult.testTime = out.testTime
+	tIP := out.ip.String()
+	tVerifyResult.ip = &tIP
 	if len(out.resultSlice) == 0 {
 		return tVerifyResult
 	}
@@ -885,13 +817,13 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 	var tDownloadDurations float64
 	var tDownloadSizes int64
 	for _, v := range out.resultSlice {
-		if v.dTPassedCount {
+		if v.dTPassed {
 			tVerifyResult.dtpc += 1
 			tVerifyResult.dltc += 1
 			tDuration := float64(v.dTDuration) / float64(time.Millisecond)
 			// if pingViaHttps, it should add the http duration
 			if dtHttps {
-				tDuration = +float64(v.httpRRDuration) / float64(time.Millisecond)
+				tDuration = +float64(v.httpReqRspDur) / float64(time.Millisecond)
 			}
 			tDurationsAll += tDuration
 			if tDuration > tVerifyResult.dmx {
@@ -1041,17 +973,17 @@ func NewIPRangeFromIP(StartIP net.IP, EndIP net.IP) *ipRange {
 	return new(ipRange).init(StartIP, EndIP)
 }
 
-func NewIPRangeFromString(StartIPStr string, EndIPStr string) *ipRange {
-	StartIP := net.ParseIP(StartIPStr)
-	EndIP := net.ParseIP(EndIPStr)
+func NewIPRangeFromString(StartIPStr *string, EndIPStr *string) *ipRange {
+	StartIP := net.ParseIP(*StartIPStr)
+	EndIP := net.ParseIP(*EndIPStr)
 	return new(ipRange).init(StartIP, EndIP)
 }
 
-func NewIPRangeFromCIDR(cidr string) *ipRange {
-	ip, ipCIDR, err := net.ParseCIDR(cidr)
+func NewIPRangeFromCIDR(cidr *string) *ipRange {
+	ip, ipCIDR, err := net.ParseCIDR(*cidr)
 	// there an error during parsing process, or its an ip
 	if err != nil {
-		tIP := net.ParseIP(cidr)
+		tIP := net.ParseIP(*cidr)
 		// pure ipv6 address
 		if tIP != nil {
 			return new(ipRange).init(tIP, tIP)
@@ -1153,21 +1085,21 @@ func ipShiftReverse(ip net.IP, num []byte) net.IP {
 
 func (ipr *ipRange) Extract(num int) (IPList []net.IP) {
 	if !ipr.isValid() {
-		return nil
+		return
 	}
 	// num should greate than 0
 	if num <= 0 {
-		return nil
+		return
 	}
 	// no more ip for extracted
 	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
-		return nil
+		return
 	}
 	numBig := big.NewInt(int64(num))
 	size := ipr.length()
 	// no enough IPs to extract
 	if size.Cmp(numBig) == -1 {
-		return nil
+		num = int(size.Int64())
 	}
 	newIP := ipr.IPStart
 	IPList = append(IPList, newIP)
@@ -1177,7 +1109,7 @@ func (ipr *ipRange) Extract(num int) (IPList []net.IP) {
 		newIP = ipShift(newIP, num_in_bytes)
 		// some error occured
 		if newIP == nil {
-			return nil
+			return
 		}
 		IPList = append(IPList, newIP)
 		num--
@@ -1199,21 +1131,21 @@ func (ipr *ipRange) Extract(num int) (IPList []net.IP) {
 
 func (ipr *ipRange) ExtractReverse(num int) (IPList []net.IP) {
 	if !ipr.isValid() {
-		return nil
+		return
 	}
 	// num should greate than 0
 	if num <= 0 {
-		return nil
+		return
 	}
 	// no more ip for extracted
 	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
-		return nil
+		return
 	}
 	numBig := big.NewInt(int64(num))
 	size := ipr.length()
 	// no enough IPs to extract
 	if size.Cmp(numBig) == -1 {
-		return nil
+		return
 	}
 	newIP := ipr.IPEnd
 	IPList = append(IPList, newIP)
@@ -1223,7 +1155,7 @@ func (ipr *ipRange) ExtractReverse(num int) (IPList []net.IP) {
 		newIP = ipShiftReverse(newIP, num_in_bytes)
 		// some error ocurred
 		if newIP == nil {
-			return nil
+			return
 		}
 		IPList = append(IPList, newIP)
 		num--
@@ -1247,7 +1179,7 @@ func (ipr *ipRange) ExtractAll() (IPList []net.IP) {
 	// we limit the max retult length to MaxHostLen (currently, 65536), if it's to big, return nil
 	// or it's don't have any IPS to extract, return nil
 	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 || ipr.Len.Cmp(big.NewInt(maxHostLen)) == 1 {
-		return nil
+		return
 	}
 	return ipr.Extract(int(ipr.Len.Int64()))
 }
@@ -1255,13 +1187,13 @@ func (ipr *ipRange) ExtractAll() (IPList []net.IP) {
 func (ipr *ipRange) GetRandomX(num int) (IPList []net.IP) {
 	// or it's don't have any IPS to extract, return nil
 	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
-		return nil
+		return
 	}
 	// we extract all while ipr don't have enogth ips for extracted
 	if big.NewInt(int64(num)).Cmp(ipr.Len) >= 0 {
 		m := ipr.ExtractAll()
 		if m == nil {
-			return nil
+			return
 		}
 		for i := 0; i < len(m); i++ {
 			IPList = append(IPList, m[i])
@@ -1270,6 +1202,8 @@ func (ipr *ipRange) GetRandomX(num int) (IPList []net.IP) {
 		myRand.Shuffle(len(IPList), func(i, j int) {
 			IPList[i], IPList[j] = IPList[j], IPList[i]
 		})
+		// we done here
+		return
 	}
 	// get randomly
 	i := 0
@@ -1311,20 +1245,42 @@ func printOneRow(x, y int, style tcell.Style, str string) {
 func initScreen() {
 	defer func() { (*termAll).Sync() }()
 	(*termAll).Clear()
-	initTitleStr()
 	printRuntimeWithoutSync()
-	printCancelWithoutSync()
 	printTitlePreWithoutSync()
-	printTitleResultWithoutSync()
+	printCancelWithoutSync()
 	updateScreen()
 }
 
 func printRuntimeWithoutSync() {
-	printOneRow(0, titleRuntimeRow, titleStyle, *titleRuntime)
+	printOneRow(0, titleRuntimeRow, contentStyle, *titleRuntime)
+}
+
+func printTitlePreWithoutSync() {
+	var len0, len1, len2 int
+	len0 = MaxInt(len(titlePre[0][0]), len(titlePre[1][0]))
+	len1 = MaxInt(len(titlePre[0][1]), len(titlePre[1][1]))
+	len2 = MaxInt(len(titlePre[0][2]), len(titlePre[1][2]))
+	rowStr0 := fmt.Sprintf("%*v%-*v  %*v%v", len0, titlePre[0][0], len1, titlePre[0][1], len2, titlePre[0][2], titlePre[0][3])
+	printOneRow(0, titlePreRow, contentStyle, rowStr0)
+	if len(titlePre[1][0]) > 0 && len(titlePre[1][1]) > 0 {
+		rowStr1 := fmt.Sprintf("%*v%-*v", len0, titlePre[1][0], len1, titlePre[1][1])
+		if len(titlePre[1][2]) > 0 && len(titlePre[1][3]) > 0 {
+			rowStr1 += fmt.Sprintf("  %*v%v", len2, titlePre[1][2], titlePre[1][3])
+		}
+		printOneRow(0, titlePreRow+1, contentStyle, rowStr1)
+	}
 }
 
 func printCancelWithoutSync() {
 	printOneRow(0, titleCancelRow, titleStyleCancel, titleCancel)
+}
+
+func printCancelComfirmWithoutSync() {
+	printOneRow(0, titleCancelRow, titleStyleCancel, titleCancelComfirm)
+}
+
+func printQuitWaitingWithoutSync() {
+	printOneRow(0, titleCancelRow, titleStyleCancel, titleWaitQuit)
 }
 
 func printCancel() {
@@ -1333,38 +1289,35 @@ func printCancel() {
 }
 
 func printCancelComfirm() {
-	printOneRow(0, titleCancelRow, titleStyleCancel, titleCancelComfirm)
+	printCancelComfirmWithoutSync()
 	(*termAll).Show()
 }
 
 func printQuitWaiting() {
-	printOneRow(0, titleCancelRow, titleStyleCancel, titleWaitQuit)
+	printQuitWaitingWithoutSync()
 	(*termAll).Show()
 }
 
-func QuitingCountDown(sec int) {
+func printQuitingCountDown(sec int) {
 	for i := sec; i > 0; i-- {
-		printOneRow(0, titleCancelRow, titleStyleCancel, fmt.Sprintf("Quit in %d second...", i))
+		printOneRow(0, titleCancelRow, titleStyleCancel, fmt.Sprintf("Exit in %ds...", i))
 		(*termAll).Show()
 		time.Sleep(time.Second)
 	}
 }
 
-func printExitHint() {
-	printOneRow(0, titleCancelRow, titleStyleCancel, titleExitHint)
-	(*termAll).Show()
+func printTitleResultHintWithoutSync() {
+	printOneRow(0, titleResultHintRow, titleStyle, fmt.Sprintf("%s%v", titleResultHint, len(verifyResultsMap)))
 }
 
-func printTitlePreWithoutSync() {
-	printOneRow(0, titlePreRow, contentStyle, *titlePre)
+func printTitleDebugHintWithoutSync() {
+	if !debug {
+		return
+	}
+	printOneRow(0, titleDebugHintRow, contentStyle, titleDebugHint)
 }
 
-func printTitleResultWithoutSync() {
-	printOneRow(0, titleResultHintRow, titleStyle, titleResultHint)
-	printOneRow(0, titleResultRow, titleStyle, *titleResult)
-}
-
-func printTasksStatWithoutSync() {
+func printTaskStatWithoutSync() {
 	if !dltOnly {
 		printOneRow(0, titleTasksStatRow, contentStyle, *titleTasksStat[0])
 		if !dtOnly {
@@ -1372,200 +1325,256 @@ func printTasksStatWithoutSync() {
 			printOneRow(resultStatIndent, titleTasksStatRow+1, contentStyle, *titleTasksStat[1])
 		}
 	} else {
-		printOneRow(0, titleTasksStatRow, contentStyle, *titleTasksStat[1])
+		printOneRow(0, titleTasksStatRow, contentStyle, *titleTasksStat[0])
+	}
+}
+
+func printDetailsListWithoutSync(details [][]*string, startRow int, maxRowsDisplayed int) {
+	if len(details) == 0 {
+		return
+	}
+	t_len := len(details)
+	t_lowest := 0
+	if t_len > maxRowsDisplayed {
+		t_lowest = t_len - maxRowsDisplayed
+	}
+	// scan for indent
+	t_indent_slice := make([]int, 0)
+	for _, v := range detailTitleSlice {
+		t_indent_slice = append(t_indent_slice, len(v))
+	}
+	for i := t_lowest; i < t_len; i++ {
+		for j := 0; j < len(t_indent_slice); j++ {
+			t_indent_slice[j] = MaxInt(t_indent_slice[j], len(*details[i][j]))
+		}
+	}
+	// print title
+	t_sb := strings.Builder{}
+	for j := 0; j < len(t_indent_slice)-1; j++ {
+		t_sb.WriteString(fmt.Sprintf("%-*s%s", t_indent_slice[j], detailTitleSlice[j], myIndent))
+	}
+	t_sb.WriteString(fmt.Sprintf("%v", detailTitleSlice[len(t_indent_slice)-1]))
+	printOneRow(0, startRow, contentStyle, t_sb.String())
+	// print list
+	for i := t_len - 1; i >= t_lowest; i-- {
+		t_sb.Reset()
+		for j := 0; j < len(t_indent_slice)-1; j++ {
+			t_sb.WriteString(fmt.Sprintf("%-*s%s", t_indent_slice[j], *details[i][j], myIndent))
+		}
+		t_sb.WriteString(*details[i][len(t_indent_slice)-1])
+		printOneRow(0, startRow+t_len-i, contentStyle, t_sb.String())
 	}
 }
 
 func printResultListWithoutSync() {
-	defer func() { (*termAll).Show() }()
-	if len(resultStrSlice) == 0 {
-		return
-	}
-	t_len := len(resultStrSlice)
-	t_lowest := 0
-	if t_len > maxResultsDisplay {
-		t_lowest = t_len - maxResultsDisplay
-	}
-	for i := t_len - 1; i >= t_lowest; i-- {
-		printOneRow(0, titleResultRow+t_len-i, contentStyle, *resultStrSlice[i])
-	}
+	printTitleResultHintWithoutSync()
+	printDetailsListWithoutSync(resultStrSlice, titleResultRow, maxResultsDisplay)
 }
 
 func printDebugListWithoutSync() {
-	defer func() { (*termAll).Show() }()
-	if debug {
-		if len(debugStrSlice) == 0 {
-			return
-		}
-		printOneRow(0, titleDebugHintRow, contentStyle, titleDebugHint)
-		printOneRow(0, titleDebugRow, contentStyle, *titleDebug)
-		t_len := len(debugStrSlice)
-		t_low := 0
-		if t_len > maxDebugDisplay {
-			t_low = t_len - maxDebugDisplay
-		}
-		for i := t_len - 1; i >= t_low; i-- {
-			printOneRow(0, titleDebugRow+t_len-i, contentStyle, *debugStrSlice[i])
-		}
+	if !debug {
+		return
 	}
+	printTitleDebugHintWithoutSync()
+	printDetailsListWithoutSync(debugStrSlice, titleDebugRow, maxDebugDisplay)
 }
 
 func updateScreen() {
 	defer func() { (*termAll).Show() }()
-	printTasksStatWithoutSync()
+	printTaskStatWithoutSync()
 	printResultListWithoutSync()
 	printDebugListWithoutSync()
 }
 
 func initTitleStr() {
-	var tIntroMSG string
-	if dtOnly {
-		tIntroMSG = fmt.Sprintf("Start Delay(%v) Test -- Result Expected:%v DelayMax:%v\n", dtSource, resultMin, delayMax)
-	} else if dltOnly {
-		tIntroMSG = fmt.Sprintf("Start Speed Test -- Result Expected:%v SpeedMin(kB/s):%v \n", resultMin, speedMinimal)
-	} else {
-		tIntroMSG = fmt.Sprintf("Start Delay(%v) and Speed Test -- Result Expected:%v SpeedMin(kB/s):%v DelayMax:%v \n",
-			dtSource, resultMin, speedMinimal, delayMax)
-	}
-	titlePre = &tIntroMSG
-	tIntroMSG2 := fmt.Sprintf("%v - %v\n", runTIME, version)
-	titleRuntime = &tIntroMSG2
+	var tMsgRuntime string
+	tMsgRuntime = fmt.Sprintf("%v %v - ", runTime, version)
 
-	tIntroMSG3 := ""
-	if !haveIPv6() {
-		tIntroMSG3 = fmt.Sprintf("%-15v%s", "IP", myIndent)
-	} else {
-		tIntroMSG3 = fmt.Sprintf("%-39v%s", "IP", myIndent)
+	if !dltOnly {
+		tMsgRuntime += fmt.Sprintf("Start Delay (%v) Test (DT)", dtSource)
+		if !dtOnly {
+			tMsgRuntime += " and "
+		}
 	}
 	if !dtOnly {
-		tIntroMSG3 += fmt.Sprintf("%-11v%s", "Speed(KB/s)", myIndent)
+		tMsgRuntime += "Speed Test (DLT)"
 	}
-	tIntroMSG3 += fmt.Sprintf("%-12v%s", "DelayAvg(ms)", myIndent)
-	tIntroMSG3 += fmt.Sprintf("%-16v%s", "Stability(DTPR, %)", myIndent)
-	titleResult = &tIntroMSG3
-	updateTasksStatStr(0, 0, 0, 0, 0, 0, 0, 0, 0)
-	if debug {
-		titleDebug = &tIntroMSG3
+	titleRuntime = &tMsgRuntime
+	titlePre[0][0] = "Result Exp.:"
+	if !testAll {
+		titlePre[0][1] = " " + strconv.Itoa(resultMin)
+	} else {
+		titlePre[0][1] = " ~"
 	}
+	if dtOnly {
+		titlePre[0][2] = "Max Delay:"
+		titlePre[0][3] = fmt.Sprintf(" %vms", delayMax)
+		titlePre[1][0] = "Min Stab.:"
+		titlePre[1][1] = fmt.Sprintf(" %v", dtPassedRateMin) + "%"
+	} else if dltOnly {
+		titlePre[0][2] = "Min Speed:"
+		titlePre[0][3] = fmt.Sprintf(" %vKB/s", speedMinimal)
+	} else {
+		titlePre[0][2] = "Min Speed:"
+		titlePre[0][3] = fmt.Sprintf(" %vKB/s", speedMinimal)
+		titlePre[1][0] = "Max Delay:"
+		titlePre[1][1] = fmt.Sprintf(" %vms", delayMax)
+		titlePre[1][2] = "Min Stab.:"
+		titlePre[1][3] = fmt.Sprintf(" %v", dtPassedRateMin) + "%"
+	}
+	detailTitleSlice = append(detailTitleSlice, "IP")
+	if !dtOnly {
+		detailTitleSlice = append(detailTitleSlice, "Speed(KB/s)")
+	}
+	detailTitleSlice = append(detailTitleSlice, "Delay(ms)")
+	if !dltOnly {
+		detailTitleSlice = append(detailTitleSlice, "Stab.(%)")
+	}
+	updateTaskStatStr(overAllStat{0, 0, 0, 0, 0, 0, 0})
 }
 
-func updateTasksStatStr(allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults int) {
-	updateTasksStaticData(allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults)
+func updateTaskStatStr(ov overAllStat) {
 	var t = strings.Builder{}
 	var t1 = strings.Builder{}
 	t.WriteString(getTimeNowStr())
 	t.WriteString(myIndent)
-	t.WriteString(fmt.Sprintf("Results:%-*d%s", resultNumLen, taskStatistic.verifyResults, myIndent))
-	t_dtCachedS := taskStatistic.dtCached + taskStatistic.allDTTasks - taskStatistic.dtTasksDoned - dtOnGoing
-	t_dltCachedS := taskStatistic.dltCached + taskStatistic.allDLTTasks - taskStatistic.dltTasksDoned - dltOnGoing
+	// t.WriteString(fmt.Sprintf("Result:%-*d%s", resultNumLen, resultCount, myIndent))
+	t_dtCachedS := ov.dtCached
+	t_dltCachedS := ov.dltCached
 	t_dtCachedSNumLen := len(strconv.Itoa(t_dtCachedS))
 	t_dltCachedSNumLen := len(strconv.Itoa(t_dltCachedS))
-	t_dtDoneNumLen := len(strconv.Itoa(taskStatistic.dtTasksDoned))
-	t_dltDoneNumLen := len(strconv.Itoa(taskStatistic.dltTasksDoned))
+	t_dtDoneNumLen := len(strconv.Itoa(ov.dtTasksDone))
+	t_dltDoneNumLen := len(strconv.Itoa(ov.dltTasksDone))
 	t_indent := MaxInt(dtThreadNumLen, dltThreadNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
 	if !dltOnly {
-		t.WriteString(fmt.Sprintf("D T - IPsCached:%-*d%s", t_indent, t_dtCachedS, myIndent))
-		t.WriteString(fmt.Sprintf("IPsTested:%-*d%s", t_indent, taskStatistic.dtTasksDoned, myIndent))
-		t.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, taskStatistic.dtOnGoing, myIndent))
-		ts := t.String()
-		titleTasksStat[0] = &ts
-		if !dtOnly {
-			t1.WriteString(fmt.Sprintf("DLT - IPsCached:%-*d%s", t_indent, t_dltCachedS, myIndent))
-			t1.WriteString(fmt.Sprintf("IPsTested:%-*d%s", t_indent, taskStatistic.dltTasksDoned, myIndent))
-			t1.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, taskStatistic.dltOnGoing, myIndent))
+		if dtOnly {
+			t.WriteString(fmt.Sprintf("DT - Tested:%-*d%s", t_indent, ov.dtTasksDone, myIndent))
+
+		} else {
+			t.WriteString(fmt.Sprintf("DT  - Tested:%-*d%s", t_indent, ov.dtTasksDone, myIndent))
+			t1.WriteString(fmt.Sprintf("DLT - Tested:%-*d%s", t_indent, ov.dltTasksDone, myIndent))
+			t1.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, ov.dltOnGoing, myIndent))
+			t1.WriteString(fmt.Sprintf("Cached:%-*d%s", t_indent, t_dltCachedS, myIndent))
 			ts1 := t1.String()
 			titleTasksStat[1] = &ts1
 		}
+		t.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, ov.dtOnGoing, myIndent))
+		t.WriteString(fmt.Sprintf("Cached:%-*d%s", t_indent, t_dtCachedS, myIndent))
+		ts := t.String()
+		titleTasksStat[0] = &ts
 	} else {
-		t.WriteString(fmt.Sprintf("DLT - IPsCached:%-*d%s", t_indent, t_dltCachedS, myIndent))
-		t.WriteString(fmt.Sprintf("IPsTested:%-*d%s", t_indent, taskStatistic.dltTasksDoned, myIndent))
-		t.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, taskStatistic.dltOnGoing, myIndent))
+		t.WriteString(fmt.Sprintf("DLT - Tested:%-*d%s", t_indent, ov.dltTasksDone, myIndent))
+		t.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, ov.dltOnGoing, myIndent))
+		t.WriteString(fmt.Sprintf("Cached:%-*d%s", t_indent, t_dltCachedS, myIndent))
 		ts := t.String()
 		titleTasksStat[0] = &ts
 	}
 }
 
-//allPingTasks, pingTestedTasks,
-//allDownloadTasks, downloadTestedTasks, len(pingCaches),
-//len(downloadCaches), len(verifyResultsMap)
-func updateTasksStaticData(allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults int) {
-	taskStatistic.allDTTasks = allDTTasks
-	taskStatistic.dtTasksDoned = dtTasksDone
-	taskStatistic.dtOnGoing = dtOnGoing
-	taskStatistic.allDLTTasks = allDLTTasks
-	taskStatistic.dltTasksDoned = dltTasksDone
-	taskStatistic.dltOnGoing = dltOnGoing
-	taskStatistic.dtCached = dtCached
-	taskStatistic.dltCached = dltCached
-	taskStatistic.verifyResults = verifyResults
+func updateDetailList(src [][]*string, v []VerifyResults, limit int) (dst [][]*string) {
+	dst = src
+	for _, tv := range v {
+		t_str_list := make([]*string, 0)
+		// t_v1 := fmt.Sprintf("%v", *tv.ip)
+		// t_str_list = append(t_str_list, &t_v1)
+		t_str_list = append(t_str_list, tv.ip)
+		// show speed only when it performed DLT
+		if !dtOnly {
+			t_v2 := fmt.Sprintf("%.2f", tv.dls)
+			t_str_list = append(t_str_list, &t_v2)
+		}
+		t_v3 := fmt.Sprintf("%.0f", tv.da)
+		t_str_list = append(t_str_list, &t_v3)
+		// show DTPR only when it performed DT
+		if !dltOnly {
+			t_v4 := fmt.Sprintf("%.2f", tv.dtpr*100)
+			t_str_list = append(t_str_list, &t_v4)
+		}
+		dst = append(dst, t_str_list)
+	}
+	if len(dst) > limit {
+		dst = dst[(len(dst) - limit):]
+	}
+	return
 }
 
-func updateResultStrList(v VerifyResults) {
-	t := resultStrSlice
-	if len(resultStrSlice) > maxResultsDisplay {
-		t = (resultStrSlice)[(len(resultStrSlice) - maxResultsDisplay):]
-	}
-	sb := strings.Builder{}
-	if !haveIPv6() {
-		sb.WriteString(fmt.Sprintf("%-15v%s", v.ip, myIndent))
-	} else {
-		sb.WriteString(fmt.Sprintf("%-39v%s", v.ip, myIndent))
-	}
-	if !dtOnly {
-		sb.WriteString(fmt.Sprintf("%-11.2f%s", v.dls, myIndent))
-	}
-	sb.WriteString(fmt.Sprintf("%-12.0f%s", v.da, myIndent))
-	sb.WriteString(fmt.Sprintf("%-16.2f%s", v.dtpr*100, myIndent))
-	ts := sb.String()
-	t = append(t, &ts)
-	resultStrSlice = t
+func updateResultStrList(v []VerifyResults) {
+	resultStrSlice = updateDetailList(resultStrSlice, v, maxResultsDisplay)
 }
 
-func updateDebugStrList(v VerifyResults) {
+func updateDebugStrList(v []VerifyResults) {
 	if !debug {
 		return
 	}
-	t := debugStrSlice
-	if len(debugStrSlice) > maxDebugDisplay {
-		t = debugStrSlice[(len(debugStrSlice) - maxDebugDisplay):]
-	}
-	sb := strings.Builder{}
-	if !haveIPv6() {
-		sb.WriteString(fmt.Sprintf("%-15v%s", v.ip, myIndent))
-	} else {
-		sb.WriteString(fmt.Sprintf("%-39v%s", v.ip, myIndent))
-	}
-	if !dtOnly {
-		sb.WriteString(fmt.Sprintf("%-11.2f%s", v.dls, myIndent))
-	}
-	sb.WriteString(fmt.Sprintf("%-12.0f%s", v.da, myIndent))
-	sb.WriteString(fmt.Sprintf("%-16.2f%s", v.dtpr*100, myIndent))
-	ts := sb.String()
-	t = append(t, &ts)
-	debugStrSlice = t
+	debugStrSlice = updateDetailList(debugStrSlice, v, maxDebugDisplay)
 }
 
-func updateResult(v VerifyResults, allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults int) {
+func updateResult(v []VerifyResults) {
 	defer (*termAll).Show()
-	updateTasksStat(allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults)
 	updateResultStrList(v)
 	printResultListWithoutSync()
 }
 
-func updateDebug(v VerifyResults, allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults int) {
+func updateDebug(v []VerifyResults) {
+	if !debug {
+		return
+	}
 	defer (*termAll).Show()
-	updateTasksStat(allDTTasks, dtTasksDone, dtOnGoing, allDLTTasks, dltTasksDone, dltOnGoing, dtCached, dltCached, verifyResults)
 	updateDebugStrList(v)
 	printDebugListWithoutSync()
 }
 
-func updateTasksStat(allDTTasks, dtTasksDone, dtTaskOnGoing, allDLTTasks, dltTasksDone, dltTaskOnGoing, dtCached, dltCached, verifyResults int) {
+func updateTaskStat(ov overAllStat) {
 	defer (*termAll).Show()
-	updateTasksStatStr(allDTTasks, dtTasksDone, dtTaskOnGoing, allDLTTasks, dltTasksDone, dltTaskOnGoing, dtCached, dltCached, verifyResults)
-	printTasksStatWithoutSync()
+	updateTaskStatStr(ov)
+	printTaskStatWithoutSync()
 }
 
-func haveIPv6() bool {
+func updateTcellDetails(isDebug bool, v []VerifyResults) {
+	// prevent display debug msg when in not-debug mode
+	if isDebug && !debug {
+		return
+	}
+	if isDebug { // debug
+		updateDebug(v)
+	} else { // non-debug
+		updateResult(v)
+	}
+}
+
+// test detail
+// loglvl should be logLevelDebug or logLevelInfo
+func displayDetails(isDebug bool, v []VerifyResults) {
+	// don't display debug msg when it's not in debug mode
+	if isDebug && !debug {
+		return
+	}
+	logLvl := LogLevel(logLevelInfo)
+	if isDebug {
+		logLvl = LogLevel(logLevelDebug)
+	}
+	if noTcell { // no-tcell
+		myLogger.PrintDetails(logLvl, v)
+	} else { // tcell
+		updateTcellDetails(isDebug, v)
+	}
+}
+
+// task statistic
+// on tcell mode, task stat could be displayed in both debug and normal mode
+// on non-tcell mode, task stat should be displayed only in debug mode
+func displayStat(isDebug bool, ov overAllStat) {
+	if noTcell { // no-tcell
+		if !debug || !isDebug { // on non-tcell mode, task stat should be displayed only in debug mode
+			return
+		}
+		myLogger.PrintOverAllStat(logLevelDebug, ov)
+	} else { // tcell, print always
+		updateTaskStat(ov)
+	}
+}
+
+func HaveIPv6() bool {
 	for _, ipr := range srcIPRs {
 		if ipr.IsV6() {
 			return true
@@ -1574,7 +1583,11 @@ func haveIPv6() bool {
 	return false
 }
 
-func MaxInt(num ...int) (t int) {
+func MaxInt(a, b int, num ...int) (t int) {
+	t = a
+	if b > t {
+		t = b
+	}
 	for _, i := range num {
 		if i > t {
 			t = i
@@ -1583,11 +1596,96 @@ func MaxInt(num ...int) (t int) {
 	return
 }
 
-func MinInt(num ...int) (t int) {
+func MinInt(a, b int, num ...int) (t int) {
+	t = a
+	if b < t {
+		t = b
+	}
 	for _, i := range num {
 		if i < t {
 			t = i
 		}
 	}
 	return
+}
+
+// we get count - num from every IPR in srcIPR and srcIPRsCache
+func extractCIDRHosts(num int) (targIPs []*string) {
+	if num < 0 {
+		return
+	}
+	t_ips := []net.IP{}
+	for _, ipr := range srcIPRs {
+		if !testAll {
+			t_ips = append(t_ips, ipr.GetRandomX(num)...)
+		} else {
+			t_ips = append(t_ips, ipr.Extract(num)...)
+		}
+	}
+	if len(srcIPRsCache) > 0 {
+		if len(srcIPRsCache) <= num {
+			t_ips = append(t_ips, srcIPRsCache...)
+			srcIPRsCache = []net.IP{}
+		} else {
+			t_ips = append(t_ips, srcIPRsCache[0:num]...)
+			srcIPRsCache = srcIPRsCache[num:]
+		}
+	}
+	for _, t_ip := range t_ips {
+		tIP := t_ip.String()
+		targIPs = append(targIPs, &tIP)
+	}
+	// randomlize
+	if !testAll {
+		myRand.Shuffle(len(targIPs), func(m, n int) {
+			targIPs[m], targIPs[n] = targIPs[n], targIPs[m]
+		})
+	}
+	return
+}
+
+func isValidIPs(ips string) bool {
+	_, _, err := net.ParseCIDR(ips)
+	if err != nil {
+		tIP := net.ParseIP(ips)
+		return tIP != nil
+	}
+	// valid CIDR
+	return true
+}
+
+func getConnPeerAddress(ip net.IP, port int) (connStr string) {
+	connStr = getConnPeerAddressFromStr(ip.String(), port)
+	return
+}
+
+func getConnPeerAddressFromStr(ipStr string, port int) (connStr string) {
+	if !isValidIPs(ipStr) {
+		return
+	}
+	if port < 1 || port > 65535 {
+		return
+	}
+	connStr = net.JoinHostPort(ipStr, strconv.Itoa(port))
+	return
+}
+
+func confirm(s string, tries int) bool {
+	reader := bufio.NewReader(os.Stdin)
+	for ; tries > 0; tries-- {
+		fmt.Printf("%s [y/yes/N/no]: ", s)
+		rsp, err := reader.ReadString('\n')
+		if err != nil {
+			myLogger.Fatal(err)
+		}
+		rsp = strings.ToLower(strings.TrimSpace(rsp))
+		if rsp == "y" || rsp == "yes" {
+			return true
+		} else if rsp == "n" || rsp == "no" || len(rsp) == 0 {
+			return false
+		} else {
+			continue
+		}
+	}
+	return false
 }

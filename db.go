@@ -7,6 +7,24 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// TestTime      datetime     测试时间
+// ASN           int          测试所使用本地网络的ASN (自动获取)
+// CITY          text         测试所在地 (自动获取)
+// IP            text         目标CF的IP地址
+// LABEL         text         落地服务器标识
+// DTS           text         延迟类型(SSL or HTTPS)
+// DTC           int          延迟测试次数
+// DTPC          int          延迟测试通过次数
+// DTPR          float        延迟测试成功率
+// DA            float        平均延迟
+// DMI           float        最小延迟
+// DMX           float        最大延迟
+// DLTC          int          下载尝试次数
+// DLTPC         int          下载成功次数
+// DLTPR         float        下载成功率
+// DLSA          float        下载平均速度(KB/s)
+// DLDS          int          总下载数据大小(byte)
+// DLTD          float        总下载时间(秒)
 const (
 	DBFile         = "ip.db"
 	CreateTableSql = `create table IF NOT EXISTS CFTD (

@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -69,37 +68,32 @@ func WithHTTPStat(ctx context.Context, r *ResultHttp) context.Context {
 }
 
 // download test core
-func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration time.Duration, dltMaxDuration time.Duration,
+func downloadHandler(ip net.IP, port int, tUrl *string, HttpRspTimeoutDuration time.Duration, dltMaxDuration time.Duration,
 	dltCount int, interval int, dtOnly bool) []singleResult {
-	var fullAddress string
-	if ip.To4() != nil { //IPv4
-		fullAddress = ip.String() + ":" + strconv.Itoa(tcpport)
-	} else { //
-		fullAddress = "[" + ip.String() + "]:" + strconv.Itoa(tcpport)
-	}
-
+	fullAddress := getConnPeerAddress(ip, port)
 	var allResult = make([]singleResult, 0)
 	// loop for test
 	for i := 0; i < dltCount; i++ {
-		tReq, err := http.NewRequest("GET", tUrl, nil)
+		tReq, err := http.NewRequest("GET", *tUrl, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
 		var tResultHttp ResultHttp
 		tCtx := WithHTTPStat(tReq.Context(), &tResultHttp)
 		tReq = tReq.WithContext(tCtx)
+		// set user agent
+		tReq.Header.Set("User-Agent", userAgent)
 		var client = http.Client{
-			Transport:     nil,
+			Transport: &http.Transport{
+				DialContext: GetDialContextByAddr(fullAddress),
+				//ResponseHeaderTimeout: HttpRspTimeoutDuration,
+			},
 			CheckRedirect: nil,
 			Jar:           nil,
 			Timeout:       HttpRspTimeoutDuration,
 		}
 		if !dtOnly {
 			client.Timeout += dltMaxDuration
-		}
-		client.Transport = &http.Transport{
-			DialContext: GetDialContextByAddr(fullAddress),
-			//ResponseHeaderTimeout: HttpRspTimeoutDuration,
 		}
 		var currentResult = singleResult{false, 0, 0, false, false, 0, 0}
 		response, err := client.Do(tReq)
@@ -109,9 +103,9 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			continue
 		}
-		currentResult.dTPassedCount = true
+		currentResult.dTPassed = true
 		currentResult.dTDuration = tResultHttp.tlsEndAt.Sub(tResultHttp.tcpStartAt)
-		currentResult.httpRRDuration = tResultHttp.httpRspAt.Sub(tResultHttp.httpReqAt)
+		currentResult.httpReqRspDur = tResultHttp.httpRspAt.Sub(tResultHttp.httpReqAt)
 		// pingection test only, won't do download test
 		if dtOnly {
 			allResult = append(allResult, currentResult)
@@ -174,8 +168,8 @@ func downloadHandler(ip net.IP, tcpport int, tUrl string, HttpRspTimeoutDuration
 	return allResult
 }
 
-func downloadWorker(chanIn chan string, chanOut chan singleVerifyResult, chanOnGoing chan int, wg *sync.WaitGroup,
-	tUrl string, tcpport int, HttpRspTimeoutDuration time.Duration, dltMaxDuration time.Duration,
+func downloadWorker(chanIn chan *string, chanOut chan singleVerifyResult, chanOnGoing chan int, wg *sync.WaitGroup,
+	tUrl *string, port int, HttpRspTimeoutDuration time.Duration, dltMaxDuration time.Duration,
 	dltCount int, interval int, dtOnly bool) {
 	defer (*wg).Done()
 LOOP:
@@ -184,14 +178,14 @@ LOOP:
 		if !ok {
 			break LOOP
 		}
-		if ip == workerStopSignal {
+		if *ip == workerStopSignal {
 			//log.Println("Download task finished!")
 			break LOOP
 		}
-		Ip := net.ParseIP(ip)
+		Ip := net.ParseIP(*ip)
 		// push an element to chanOnGoing, means that there is a test ongoing.
 		chanOnGoing <- workOnGoing
-		tResultSlice := downloadHandler(Ip, tcpport, tUrl, HttpRspTimeoutDuration, dltMaxDuration, dltCount, interval, dtOnly)
+		tResultSlice := downloadHandler(Ip, port, tUrl, HttpRspTimeoutDuration, dltMaxDuration, dltCount, interval, dtOnly)
 		tVerifyResult := singleVerifyResult{time.Now(), Ip, tResultSlice}
 		chanOut <- tVerifyResult
 		// pull out an element from chanOnGoing, means that a test work is finished.
@@ -201,46 +195,38 @@ LOOP:
 	}
 }
 
-func sslDTHandler(ip net.IP, hostName string, tcpPort int, dtTimeoutDuration time.Duration,
+func sslDTHandler(ip net.IP, hostName *string, port int, dtTimeoutDuration time.Duration,
 	totalRound int, interval int) []singleResult {
 	conf := &tls.Config{
-		ServerName: hostName,
+		ServerName: *hostName,
 	}
-	fullAddress := ip.String()
-	if ip.To4() == nil && ip.To16() != nil {
-		fullAddress = "[" + fullAddress + "]"
-	}
-	fullAddress += ":" + strconv.Itoa(tcpPort)
+	dialer := net.Dialer{Timeout: dtTimeoutDuration}
+	fullAddress := getConnPeerAddress(ip, port)
 	var allResult = make([]singleResult, 0)
 	// loop for test
 	for i := 0; i < totalRound; i++ {
 		var currentResult = singleResult{false, 0, 0, false, false, 0, 0}
 		// pingection time duration begin:
 		var timeStart = time.Now()
-		conn, tErr := net.DialTimeout("tcp", fullAddress, dtTimeoutDuration)
+		// conn, tErr := net.DialTimeout("tcp", fullAddress, dtTimeoutDuration)
+		conn, tErr := tls.DialWithDialer(&dialer, "tcp", fullAddress, conf)
+		tDur := time.Since(timeStart)
 		if tErr != nil {
 			allResult = append(allResult, currentResult)
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			continue
 		}
-		pingTLS := tls.Client(conn, conf)
-		tErr = pingTLS.Handshake()
-		if tErr != nil {
-			allResult = append(allResult, currentResult)
-			time.Sleep(time.Duration(interval) * time.Millisecond)
-			continue
-		}
-		currentResult.dTPassedCount = true
-		currentResult.dTDuration = time.Since(timeStart)
+		currentResult.dTPassed = true
+		currentResult.dTDuration = tDur
 		allResult = append(allResult, currentResult)
-		_ = pingTLS.Close()
+		_ = conn.Close()
 		time.Sleep(time.Duration(interval) * time.Millisecond)
 	}
 	return allResult
 }
 
-func sslDTWorker(chanIn chan string, chanOut chan singleVerifyResult, chanOnGoing chan int, wg *sync.WaitGroup,
-	hostName string, tcpport int, dtTimeoutDuration time.Duration, totalRound int, interval int) {
+func sslDTWorker(chanIn chan *string, chanOut chan singleVerifyResult, chanOnGoing chan int, wg *sync.WaitGroup,
+	hostName *string, port int, dtTimeoutDuration time.Duration, totalRound int, interval int) {
 	defer (*wg).Done()
 LOOP:
 	for {
@@ -248,13 +234,13 @@ LOOP:
 		if !ok {
 			break LOOP
 		}
-		if ip == workerStopSignal {
+		if *ip == workerStopSignal {
 			break LOOP
 		}
-		Ip := net.ParseIP(ip)
+		Ip := net.ParseIP(*ip)
 		// push an element to chanOnGoing, means that there is a test ongoing.
 		chanOnGoing <- workOnGoing
-		tResultSlice := sslDTHandler(Ip, hostName, tcpport, dtTimeoutDuration, totalRound, interval)
+		tResultSlice := sslDTHandler(Ip, hostName, port, dtTimeoutDuration, totalRound, interval)
 		tVerifyResult := singleVerifyResult{time.Now(), Ip, tResultSlice}
 		chanOut <- tVerifyResult
 		// pull out an element from chanOnGoing, means that a test work is finished.
