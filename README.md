@@ -13,7 +13,7 @@
 
 ### 下载、编译
 
-请在[release](https://github.com/XIU2/CloudflareSpeedTest/releases)
+请在[release](https://github.com/zhfreal/cftestor/releases)
 中下载最新的预编译文件或自行编译。
 ```bash
 $ git clone https://github.com/zhfreal/cftestor.git
