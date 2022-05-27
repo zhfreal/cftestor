@@ -1,151 +1,150 @@
-# cftestor:  Cloudflare可用IP测试工具
+# cftestor:  Find and verify the best IPs for Cloudflare CDN
 
-本项目可以测试Cloudflare IP地址，快速挑选出速度快的地址。
-## 特点
-1、内置CF的v4和v6地址段，分别通过"-4"和"-6"使用。<br>
-2、延时测试采用SSL/TLS握手或HTTPS连接方式非TCP建立连接方式，这样可以剔除专用的IP，初步筛选更加准确。<br>
-3、可通过"-S|--dtpr-limit"限制低连接成功率的IP。大致评估网络丢包状况。<br>
-4、测试结果可实时滚动显示，而非测试完后才能看到。<br>
-5、测试结果可存入文件和sqlite数据库。<br>
-6、更多使用方法参见"-h"帮助。<br>
+In some regions, we can't get the best access from Cloudflare CDN due to the ISP disturbed. So, this util could find better IPs for you to access Cloudflare CDN with lower legacy and greater speed.
 
-## 下载、编译和运行
+## How does it work?
+1. Our goal is find better IPs to access Cloudflare CDN with lower legacy and greater speed. So we will perform Delay Test (DT) and Download Test (DLT) sequentially for an IP as assessment moves.
+2. We do DT by SSL/TLS shakhand or HTTPS get with the target IP. If it secceed to perform SSL/TLS or HTTPS get, we take the times escapted as delay. We will try several times to perfrom DT for a single IP and count the success tries. If it's success rate ( equal to <count of success>/<tries> ) is not less than what we expected, and the average delay ( <sum of every delay>/<count of success> ) is not bigger than we expected, it pass the DT.
+3. If an IP passed DT, then we perform DLT with it. We download some test data with it, caculate the average download speed. If the average speed is not less than we expected, it's a successful DLT. We can perform several DLT sequentially to evaluate download speed accurately.
+4. If an IP passsed DLT, it's what we need exactly.
 
-### 下载、编译
+## Quick Start
 
-请在[release](https://github.com/zhfreal/cftestor/releases)
-中下载最新的预编译文件或自行编译。
+### Get the pre-build binary
+
+Download pre-build binary form [release](https://github.com/zhfreal/cftestor/releases) , or build yourself from source code.
+
 ```bash
 $ git clone https://github.com/zhfreal/cftestor.git
 $ cd cftestor
 $ go build .
+```
+### Help
+```bash
 $ ./cftestor -h
 
-    cftestor v1.5.0
-    根据延迟、速度优选CF IP
+cftestor v1.5.1
+    CF IP sanner, evaluation througth delay and download speed, find your best IPs Cloudfare CDN applications.
     https://github.com/zhfreal/cftestor
 
-    参数:
-        -s, --ip            string  待测试IP(段)。例如: "-s 1.0.0.1", "-s 1.0.0.1/32",
-                                    "-s 1.0.0.1/24"。可重复使用, 传递多个IP或者IP段。
-        -i, --in            string  IP(段) 数据文件, 文本文件。 其每一行为一个IP或者IP段。
-        -m, --dt-thread     int     延时测试线程数量, 默认20。
-        -t, --dt-timeout    int     延时超时时间(ms), 默认1000ms。此值不能小于
-                                    "-k|--delay-limit"。当使用"--dt-via-https"时, 应适
-                                    当加大此值。
-        -c, --dt-count      int     延时测试次数, 默认4。
-        -p, --port          int     测速端口, 默认443。当使用SSL握手方式测试延时且不进行下载测
-                                    试时, 需要根据此参数测试；其余情况则是使用"--url"提供的参
-                                    数进行测试。
-            --hostname      string  SSL握手时使用的hostname, 默认"cf.9999876.xyz"。仅当
-                                    "--dt-only"且不携带"-dt-via-https"时有效。
-            --dt-via-https          使用HTTPS请求相应方式进行延时测试开关。
-                                    默认关闭, 即使用SSL握手方式测试延时。
-        -n, --dlt-thread    int     下测试线程数, 默认1。
-        -d, --dlt-period    int     单次下载测速最长时间(s), 默认10s。
-        -b, --dlt-count     int     尝试下载次数, 默认1。
-        -u, --url           string  下载测速地址, 默认 "https://cf.9999876.xyz/500mb.dat"。
-        -I  --interval      int     测试间隔时间(ms), 默认500ms。
-        -k, --delay-limit   int     平均延时上限(ms), 默认600ms。 平均延时超过此值不计入结果集,
-                                    不进行下载测试。
-        -S, --dtpr-limit    float   延迟测试成功率下限(%), 默认100%。
-                                    当低于此值时不计入结果集, 不进行下载测试。默认100, 即不低于
-                                    100%。此值低于100%的IP会发生断流或者偶尔无法连接的情况。
-        -l, --speed         float   下载平均速度下限(KB/s), 默认2000KB/s。下载平均速度低于此值
-                                    时不计入结果集。
-        -r, --result        int     测速结果集数量, 默认10。
-                                    当符合条件的IP数量超过此值时, 结束测试。但是如果开启
-                                    "--test-all", 此值不生效。
-            --dt-only               只进行延迟测试, 不进行下载测速开关, 默认关闭。
-            --dlt-only              不单独使用延迟测试, 直接使用下载测试, 默认关闭。
-        -4, --ipv4                  测试IPv4开关, 表示测试IPv4地址。仅当不携带"-s"和"-i"时有效。
-                                    默认打开。与"-6|--ipv6"不能同时使用。
-        -6, --ipv6                  测试IPv6开关, 表示测试IPv6地址。仅当不携带"-s"和"-i"时有效。
-                                    默认关闭。与"-4|--ipv4"不能同时使用。
-        -a  --test-all              测试全部IP开关。默认关闭。
-        -w, --store-to-file         是否将测试结果写入文件开关, 默认关闭。
-        -o, --result-file   string  输出结果文件。携带此参数将结果输出至本参数对应的文件。
-        -e, --store-to-db           是否将结果存入sqlite3数据库开关。默认关闭。
-        -f, --db-file       string  sqlite3数据库文件名称。携带此参数将结果输出至本参数对应的数
-                                    据库文件。
-        -g, --label         string  输出结果文件后缀或者数据库中数据记录的标签, 用于区分测试目标
-                                    服务器。默认为"--url"地址的hostname或者"--hostname"。
-            --no-tcell      bool    不使用TCell显示。
-        -V, --debug                 调试模式。
-        -v, --version               打印版本。
+    Usage: cftestor [options]
+    options:
+        -s, --ip            string  Specific IP or CIDR for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32",
+                                    "-s 1.0.0.1/24".
+        -i, --in            string  Specific file for test, which contains multiple lines. Each line
+                                    represent one IP or CIDR.
+        -m, --dt-thread     int     Number of concurrent threads for Delay Test(DT). How many IPs can
+                                    be perform DT at the same time. Default 20 threads.
+        -t, --dt-timeout    int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS
+                                    or HTTPS request and response should be finished before timeout.
+                                    It should not be less than "-k|--delay-limit", It should be
+                                    longger when we perform https connections test by "-dt-via-https"
+                                    than when we perform SSL/TLS test by default.
+        -c, --dt-count      int     Tries of DT for a IP, default 4.
+        -p, --port          int     Port to test, default 443. It's valid when "--only-dt" and "--dt-via-https".
+            --hostname      string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https"
+                                    is not provoided.
+            --dt-via-https          DT via https other than SSL/TLS shakehand. It's disabled by default,
+                                    we do DT via SSL/TLS.
+        -n, --dlt-thread    int     Number of concurrent Threads for Download Test(DLT), default 1.
+                                    How many IPs can be perform DLT at the same time.
+        -d, --dlt-period    int     The total times escaped for single DLT, default 10s.
+        -b, --dlt-count     int     Tries of DLT for a IP, default 1.
+        -u, --url           string  Customize test URL for DLT.
+        -I  --interval      int     Interval between two tests, unit ms, default 500ms.
+        -k, --delay-limit   int     Delay filter for DT, unit ms, default 600ms. If A ip's average delay
+                                    bigger than this value after DT, it is not qualified and won't do
+                                    DLT if DLT required.
+        -S, --dtpr-limit    float   The DT pass rate filter, default 100%. It means do 4 times DTs by
+                                    default for a IP, it's passed just when no single DT failed.
+        -l, --speed         float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's
+                                    qualified when its speed is not lower than this value.
+        -r, --result        int     The total IPs qualified limitation, default 10. The Process will stop
+                                    after it got equal or more than this indicated. It would be invalid if
+                                    "--test-all" was set.
+            --dt-only               Do DT only, we do DT & DLT at the same time by default.
+            --dlt-only              Do DLT only, we do DT & DLT at the same time by default.
+        -4, --ipv4                  Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
+                                    then it will do IPv4 test from build-in IPs from CloudFlare by default.
+        -6, --ipv6                  Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
+                                    then it will do IPv6 test from build-in IPs from CloudFlare by using
+                                    this flag.
+        -a  --test-all              Test all IPs until no more IP left. It's disabled by default.
+        -w, --store-to-file         Write result to csv file, disabled by default. If it is provoided and
+                                    "-o|--result-file" is not provoided, the result file will be named
+                                    as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
+        -o, --result-file   string  File name of result. If it don't provoided and "-w|--store-to-file"
+                                    is provoided, the result file will be named as
+                                    "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stroed in current DIR.
+        -e, --store-to-db           Write result to sqlite3 db file, disabled by default. If it's provoided
+                                    and "-f|--db-file" is not provoided, it will be named "ip.db" and
+                                    store in current directory.
+        -f, --db-file       string  Sqlite3 db file name. If it's not provoided and "-e|--store-to-db" is
+                                    provoided, it will be named "ip.db" and store in current directory.
+        -g, --label         string  Lable for a part of the result file's name and sqlite3 record. It's
+                                    hostname from "--hostname" or "-u|--url" by default.
+            --no-tcell      bool    Don't use tcell to display the running procedure, disabled by default.
+        -V, --debug                 Print debug message.
+        -v, --version               Show version.
     pflag: help requested
 $
 ```
-### 运行
+### Runing test
 ```bash
-$./cftestor -l 10000
+$./cftestor
+```
+tcell screen during running:
 
-运行画面：
-```
-![alt text](Result.png "运行画面")
-结果：
-```
-$./cftestor -l 10000
+![alt text](Result.png "running")</br>
+Result:
+```bash
+$./cftestor
 
 All Results:
 
 TestTime IP              Speed(KB/s) DelayAvg(ms) Stability(%)
-14:14:02 172.67.163.117  34268.63    429          100.00
-14:15:34 172.66.47.81    34131.00    408          100.00
-14:14:13 172.67.41.239   31077.84    440          100.00
-14:13:16 172.67.93.164   31010.67    389          100.00
-14:13:50 172.67.154.195  21430.12    341          100.00
-14:14:49 172.67.171.243  21035.27    437          100.00
-14:14:24 172.67.217.165  18792.30    342          100.00
-14:15:45 172.67.190.13   18171.35    342          100.00
-14:15:11 172.67.219.219  18033.72    350          100.00
-14:15:22 172.67.69.116   12264.92    347          100.00
+14:26:26 172.67.122.133  11912.66    373          100.00
+14:27:50 172.67.34.139   9078.23     389          100.00
+14:29:22 172.67.99.232   8162.36     410          100.00
+14:27:15 172.67.2.55     7905.95     402          100.00
+14:37:31 172.67.124.78   7144.92     384          100.00
+14:34:49 172.67.162.221  6715.65     370          100.00
+14:35:00 172.67.93.113   6466.62     378          100.00
+14:29:34 172.67.243.14   6446.14     471          100.00
+14:36:33 172.64.154.19   6387.97     383          100.00
+14:34:25 172.67.172.221  6220.86     366          100.00
 
 ```
 
 ```
-> Speed(KB/s): 下载速度， 单位KB/s
-> DelayAvg(ms): TCP同步包发送到SSL握手成功(或者收到http响应时)的平均时间，单位毫秒ms
-> Stability(%): 延迟测试（SSL握手或者HTTPS连接）的成功率，大致反映网络的丢包率。
+> Speed(KB/s): Download speed in KB/s
+> DelayAvg(ms): Average delay for DT in ms
+> Stability(%): DT pass rate(%)
 ```
 
-## 注意事项
-### 1. 自定义测试地址，找到符合自己的最佳IP
-默认测试结果只能反映当前位置到CloudFlare服务器的网络情况，不能反映CloudFlare到落地服务器的网络状况。若要测试当前位置经过CloudFlare服务器到落地服务器整条链路的状况，需使用自己的测试地址。 <br>
-(1)、自行在落地服务器上创建测试文件，测试文件最好压缩。避免CF或者HTTP容器(nginx/apache/caddy等)使用压缩方式传输数据，而测试速度大于实际速度。<br>
-(2)、在CF上通过设置页面规则关闭对此测试文件的缓存，或者在HTTP容器中对此文件进行用户名和密码的访问控制(可按此格式传入: "-u https://<用户名>:<密码>@cf.example.com/test.dat")。<br>
-(3)、请注意落地服务器的流量消耗。<br>
-
-### 2. 使用"--dt-via-https"参数测试延时
-#### "--dt-timeout"参数增大
-此时根据HTTP(s)请求和响应的延迟，其值相当于SSL握手时间加上HTTP Request发送后收到HTTP Response的时间，建议"--dt-timeout"适当增大。
-#### ”--dt-thread“参数和"--dlt-thread"参数减小
-这种方式下因延迟测试的过程实际上是在做HTTP(s)请求和响应交互，请根据落地服务器的实际性能和CF的限制，降低延迟测试和下载测试的线程数。
-
-### 3. Sqlite数据库存储测试结果
-#### 表：CFTD，字段如下：
+### Data stored in sqlite3 DB
+#### table - CFTD have these columns：
 ```
-    TestTime      datetime     测试时间                         
-    ASN           int          测试所使用本地网络的ASN          
-    CITY          text         测试所在地                       
-    IP            text         目标CF的IP地址                   
-    LABEL         text         落地服务器标识                   
-    DTS           text         延迟类型(SSL or HTTPS)
-    DTC           int          延迟测试次数                     
-    DTPC          int          延迟测试通过次数                     
-    DTPR          float        延迟测试成功率                       
-    DA            float        平均延迟                     
-    DMI           float        最小延迟                     
-    DMX           float        最大延迟                     
-    DLTC          int          下载尝试次数                     
-    DLTPC         int          下载成功次数                     
-    DLTPR         float        下载成功率                       
-    DLSA          float        下载平均速度(KB/s)               
-    DLDS          int          总下载数据大小(byte)
-    DLTD          float        总下载时间(秒) 
+    TestTime      datetime     when the test happened
+    ASN           int          ASN of your local network
+    CITY          text         city of your local network
+    IP            text         valid IP for CloudFare CDN access
+    LABEL         text         label while stand for your CloudFare CDN resources
+    DTS           text         the method for DT (SSL or HTTPS)
+    DTC           int          tries for DT
+    DTPC          int          success count of DT
+    DTPR          float        success rate of DT
+    DA            float        average delay of DT
+    DMI           float        minimal delay of DT
+    DMX           float        maximum delay of DT
+    DLTC          int          tries for DLT
+    DLTPC         int          success count of DLT
+    DLTPR         float        success rate of DLT
+    DLSA          float        average download speed (KB/s)
+    DLDS          int          total bytes downloaded
+    DLTD          float        total times escapted during download (in second)
 ```
-#### 数据库目前存储结果，可自行通过sqlite命令行等方式查询使用结果，方便测试结果的追踪和重复使用。
-## 感谢:
+## References:
 > 
 > <a href="https://github.com/Spedoske/CloudflareScanner">github.com/Spedoske/CloudflareScanner</a>
 > 

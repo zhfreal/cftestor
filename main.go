@@ -107,97 +107,108 @@ func init() {
 	var printVersion bool
 
 	// version = "dev"
-	var help = runTime + " " + version + `
-    根据延迟、丢包率和速度优选CF IP
+	var help = "\n" + runTime + " " + version + `
+    CF CDN IP sanner, evaluation througth delay and download speed, find your best IPs Cloudfare CDN applications.
     https://github.com/zhfreal/cftestor
 
-    参数:
-        -s, --ip            string  待测试IP(段)。例如: "-s 1.0.0.1", "-s 1.0.0.1/32", 
-                                    "-s 1.0.0.1/24"。可重复使用, 传递多个IP或者IP段。
-        -i, --in            string  IP(段) 数据文件, 文本文件。 其每一行为一个IP或者IP段。
-        -m, --dt-thread     int     延时测试线程数量, 默认20。
-        -t, --dt-timeout    int     延时超时时间(ms), 默认1000ms。此值不能小于
-                                    "-k|--delay-limit"。当使用"--dt-via-https"时, 应适
-                                    当加大此值。
-        -c, --dt-count      int     延时测试次数, 默认4。
-        -p, --port          int     测速端口, 默认443。当使用SSL握手方式测试延时且不进行下载测
-                                    试时, 需要根据此参数测试；其余情况则是使用"--url"提供的参
-                                    数进行测试。
-            --hostname      string  SSL握手时使用的hostname, 默认"cf.9999876.xyz"。仅当
-                                    "--dt-only"且不携带"-dt-via-https"时有效。
-            --dt-via-https          使用HTTPS请求相应方式进行延时测试开关。
-                                    默认关闭, 即使用SSL握手方式测试延时。
-        -n, --dlt-thread    int     下测试线程数, 默认1。
-        -d, --dlt-period    int     单次下载测速最长时间(s), 默认10s。
-        -b, --dlt-count     int     尝试下载次数, 默认1。
-        -u, --url           string  下载测速地址, 默认 "https://cf.9999876.xyz/500mb.dat"。
-        -I  --interval      int     测试间隔时间(ms), 默认500ms。
-        -k, --delay-limit   int     平均延时上限(ms), 默认600ms。 平均延时超过此值不计入结果集,
-                                    不进行下载测试。
-        -S, --dtpr-limit    float   延迟测试成功率下限(%), 默认100%。
-                                    当低于此值时不计入结果集, 不进行下载测试。默认100, 即不低于
-                                    100%。此值低于100%的IP会发生断流或者偶尔无法连接的情况。
-        -l, --speed         float   下载平均速度下限(KB/s), 默认2000KB/s。下载平均速度低于此值
-                                    时不计入结果集。
-        -r, --result        int     测速结果集数量, 默认10。
-                                    当符合条件的IP数量超过此值时, 结束测试。但是如果开启
-                                    "--test-all", 此值不生效。
-            --dt-only               只进行延迟测试, 不进行下载测速开关, 默认关闭。
-            --dlt-only              不单独使用延迟测试, 直接使用下载测试, 默认关闭。
-        -4, --ipv4                  测试IPv4开关, 表示测试IPv4地址。仅当不携带"-s"和"-i"时有效。
-                                    默认打开。与"-6|--ipv6"不能同时使用。
-        -6, --ipv6                  测试IPv6开关, 表示测试IPv6地址。仅当不携带"-s"和"-i"时有效。
-                                    默认关闭。与"-4|--ipv4"不能同时使用。
-        -a  --test-all              测试全部IP开关。默认关闭。
-        -w, --store-to-file         是否将测试结果写入文件开关, 默认关闭。
-        -o, --result-file   string  输出结果文件。携带此参数将结果输出至本参数对应的文件。
-        -e, --store-to-db           是否将结果存入sqlite3数据库开关。默认关闭。 
-        -f, --db-file       string  sqlite3数据库文件名称。携带此参数将结果输出至本参数对应的数
-                                    据库文件。
-        -g, --label         string  输出结果文件后缀或者数据库中数据记录的标签, 用于区分测试目标
-                                    服务器。默认为"--url"地址的hostname或者"--hostname"。
-            --no-tcell      bool    不使用TCell显示。
-        -V, --debug                 调试模式。
-        -v, --version               打印版本。
+    Usage: ` + runTime + ` [options]
+    options:
+        -s, --ip            string  Specific IP or CIDR for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32", 
+                                    "-s 1.0.0.1/24".
+        -i, --in            string  Specific file for test, which contains multiple lines. Each line
+                                    represent one IP or CIDR.
+        -m, --dt-thread     int     Number of concurrent threads for Delay Test(DT). How many IPs can 
+                                    be perform DT at the same time. Default 20 threads.
+        -t, --dt-timeout    int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS 
+                                    or HTTPS request and response should be finished before timeout. 
+                                    It should not be less than "-k|--delay-limit", It should be 
+                                    longger when we perform https connections test by "-dt-via-https" 
+                                    than when we perform SSL/TLS test by default.
+        -c, --dt-count      int     Tries of DT for a IP, default 4.
+        -p, --port          int     Port to test, default 443. It's valid when "--only-dt" and "--dt-via-https".
+            --hostname      string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
+                                    is not provoided.
+            --dt-via-https          DT via https other than SSL/TLS shakehand. It's disabled by default,
+                                    we do DT via SSL/TLS.
+        -n, --dlt-thread    int     Number of concurrent Threads for Download Test(DLT), default 1. 
+                                    How many IPs can be perform DLT at the same time.
+        -d, --dlt-period    int     The total times escaped for single DLT, default 10s.
+        -b, --dlt-count     int     Tries of DLT for a IP, default 1.
+        -u, --url           string  Customize test URL for DLT.
+        -I  --interval      int     Interval between two tests, unit ms, default 500ms.
+        -k, --delay-limit   int     Delay filter for DT, unit ms, default 600ms. If A ip's average delay 
+                                    bigger than this value after DT, it is not qualified and won't do 
+                                    DLT if DLT required.
+        -S, --dtpr-limit    float   The DT pass rate filter, default 100%. It means do 4 times DTs by
+                                    default for a IP, it's passed just when no single DT failed.
+        -l, --speed         float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's 
+                                    qualified when its speed is not lower than this value.
+        -r, --result        int     The total IPs qualified limitation, default 10. The Process will stop 
+                                    after it got equal or more than this indicated. It would be invalid if
+                                    "--test-all" was set.
+            --dt-only               Do DT only, we do DT & DLT at the same time by default.
+            --dlt-only              Do DLT only, we do DT & DLT at the same time by default.
+        -4, --ipv4                  Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
+                                    then it will do IPv4 test from build-in IPs from CloudFlare by default.
+        -6, --ipv6                  Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
+                                    then it will do IPv6 test from build-in IPs from CloudFlare by using
+                                    this flag.
+        -a  --test-all              Test all IPs until no more IP left. It's disabled by default. 
+        -w, --store-to-file         Write result to csv file, disabled by default. If it is provoided and 
+                                    "-o|--result-file" is not provoided, the result file will be named
+                                    as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
+        -o, --result-file   string  File name of result. If it don't provoided and "-w|--store-to-file"
+                                    is provoided, the result file will be named as 
+                                    "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stroed in current DIR.
+        -e, --store-to-db           Write result to sqlite3 db file, disabled by default. If it's provoided
+                                    and "-f|--db-file" is not provoided, it will be named "ip.db" and
+                                    store in current directory.
+        -f, --db-file       string  Sqlite3 db file name. If it's not provoided and "-e|--store-to-db" is
+                                    provoided, it will be named "ip.db" and store in current directory.
+        -g, --label         string  Lable for a part of the result file's name and sqlite3 record. It's 
+                                    hostname from "--hostname" or "-u|--url" by default.
+            --no-tcell      bool    Don't use tcell to display the running procedure, disabled by default.
+        -V, --debug                 Print debug message.
+        -v, --version               Show version.
     `
 
-	flag.VarP(&ipStr, "ip", "s", "待测试IP或者地址段, 例如1.0.0.1或者1.0.0.0/24")
-	flag.StringVarP(&ipFile, "in", "i", "", "IP 数据文件")
+	flag.VarP(&ipStr, "ip", "s", "Specific IP or CIDR for test.")
+	flag.StringVarP(&ipFile, "in", "i", "", "Specific file of IPs and CIDRs for test.")
 
-	flag.IntVarP(&dtWorkerThread, "dt-thread", "m", 20, "Delay测试线程数")
-	flag.IntVarP(&dtTimeout, "dt-timeout", "t", 1000, "Delay超时时间(ms)")
-	flag.IntVarP(&dtCount, "dt-count", "c", 4, "Delay测速次数")
-	flag.IntVarP(&port, "port", "p", 443, "延迟测速端口")
-	flag.StringVar(&hostName, "hostname", DefaultTestHost, "SSL握手对应的hostname")
-	flag.BoolVar(&dtHttps, "dt-via-https", false, "使用https连接方式进行Delay测试, 默认是使用SSL握手方式")
+	flag.IntVarP(&dtWorkerThread, "dt-thread", "m", 20, "Number of concurrent threads for Delay Test(DT).")
+	flag.IntVarP(&dtTimeout, "dt-timeout", "t", 1000, "Timeout for single DT(ms).")
+	flag.IntVarP(&dtCount, "dt-count", "c", 4, "Tries of DT for a IP.")
+	flag.IntVarP(&port, "port", "p", 443, "Port to test")
+	flag.StringVar(&hostName, "hostname", DefaultTestHost, "Hostname for DT test.")
+	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https other than SSL/TLS shakehand.")
 
-	flag.IntVarP(&dltWorkerThread, "dlt-thread", "n", 1, "下测试线程数")
-	flag.IntVarP(&dltDurMax, "dlt-period", "d", 10, "单次下载测速最长时间(s)")
-	flag.IntVarP(&dltCount, "dlt-count", "b", 1, "尝试下载次数")
-	flag.StringVarP(&urlStr, "url", "u", defaultTestUrl, "下载测速地址")
-	flag.IntVarP(&interval, "interval", "I", 500, "间隔时间(ms)")
+	flag.IntVarP(&dltWorkerThread, "dlt-thread", "n", 1, "Number of concurrent Threads for Download Test(DLT).")
+	flag.IntVarP(&dltDurMax, "dlt-period", "d", 10, "The total times escaped for single DLT, default 10s.")
+	flag.IntVarP(&dltCount, "dlt-count", "b", 1, "Tries of DLT for a IP, default 1.")
+	flag.StringVarP(&urlStr, "url", "u", defaultTestUrl, "Customize test URL for DLT.")
+	flag.IntVarP(&interval, "interval", "I", 500, "Interval between two tests, unit ms, default 500ms.")
 
-	flag.IntVarP(&delayMax, "delay-limit", "k", 600, "平均延迟上限(ms)")
-	flag.Float64VarP(&dtPassedRateMin, "dtpr-limit", "S", 100, "延迟测试成功率下限(%)")
-	flag.Float64VarP(&speedMinimal, "speed", "l", 6000, "下载速度下限(KB/s)")
-	flag.IntVarP(&resultMin, "result", "r", 10, "测速结果集数量")
+	flag.IntVarP(&delayMax, "delay-limit", "k", 600, "Delay filter for DT, unit ms, default 600ms.")
+	flag.Float64VarP(&dtPassedRateMin, "dtpr-limit", "S", 100, "The DT pass rate filter, default 100%.")
+	flag.Float64VarP(&speedMinimal, "speed", "l", 6000, "Download speed filter, Unit KB/s, default 6000KB/s.")
+	flag.IntVarP(&resultMin, "result", "r", 10, "The total IPs qualified limitation, default 10")
 
-	flag.BoolVar(&disableDownload, "disable-download", false, "禁用下载测速。已废弃, 请使用--dt-only。")
-	flag.BoolVar(&dtOnly, "dt-only", false, "仅延迟测试, 禁用速率测速")
-	flag.BoolVar(&dltOnly, "dlt-only", false, "直接使用速率测试, 不预先使用单独的延迟测速")
-	flag.BoolVarP(&ipv4Mode, "ipv4", "4", true, "测试IPv4地址")
-	flag.BoolVarP(&ipv6Mode, "ipv6", "6", false, "测试IPv6地址")
-	flag.BoolVarP(&testAll, "test-all", "a", false, "测速全部IP")
+	flag.BoolVar(&disableDownload, "disable-download", false, "Deprecated, use --dt-only instead.")
+	flag.BoolVar(&dtOnly, "dt-only", false, "Do DT only, we do DT & DLT at the same time by default.")
+	flag.BoolVar(&dltOnly, "dlt-only", false, "Do DLT only, we do DT & DLT at the same time by default.")
+	flag.BoolVarP(&ipv4Mode, "ipv4", "4", true, "Just test IPv4.")
+	flag.BoolVarP(&ipv6Mode, "ipv6", "6", false, "Just test IPv6.")
+	flag.BoolVarP(&testAll, "test-all", "a", false, "Test all IPs until no more IP left.")
 
-	flag.BoolVarP(&storeToFile, "store-to-file", "w", false, "是否将测试结果写入文件")
-	flag.StringVarP(&resultFile, "result-file", "o", "", "输出结果文件")
-	flag.BoolVarP(&storeToDB, "store-to-db", "e", false, "结果写入sqlite数据库")
-	flag.StringVarP(&dbFile, "db-file", "f", "", "sqlite数据库文件")
-	flag.StringVarP(&suffixLabel, "label", "g", "", "输出结果文件后缀或者数据库中数据记录的标签")
+	flag.BoolVarP(&storeToFile, "store-to-file", "w", false, "Write result to csv file, disabled by default.")
+	flag.StringVarP(&resultFile, "result-file", "o", "", "File name of result. ")
+	flag.BoolVarP(&storeToDB, "store-to-db", "e", false, "Write result to sqlite3 db file.")
+	flag.StringVarP(&dbFile, "db-file", "f", "", "Sqlite3 db file name.")
+	flag.StringVarP(&suffixLabel, "label", "g", "", "Lable for a part of the result file's name and sqlite3 record.")
 
-	flag.BoolVar(&noTcell, "no-tcell", false, "不使用Tcell输出")
-	flag.BoolVarP(&debug, "debug", "V", false, "调试模式")
-	flag.BoolVarP(&printVersion, "version", "v", false, "打印程序版本")
+	flag.BoolVar(&noTcell, "no-tcell", false, "Don't use tcell to display the running procedure, disabled by default.")
+	flag.BoolVarP(&debug, "debug", "V", false, "Print debug message.")
+	flag.BoolVarP(&printVersion, "version", "v", false, "Show version.")
 	flag.Usage = func() { fmt.Print(help) }
 	flag.Parse()
 
@@ -210,11 +221,11 @@ func init() {
 	}
 	if disableDownload {
 		dtOnly = true
-		println("Warning! \"--disable-download\" 已经弃用, 请使用 \"--dt-only\"!")
+		println("Warning! \"--disable-download\" is deprecated, use \"--dt-only\" instead!")
 	}
 	if dtOnly && dltOnly {
 		print_version()
-		println("\"--dt-only\"和\"--dlt-only\"不能同时使用!")
+		println("\"--dt-only\" and \"--dlt-only\" should not be provoided at the same time!")
 		os.Exit(1)
 	}
 
@@ -240,8 +251,8 @@ func init() {
 		if !timeoutFlag.Changed {
 			dtTimeout = delayMax + int(delayMax/2)
 		} else {
-			myLogger.Warning(fmt.Sprintf("\"-t|--dt-timeout\" - %v 小于 \"-k|--delay-limit\" - %v, 会导致部分连接总失败！", dtTimeout, delayMax))
-			if !confirm("继续？", 3) {
+			myLogger.Warning(fmt.Sprintf("\"-t|--dt-timeout\" - %v is less than \"-k|--delay-limit\" - %v. This will led to failure for some test!", dtTimeout, delayMax))
+			if !confirm("Continue?", 3) {
 				os.Exit(0)
 			}
 		}
@@ -250,7 +261,7 @@ func init() {
 	// it's invalid when ipv4Mode and ipv6Mode is both true or false
 	if ipv4Mode == ipv6Mode {
 		print_version()
-		println("\"-4|--ipv4\"和\"-6|--ipv6\"只能为其一, 默认\"-4|--ipv4\"!")
+		println("\"-4|--ipv4\" and \"-6|--ipv6\" should not be provoided at the same time!")
 		os.Exit(1)
 	}
 
@@ -270,7 +281,7 @@ func init() {
 	if len(ipFile) != 0 {
 		file, err := os.Open(ipFile)
 		if err != nil {
-			myLogger.Fatal(fmt.Sprintf("文件不存在或者不可读取: %s", ipFile))
+			myLogger.Fatalf("Sqlite3 db file is not accessable! \"%s\"\n", ipFile)
 		}
 		scanner := bufio.NewScanner(file)
 		scanner.Split(bufio.ScanLines)
@@ -282,7 +293,7 @@ func init() {
 			if isValidIPs(tIp) {
 				srcIPS = append(srcIPS, &tIp)
 			} else {
-				myLogger.Fatal(tIp + " 合法的IP或者CIDR.")
+				myLogger.Fatalf("\"%s\" is not a valid IP or CIDR.\n", tIp)
 			}
 		}
 	}
@@ -318,35 +329,35 @@ func init() {
 		})
 	}
 	if dtWorkerThread <= 0 {
-		myLogger.Fatal("\"-m|--dt-thread\" 不应小于0!\n")
+		myLogger.Fatalf("\"-m|--dt-thread %v\" should not be smaller than 0!\n", dtWorkerThread)
 	}
 	if resultMin <= 0 {
-		myLogger.Fatal("\"-r|--result\" 不应小于0!\n")
+		myLogger.Fatalf("\"-r|--result %v\" should not be smaller than 0!\n", resultMin)
 	}
 	dtThreadNumLen = len(strconv.Itoa(dtWorkerThread))
 	if dtCount <= 0 {
-		myLogger.Fatal("\"-c|--dt-count\" 不应小于0!\n")
+		myLogger.Fatalf("\"-c|--dt-count %v\" should not be smaller than 0!\n", dtCount)
 	}
 	if dltWorkerThread <= 0 {
-		myLogger.Fatal("\"-n|--dlt-thread\" 不应小于0!\n")
+		myLogger.Fatalf("\"-n|--dlt-thread %v\" should not be smaller than 0!\n", dltWorkerThread)
 	}
 	dltThreadNumLen = len(strconv.Itoa(dltWorkerThread))
 	if dltCount <= 0 {
-		myLogger.Fatal("\"-b|--dlt-count\" 不应小于0!\n")
+		myLogger.Fatalf("\"-b|--dlt-count %v\" should not be smaller than 0!\n", dltCount)
 	}
 
 	if dltDurMax <= 0 {
-		myLogger.Fatal("\"-d|--dl-period\" 不应小于0!\n")
+		myLogger.Fatalf("\"-d|--dl-period %v\" should not be smaller than 0!\n", dltDurMax)
 	}
 
 	if delayMax <= 0 {
-		myLogger.Fatal("\"-k|--delay-limit\" 不应小于0!\n")
+		myLogger.Fatalf("\"-k|--delay-limit %v\" should not be smaller than 0!\n", delayMax)
 	}
 	if interval <= 0 {
-		myLogger.Fatal("\"-I|--interval\" 不应小于0!\n")
+		myLogger.Fatalf("\"-I|--interval %v\" should not be smaller than 0!\n", interval)
 	}
 	if speedMinimal <= 0 {
-		myLogger.Fatal("\"-l|--speed\" 不应小于0!\n")
+		myLogger.Fatalf("\"-l|--speed %v\" should not be smaller than 0!\n", speedMinimal)
 	}
 
 	dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
@@ -354,7 +365,7 @@ func init() {
 	if !dtHttps && dtOnly {
 		//ping via ssl negotiation
 		if len(hostName) == 0 {
-			myLogger.Fatal("\"--hostname\" 不能为空. \n" + help)
+			myLogger.Fatal("\"--hostname\" should not be empty. \n")
 		}
 		if port < 1 || port > 65535 {
 			port = 443
