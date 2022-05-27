@@ -118,7 +118,7 @@ TestTime IP              Speed(KB/s) DelayAvg(ms) Stability(%)
 
 ### 2. 优化参数
 (1). **"-m|--dt-thread"**: 延迟测试(DT)并发任务数量，根据ISP的Qos策略情况，其可能影响测试结果。<br>
-(2). "-I|--interval": 测试间隔，DT和DLT所有测试的间隔，根据ISP的Qos策略情况，其可能影响各个测试的结果，对测试进程也有不小的影响。<br>
+(2). **"-I|--interval"**: 测试间隔，DT和DLT所有测试的间隔，根据ISP的Qos策略情况，其可能影响各个测试的结果，对测试进程也有不小的影响。<br>
 (3). **"-t|--dt-timeout"**: 延迟测试(DT)的SSL/TLS握手或者HTTPS请求超时时间，未在该时间内完成SSL/TLS握手或者收到HTTPS Response则失败。此参数影响测试进度。<br>
 (4). **"-c|--dt-count"** DT测试次数，增加此参数值，增加测试总时长，可能增加延迟测试准确性。<br>
 (5). **"-d|--dlt-period"**, **"-b|--dlt-count"**, 增加这两参数值，增加DLT测试时常，可能增加下载速度准确性。<br>
