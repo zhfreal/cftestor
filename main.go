@@ -308,26 +308,7 @@ func init() {
 			}
 		}
 	}
-	// init srcIPR and srcIPRsCache
-	for i := 0; i < len(srcIPS); i++ {
-		ipr := NewIPRangeFromCIDR(srcIPS[i])
-		// when it do not testAll and ipr is not bigger than maxHostLenBig, extracto to cache
-		if !testAll && ipr.Len.Cmp(maxHostLenBig) < 1 {
-			srcIPRsCache = append(srcIPRsCache, ipr.ExtractAll()...)
-		} else {
-			// when it do not perform tealAll or not bigger than maxHostLenBig, just put it to srcIPRs
-			srcIPRs = append(srcIPRs, ipr)
-		}
-	}
-	// random srcIPR and srcIPRsCache when do not testAll
-	if !testAll {
-		myRand.Shuffle(len(srcIPRs), func(m, n int) {
-			srcIPRs[m], srcIPRs[n] = srcIPRs[n], srcIPRs[m]
-		})
-		myRand.Shuffle(len(srcIPRsCache), func(m, n int) {
-			srcIPRsCache[m], srcIPRsCache[n] = srcIPRsCache[n], srcIPRsCache[m]
-		})
-	}
+	// check parameters
 	if dtWorkerThread <= 0 {
 		myLogger.Fatalf("\"-m|--dt-thread %v\" should not be smaller than 0!\n", dtWorkerThread)
 	}
@@ -358,6 +339,39 @@ func init() {
 	}
 	if speedMinimal <= 0 {
 		myLogger.Fatalf("\"-l|--speed %v\" should not be smaller than 0!\n", speedMinimal)
+	}
+
+	// init srcIPR and srcIPRsCache
+	t_qty := big.NewInt(0)
+	for i := 0; i < len(srcIPS); i++ {
+		ipr := NewIPRangeFromCIDR(srcIPS[i])
+		if ipr == nil {
+			myLogger.Fatalf("\"%v\" is invalid!\n", *srcIPS[i])
+		}
+		// when it do not testAll and ipr is not bigger than maxHostLenBig, extracto to cache
+		t_qty = t_qty.Add(t_qty, ipr.Len)
+		if !testAll && ipr.Len.Cmp(maxHostLenBig) < 1 {
+			srcIPRsCache = append(srcIPRsCache, ipr.ExtractAll()...)
+		} else {
+			// when it do not perform tealAll or not bigger than maxHostLenBig, just put it to srcIPRs
+			srcIPRs = append(srcIPRs, ipr)
+		}
+	}
+	// shuffle srcIPR and srcIPRsCache when do not testAll
+	// and fix resultMin
+	t_resultmin := big.NewInt(int64(resultMin))
+	if !testAll {
+		myRand.Shuffle(len(srcIPRs), func(m, n int) {
+			srcIPRs[m], srcIPRs[n] = srcIPRs[n], srcIPRs[m]
+		})
+		myRand.Shuffle(len(srcIPRsCache), func(m, n int) {
+			srcIPRsCache[m], srcIPRsCache[n] = srcIPRsCache[n], srcIPRsCache[m]
+		})
+		if t_qty.Cmp(t_resultmin) == -1 {
+			resultMin = int(t_qty.Int64())
+		}
+	} else {
+		resultMin = -1
 	}
 
 	dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
@@ -461,7 +475,8 @@ func controllerWorker(dtTaskChan chan *string, dtResultChan chan singleVerifyRes
 	dltTaskCacher := make([]*string, 0)
 	cacheResultMap := make(map[string]VerifyResults)
 	haveEnoughResult := false
-	noMoreSources := false
+	noMoreSourcesDT := false
+	noMoreSourcesDLT := false
 	OverAllStatTimer := time.Now()
 	showQuitWaiting := false
 
@@ -541,37 +556,40 @@ LOOP:
 			}
 			// DT task control, when it have enougth source ip, don't get cancel signal from term,
 			// don't result as expected, and the task chan is not full
-			if !noMoreSources && !cancelSigFromTerm && !haveEnoughResult && len(dtTaskChan) < cap(dtTaskChan) {
-				// get more Hosts while we don't have enough hosts in dtTaskCacher
-				if len(dtTaskCacher) == 0 {
-					dtTaskCacher = extractCIDRHosts(2 * dtWorkerThread)
-					// if no more hosts, but just in dt-only mode, we set noMoSources to true
+			if !noMoreSourcesDT && !cancelSigFromTerm && !haveEnoughResult {
+				if len(dtTaskChan) < cap(dtTaskChan) { // this condition is not apply for #line 587
+					// get more Hosts while we don't have enough hosts in dtTaskCacher
 					if len(dtTaskCacher) == 0 {
-						noMoreSources = true
+						dtTaskCacher = extractCIDRHosts(2 * dtWorkerThread)
+						// if no more hosts, but just in dt-only mode, we set noMoSources to true
+						if len(dtTaskCacher) == 0 {
+							noMoreSourcesDT = true
+						}
 					}
-				}
-				// when it's dt-only mode or, download task pool has less ip than 2*cap(dltTaskChan)
-				// we put ping task into dtTaskCacher
-				// simplify algorithm
-				if dtOnly || len(dltTaskCacher) < 2*cap(dltTaskChan) {
-					for len(dtTaskCacher) > 0 &&
-						len(dtTaskChan) < cap(dtTaskChan) &&
-						len(dtTaskChan)+len(dtOnGoingChan)+len(dtResultChan) < cap(dtResultChan) {
-						// to prevent overflow of dtResultChan
-						// the total IP and task in dtTaskChan, dtOnGoingChan and dtResultChan is less than the capacity of dtResultChan
-						dtTasks += 1
-						dtTaskChan <- dtTaskCacher[0]
-						if len(dtTaskCacher) > 1 {
-							dtTaskCacher = dtTaskCacher[1:]
-						} else {
-							dtTaskCacher = []*string{}
+					// when it's dt-only mode or, download task pool has less ip than 2*cap(dltTaskChan)
+					// we put ping task into dtTaskCacher
+					// simplify algorithm
+					if dtOnly || len(dltTaskCacher) < 2*cap(dltTaskChan) {
+						for len(dtTaskCacher) > 0 &&
+							len(dtTaskChan) < cap(dtTaskChan) &&
+							len(dtTaskChan)+len(dtOnGoingChan)+len(dtResultChan) < cap(dtResultChan) {
+							// to prevent overflow of dtResultChan
+							// the total IP and task in dtTaskChan, dtOnGoingChan and dtResultChan is less than the capacity of dtResultChan
+							dtTasks += 1
+							dtTaskChan <- dtTaskCacher[0]
+							if len(dtTaskCacher) > 1 {
+								dtTaskCacher = dtTaskCacher[1:]
+							} else {
+								dtTaskCacher = []*string{}
+							}
 						}
 					}
 				}
-			} else if dtOnly &&
+			} else if dtOnly && // mission control
 				len(dtOnGoingChan) == 0 &&
 				len(dtTaskCacher) == 0 &&
-				len(dtTaskChan) == 0 { // we did all ping works in dt-only mode
+				len(dtTaskChan) == 0 &&
+				dtDoneTasks >= dtTasks { // we did all ping works in dt-only mode, "dtDoneTasks >= dtTasks", make sure all DT tasks did done.
 				break LOOP
 			}
 		}
@@ -641,12 +659,12 @@ LOOP:
 				}
 			}
 			// DLT task control, when it don't get cancel signal from term, don't result as expected
-			if !cancelSigFromTerm && !haveEnoughResult {
+			if !cancelSigFromTerm && !haveEnoughResult && !noMoreSourcesDLT {
 				// get more hosts while it's on downlaod-only mode
 				if dltOnly && len(dltTaskCacher) == 0 {
 					dltTaskCacher = extractCIDRHosts(2 * dltWorkerThread)
 					if len(dltTaskCacher) == 0 {
-						noMoreSources = true
+						noMoreSourcesDLT = true
 					}
 				}
 				// put task to download chan when we have IPs from delay test and the task chan have empty slot
@@ -663,15 +681,15 @@ LOOP:
 						dltTaskCacher = []*string{}
 					}
 				}
-			}
-			if (cancelSigFromTerm || haveEnoughResult || noMoreSources) &&
-				len(dltOnGoingChan) == 0 &&
+			} else if len(dltOnGoingChan) == 0 && // mission control
 				len(dltTaskChan) == 0 &&
 				len(dltTaskCacher) == 0 &&
+				dltDoneTasks >= dltTasks && // "dltDoneTasks >= dltTasks", make sure all DLT tasks did done.
 				(dltOnly ||
 					(len(dtOnGoingChan) == 0 &&
 						len(dtTaskChan) == 0 &&
-						len(dtTaskCacher) == 0)) { // terminate
+						len(dtTaskCacher) == 0) &&
+						dtDoneTasks >= dtTasks) { // "dtDoneTasks >= dtTasks", make sure all DT tasks did done.
 				break LOOP
 			}
 		}
@@ -745,7 +763,6 @@ LOOP:
 		}
 	}
 	printQuitingCountDown(quitWaitingTime)
-
 }
 
 func confirmQuit() bool {
@@ -836,6 +853,5 @@ func main() {
 		myLogger.Println()
 		myLogger.Println("All Results:\n")
 		PrintFinalStat(verifyResultsSlice, dtOnly)
-
 	}
 }

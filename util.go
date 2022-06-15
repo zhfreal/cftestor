@@ -375,6 +375,7 @@ func (myLogger *MyLogger) fatal(newline bool, info ...any) {
 
 func (myLogger *MyLogger) fatalf(format string, info ...any) {
 	myLogger.log_newlinef(logLevelFatal, format, info...)
+	os.Exit(1)
 }
 
 func (myLogger *MyLogger) log(loglvl LogLevel, newline bool, info ...any) {
@@ -1401,11 +1402,13 @@ func initTitleStr() {
 	}
 	titleRuntime = &tMsgRuntime
 	titlePre[0][0] = "Result Exp.:"
-	if !testAll {
-		titlePre[0][1] = " " + strconv.Itoa(resultMin)
-	} else {
-		titlePre[0][1] = " ~"
-	}
+	// we just control the display "resultMin" in main.init()
+	titlePre[0][1] = " " + strconv.Itoa(resultMin)
+	// if !testAll {
+	// 	titlePre[0][1] = " " + strconv.Itoa(resultMin)
+	// } else {
+	// 	titlePre[0][1] = " ~"
+	// }
 	if dtOnly {
 		titlePre[0][2] = "Max Delay:"
 		titlePre[0][3] = fmt.Sprintf(" %vms", delayMax)

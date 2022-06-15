@@ -182,9 +182,10 @@ LOOP:
 			//log.Println("Download task finished!")
 			break LOOP
 		}
-		Ip := net.ParseIP(*ip)
 		// push an element to chanOnGoing, means that there is a test ongoing.
+		// push it immediately once we confirm it's a normal task
 		chanOnGoing <- workOnGoing
+		Ip := net.ParseIP(*ip)
 		tResultSlice := downloadHandler(Ip, port, tUrl, HttpRspTimeoutDuration, dltMaxDuration, dltCount, interval, dtOnly)
 		tVerifyResult := singleVerifyResult{time.Now(), Ip, tResultSlice}
 		chanOut <- tVerifyResult
@@ -237,9 +238,10 @@ LOOP:
 		if *ip == workerStopSignal {
 			break LOOP
 		}
-		Ip := net.ParseIP(*ip)
 		// push an element to chanOnGoing, means that there is a test ongoing.
+		// push it immediately once we confirm it's a normal task
 		chanOnGoing <- workOnGoing
+		Ip := net.ParseIP(*ip)
 		tResultSlice := sslDTHandler(Ip, hostName, port, dtTimeoutDuration, totalRound, interval)
 		tVerifyResult := singleVerifyResult{time.Now(), Ip, tResultSlice}
 		chanOut <- tVerifyResult
