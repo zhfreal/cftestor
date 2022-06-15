@@ -827,10 +827,13 @@ func main() {
 		}
 	}
 	wg.Wait()
+	// close chans
 	close(dtTaskChan)
 	close(dtResultChan)
+	close(dtOnGoingChan)
 	close(dltTaskChan)
 	close(dltResultChan)
+	close(dltOnGoingChan)
 	if len(verifyResultsMap) > 0 {
 		verifyResultsSlice := make([]VerifyResults, 0)
 		for _, v := range verifyResultsMap {
