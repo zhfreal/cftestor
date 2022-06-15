@@ -125,6 +125,7 @@ TestTime IP              Speed(KB/s) DelayAvg(ms) Stability(%)
 (6). **"-k|--delay-limit"**, **"-S|--dtpr-limit"**, **"-l|--speed"** 三个参数直接影响筛选结果。<br>
 (7). TCell模式下，依次通过 **"ESC" 和 "Enter" 键提前中断测试**。<br>
 (8). 如果长时间没有符合条件的IP，建议打开调试模式 **"-V|--debug"** ，查看调试信息，调整优选参数。<br>
+(9). "-w" 扫描结果存储到文件；"-e" 扫描结果存储到Sqlite3数据库。<br>
 
 ### 3. Sqlite数据库存储测试结果
 #### 表：CFTD，字段如下：
