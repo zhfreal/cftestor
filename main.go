@@ -659,7 +659,7 @@ LOOP:
 				}
 			}
 			// DLT task control, when it don't get cancel signal from term, don't result as expected
-			if !cancelSigFromTerm && !haveEnoughResult && !noMoreSourcesDLT {
+			if !cancelSigFromTerm && !haveEnoughResult && ((!dltOnly && len(dltTaskCacher) > 0) || (dltOnly && !noMoreSourcesDLT)) {
 				// get more hosts while it's on downlaod-only mode
 				if dltOnly && len(dltTaskCacher) == 0 {
 					dltTaskCacher = extractCIDRHosts(2 * dltWorkerThread)
