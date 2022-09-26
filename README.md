@@ -4,7 +4,7 @@ In some regions, we can't get the best access from Cloudflare CDN due to the ISP
 
 ## How does it work?
 1. Our goal is find better IPs to access Cloudflare CDN with lower legacy and greater speed. So we will perform Delay Test (DT) and Download Test (DLT) sequentially for an IP as assessment moves. <br>
-2. We do DT by SSL/TLS shakhand or HTTPS get with the target IP. If it secceed to perform SSL/TLS or HTTPS get, we take the times escapted as delay. We will try several times to perfrom DT for a single IP and count the success tries. If it's success rate ( equal to "count of success" / "tries" ) is not less than what we expected, and the average delay ( "sum of every delay" / "count of success" ) is not bigger than we expected, it pass the DT. <br>
+2. We do DT by SSL/TLS shakhand or HTTPS get with the target IP. If it succeed to perform SSL/TLS or HTTPS get, we take the times escapted as delay. We will try several times to perfrom DT for a single IP and count the success tries. If it's success rate ( equal to "count of success" / "tries" ) is not less than what we expected, and the average delay ( "sum of every delay" / "count of success" ) is not bigger than we expected, it pass the DT. <br>
 3. If an IP passed DT, then we perform DLT with it. We download some test data with it, caculate the average download speed. If the average speed is not less than we expected, it's a successful DLT. We can perform several DLT sequentially to evaluate download speed accurately.<br>
 4. If an IP passsed DLT, it's what we need exactly. <br>
 
