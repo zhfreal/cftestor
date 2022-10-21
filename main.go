@@ -169,7 +169,7 @@ func init() {
                                     hostname from "--hostname" or "-u|--url" by default.
         -V, --debug                 Print debug message.
             --tcell         bool    Use tcell to display the running procedure when in debug mode.
-                                    Only take effection when "--debug" is on.
+                                    Turn this on will activate "--debug".
         -v, --version               Show version.
     `
 
@@ -228,6 +228,11 @@ func init() {
 		print_version()
 		println("\"--dt-only\" and \"--dlt-only\" should not be provoided at the same time!")
 		os.Exit(1)
+	}
+
+	// tcellMode will activate debug automatically
+	if tcellMode {
+		debug = true
 	}
 
 	// initialize myLogger
