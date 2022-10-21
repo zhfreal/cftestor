@@ -528,6 +528,18 @@ func (myLogger *MyLogger) PrintDetails(logLvl LogLevel, v []VerifyResults) {
 	myLogger.Println()
 }
 
+// print just IPs
+func (myLogger *MyLogger) PrintClearIPs(v []VerifyResults) {
+	// no data for print
+	if len(v) == 0 {
+		return
+	}
+	lc := v
+	for i := 0; i < len(lc); i++ {
+		myLogger.Println(*lc[i].ip)
+	}
+}
+
 // print OverAll statistic
 func (myLogger *MyLogger) PrintOverAllStat(logLvl LogLevel, ov overAllStat) {
 	// print only when logLvl is permitted in myLogger
@@ -1547,30 +1559,23 @@ func updateTcellDetails(isDebug bool, v []VerifyResults) {
 
 // test detail
 // loglvl should be logLevelDebug or logLevelInfo
-func displayDetails(isDebug bool, v []VerifyResults) {
-	// don't display debug msg when it's not in debug mode
-	if isDebug && !debug {
-		return
-	}
-	logLvl := LogLevel(logLevelInfo)
-	if isDebug {
-		logLvl = LogLevel(logLevelDebug)
-	}
-	if noTcell { // no-tcell
-		myLogger.PrintDetails(logLvl, v)
-	} else { // tcell
-		updateTcellDetails(isDebug, v)
+// when: 1. in non-debug mode, just print pure qualified IPs.
+//  2. in debug mode, we show more as tcell or non-tcel form.
+func displayDetails(v []VerifyResults) {
+	if !debug {
+		myLogger.PrintClearIPs(v)
+	} else {
+		if !tcellMode { // no-tcell
+			myLogger.PrintDetails(LogLevel(logLevelDebug), v)
+		} else { // tcell
+			updateTcellDetails(true, v)
+		}
 	}
 }
 
-// task statistic
-// on tcell mode, task stat could be displayed in both debug and normal mode
-// on non-tcell mode, task stat should be displayed only in debug mode
-func displayStat(isDebug bool, ov overAllStat) {
-	if noTcell { // no-tcell
-		if !debug || !isDebug { // on non-tcell mode, task stat should be displayed only in debug mode
-			return
-		}
+// task statistic - only work in debug mode both in tcell and notcell mode
+func displayStat(ov overAllStat) {
+	if !tcellMode { // no-tcell
 		myLogger.PrintOverAllStat(logLevelDebug, ov)
 	} else { // tcell, print always
 		updateTaskStat(ov)

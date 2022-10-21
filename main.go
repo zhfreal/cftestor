@@ -94,7 +94,7 @@ var (
 	terminateComfirm                       = false
 	resultStatIndent                       = 9
 	dtThreadNumLen, dltThreadNumLen        = 0, 0
-	noTcell                                = false
+	tcellMode                              = false
 	statInterval                           = statisticIntervalNT
 	// titleExitHint                          = "Press any key to exit!"
 )
@@ -167,8 +167,9 @@ func init() {
                                     provoided, it will be named "ip.db" and store in current directory.
         -g, --label         string  Lable for a part of the result file's name and sqlite3 record. It's 
                                     hostname from "--hostname" or "-u|--url" by default.
-            --no-tcell      bool    Don't use tcell to display the running procedure, disabled by default.
         -V, --debug                 Print debug message.
+            --tcell         bool    Use tcell to display the running procedure when in debug mode.
+                                    Only take effection when "--debug" is on.
         -v, --version               Show version.
     `
 
@@ -206,8 +207,8 @@ func init() {
 	flag.StringVarP(&dbFile, "db-file", "f", "", "Sqlite3 db file name.")
 	flag.StringVarP(&suffixLabel, "label", "g", "", "Lable for a part of the result file's name and sqlite3 record.")
 
-	flag.BoolVar(&noTcell, "no-tcell", false, "Don't use tcell to display the running procedure, disabled by default.")
 	flag.BoolVarP(&debug, "debug", "V", false, "Print debug message.")
+	flag.BoolVar(&tcellMode, "tcell", false, "Use tcell form to show debug messages.")
 	flag.BoolVarP(&printVersion, "version", "v", false, "Show version.")
 	flag.Usage = func() { fmt.Print(help) }
 	flag.Parse()
@@ -261,8 +262,7 @@ func init() {
 	// it's invalid when ipv4Mode and ipv6Mode is both true or false
 	if ipv4Mode == ipv6Mode {
 		print_version()
-		println("\"-4|--ipv4\" and \"-6|--ipv6\" should not be provoided at the same time!")
-		os.Exit(1)
+		myLogger.Fatalln("\"-4|--ipv4\" and \"-6|--ipv6\" should not be provoided at the same time!")
 	}
 
 	// trim whitespace
@@ -421,7 +421,7 @@ func init() {
 		}
 	}
 
-	if !noTcell { // It's running on tcell mode
+	if debug && tcellMode { // It's running on tcell mode
 		// reset the position of debugHint and debugTitle according maxResultsDisplay and resultMin
 		if !testAll && resultMin < maxResultsDisplay {
 			maxResultsDisplay = resultMin
@@ -499,12 +499,12 @@ LOOP:
 				}
 				dltTaskCacher = []*string{}
 			}
-			// show waiting msg
-			if !showQuitWaiting {
-				if !noTcell {
+			// show waiting msg, only when debug
+			if debug && !showQuitWaiting {
+				if tcellMode {
 					printQuitWaiting()
 				} else {
-					myLogger.Info(titleWaitQuit + "\n")
+					myLogger.Debugln(titleWaitQuit)
 				}
 				showQuitWaiting = true
 			}
@@ -523,11 +523,13 @@ LOOP:
 							// put ping test result to cacheResultMap for later
 							cacheResultMap[*tVerifyResult.ip] = tVerifyResult
 							dltTaskCacher = append(dltTaskCacher, tVerifyResult.ip)
-							// debug msg
-							displayDetails(true, []VerifyResults{tVerifyResult})
+							// debug msg, show only in debug mode
+							if debug {
+								displayDetails([]VerifyResults{tVerifyResult})
+							}
 						} else { // Download test disabled
 							// non-debug msg
-							displayDetails(false, []VerifyResults{tVerifyResult})
+							displayDetails([]VerifyResults{tVerifyResult})
 							verifyResultsMap[tVerifyResult.ip] = tVerifyResult
 							// we have expected result, break LOOP
 							if !testAll && len(verifyResultsMap) >= resultMin {
@@ -536,13 +538,13 @@ LOOP:
 						}
 					} else if debug {
 						// debug msg
-						displayDetails(true, []VerifyResults{tVerifyResult})
+						displayDetails([]VerifyResults{tVerifyResult})
 					}
 				default:
 				}
 				// Print overall stat during waiting time and reset OverAllStatTimer
 				if time.Since(OverAllStatTimer) > time.Duration(statInterval)*time.Millisecond {
-					displayStat(debug, overAllStat{
+					displayStat(overAllStat{
 						dtTasksDone:  dtDoneTasks,
 						dtOnGoing:    len(dtOnGoingChan),
 						dtCached:     len(dtTaskCacher) + len(dtTaskChan),
@@ -637,16 +639,16 @@ LOOP:
 							haveEnoughResult = true
 						}
 						// non-debug msg
-						displayDetails(false, []VerifyResults{tVerifyResult})
+						displayDetails([]VerifyResults{tVerifyResult})
 					} else if debug {
 						// debug msg
-						displayDetails(true, []VerifyResults{tVerifyResult})
+						displayDetails([]VerifyResults{tVerifyResult})
 					}
 				default:
 				}
 				// Print overall stat during waiting time and reset OverAllStatTimer
 				if time.Since(OverAllStatTimer) > time.Duration(statInterval)*time.Millisecond {
-					displayStat(debug, overAllStat{
+					displayStat(overAllStat{
 						dtTasksDone:  dtDoneTasks,
 						dtOnGoing:    len(dtOnGoingChan),
 						dtCached:     len(dtTaskCacher) + len(dtTaskChan),
@@ -695,7 +697,7 @@ LOOP:
 		}
 		// Print overall stat during waiting time and reset OverAllStatTimer
 		if time.Since(OverAllStatTimer) > time.Duration(statInterval)*time.Millisecond {
-			displayStat(debug, overAllStat{
+			displayStat(overAllStat{
 				dtTasksDone:  dtDoneTasks,
 				dtOnGoing:    len(dtOnGoingChan),
 				dtCached:     len(dtTaskCacher) + len(dtTaskChan),
@@ -709,7 +711,7 @@ LOOP:
 		time.Sleep(time.Duration(controlerInterval) * time.Millisecond)
 	}
 	// update statistic just before quit controller
-	displayStat(debug, overAllStat{
+	displayStat(overAllStat{
 		dtTasksDone:  dtDoneTasks,
 		dtOnGoing:    len(dtOnGoingChan),
 		dtCached:     len(dtTaskCacher) + len(dtTaskChan),
@@ -795,7 +797,7 @@ func main() {
 	var dltResultChan = make(chan singleVerifyResult, dltWorkerThread*4)
 	var dltOnGoingChan = make(chan int, dltWorkerThread)
 
-	if !noTcell {
+	if debug && tcellMode {
 		go termControl(&wg)
 		wg.Add(1)
 	}
@@ -834,7 +836,7 @@ func main() {
 	close(dltTaskChan)
 	close(dltResultChan)
 	close(dltOnGoingChan)
-	if len(verifyResultsMap) > 0 {
+	if debug && len(verifyResultsMap) > 0 {
 		verifyResultsSlice := make([]VerifyResults, 0)
 		for _, v := range verifyResultsMap {
 			verifyResultsSlice = append(verifyResultsSlice, v)
