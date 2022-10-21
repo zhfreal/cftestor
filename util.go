@@ -1545,15 +1545,15 @@ func updateTaskStat(ov overAllStat) {
 	printTaskStatWithoutSync()
 }
 
-func updateTcellDetails(isDebug bool, v []VerifyResults) {
+func updateTcellDetails(isResult bool, v []VerifyResults) {
 	// prevent display debug msg when in not-debug mode
-	if isDebug && !debug {
+	if !debug {
 		return
 	}
-	if isDebug { // debug
-		updateDebug(v)
-	} else { // non-debug
+	if isResult { // result
 		updateResult(v)
+	} else { // non-debug
+		updateDebug(v)
 	}
 }
 
@@ -1561,14 +1561,16 @@ func updateTcellDetails(isDebug bool, v []VerifyResults) {
 // loglvl should be logLevelDebug or logLevelInfo
 // when: 1. in non-debug mode, just print pure qualified IPs.
 //  2. in debug mode, we show more as tcell or non-tcel form.
-func displayDetails(v []VerifyResults) {
+//
+// isResult: used for tcell mode, indicate show in result area or debug area.
+func displayDetails(isResult bool, v []VerifyResults) {
 	if !debug {
 		myLogger.PrintClearIPs(v)
 	} else {
 		if !tcellMode { // no-tcell
 			myLogger.PrintDetails(LogLevel(logLevelDebug), v)
 		} else { // tcell
-			updateTcellDetails(true, v)
+			updateTcellDetails(isResult, v)
 		}
 	}
 }
