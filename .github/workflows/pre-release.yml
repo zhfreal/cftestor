@@ -26,7 +26,7 @@ jobs:
             goarch: 386
           - goos: linux
             goarch: riscv64
-        exclude:
+        # exclude:
           # exclude darwin on 386
           # - goos: darwin
           #   goarch: 386
