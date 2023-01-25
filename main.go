@@ -95,6 +95,7 @@ var (
 	resultStatIndent                       = 9
 	dtThreadNumLen, dltThreadNumLen        = 0, 0
 	tcellMode                              = false
+	fastMode                               = false
 	statInterval                           = statisticIntervalNT
 	// titleExitHint                          = "Press any key to exit!"
 )
@@ -107,7 +108,7 @@ func init() {
 	var printVersion bool
 
 	// version = "dev"
-	var help = "\n" + runTime + " " + version + `
+	var help = runTime + " " + version + `
     CF CDN IP sanner, evaluation througth delay and download speed, find your best IPs Cloudfare CDN applications.
     https://github.com/zhfreal/cftestor
 
@@ -148,7 +149,10 @@ func init() {
                                     "--test-all" was set.
             --dt-only               Do DT only, we do DT & DLT at the same time by default.
             --dlt-only              Do DLT only, we do DT & DLT at the same time by default.
-        -4, --ipv4                  Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
+            --fast                  Fast mode, use inner IPs for fast detection. Just when neither"-s/--ip"
+                                    nor "-i/--in" is provided, and this flag is provided. It will be working
+                                    Disabled by default.
+            -4, --ipv4              Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
                                     then it will do IPv4 test from build-in IPs from CloudFlare by default.
         -6, --ipv6                  Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
                                     then it will do IPv6 test from build-in IPs from CloudFlare by using
@@ -168,11 +172,12 @@ func init() {
         -g, --label         string  Lable for a part of the result file's name and sqlite3 record. It's 
                                     hostname from "--hostname" or "-u|--url" by default.
         -V, --debug                 Print debug message.
-            --tcell         bool    Use tcell to display the running procedure when in debug mode.
+            --tcell                 Use tcell to display the running procedure when in debug mode.
                                     Turn this on will activate "--debug".
         -v, --version               Show version.
     `
 
+	flag.BoolVar(&fastMode, "fast", false, "Fast mode")
 	flag.VarP(&ipStr, "ip", "s", "Specific IP or CIDR for test.")
 	flag.StringVarP(&ipFile, "in", "i", "", "Specific file of IPs and CIDRs for test.")
 
@@ -304,11 +309,19 @@ func init() {
 	}
 	if len(ipStr) == 0 && len(ipFile) == 0 {
 		if !ipv6Mode {
-			for i := 0; i < len(CFIPV4); i++ {
+			t_cf_ipv4 := CFIPV4FULL
+			if fastMode {
+				t_cf_ipv4 = CFIPV4
+			}
+			for i := 0; i < len(t_cf_ipv4); i++ {
 				srcIPS = append(srcIPS, &CFIPV4[i])
 			}
 		} else {
-			for i := 0; i < len(CFIPV6); i++ {
+			t_cf_ipv6 := CFIPV6FULL
+			if fastMode {
+				t_cf_ipv6 = CFIPV6
+			}
+			for i := 0; i < len(t_cf_ipv6); i++ {
 				srcIPS = append(srcIPS, &CFIPV6[i])
 			}
 		}

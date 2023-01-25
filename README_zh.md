@@ -19,8 +19,7 @@ $ git clone https://github.com/zhfreal/cftestor.git
 $ cd cftestor
 $ go build .
 $ ./cftestor -h
-
-    cftestor v1.5.6
+    cftestor v1.6.0
     根据延迟. 速度优选CF CDN IP
     https://github.com/zhfreal/cftestor
 
@@ -57,6 +56,9 @@ $ ./cftestor -h
                                     "--test-all", 此值不生效。
             --dt-only               只进行延迟测试, 不进行下载测速开关, 默认关闭。
             --dlt-only              不单独使用延迟测试, 直接使用下载测试, 默认关闭。
+            --fast                  快速扫描开关。当不利用"-s/--ip"和"-i/--in"传递扫描IP地址时，
+                                    打开此开关可使用内置的特殊IP段地址加快扫描。默认关闭。即不提供
+                                    IP地址时，使用CF全地址段扫描。
         -4, --ipv4                  测试IPv4开关, 表示测试IPv4地址。仅当不携带"-s"和"-i"时有效。
                                     默认打开。与"-6|--ipv6"不能同时使用。
         -6, --ipv6                  测试IPv6开关, 表示测试IPv6地址。仅当不携带"-s"和"-i"时有效。
