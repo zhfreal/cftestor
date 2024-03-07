@@ -96,20 +96,20 @@ var (
 		"198.41.216.0/21",
 	}
 	CFIPV4FULL = []string{
-                "103.21.244.0/22",
-                "103.22.200.0/22",
-                "103.31.4.0/22",
-                "104.16.0.0/12",
-                "108.162.192.0/18",
-                "131.0.72.0/22",
-                "141.101.64.0/18",
-                "162.158.0.0/15",
-                "172.64.0.0/13",
-                "173.245.48.0/20",
-                "188.114.96.0/20",
-                "190.93.240.0/20",
-                "197.234.240.0/22",
-                "198.41.128.0/17",
+		"103.21.244.0/22",
+		"103.22.200.0/22",
+		"103.31.4.0/22",
+		"104.16.0.0/12",
+		"108.162.192.0/18",
+		"131.0.72.0/22",
+		"141.101.64.0/18",
+		"162.158.0.0/15",
+		"172.64.0.0/13",
+		"173.245.48.0/20",
+		"188.114.96.0/20",
+		"190.93.240.0/20",
+		"197.234.240.0/22",
+		"198.41.128.0/17",
 	}
 	CFIPV6 = []string{
 		"2606:4700:f1::/48",
@@ -693,7 +693,7 @@ func getASNAndCityWithIP(ipStr *string) (ASN int, city string) {
 			}
 		}
 		response, err := client.Do(tReq)
-		// pingect is failed(network error), won't continue
+		// connection is failed(network error), won't continue
 		if err != nil || response == nil {
 			myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
 			time.Sleep(time.Duration(interval) * time.Millisecond)
@@ -1038,7 +1038,7 @@ func makeBytes(num uint, len int) []byte {
 		newBytes[i] = byte(num % (1 << 8))
 		num = num >> 8
 	}
-	// beyond the boundry
+	// beyond the boundary
 	if num > 0 {
 		return nil
 	}
@@ -1097,7 +1097,7 @@ func (ipr *ipRange) Extract(num int) (IPList []net.IP) {
 	if !ipr.isValid() {
 		return
 	}
-	// num should greate than 0
+	// num should greater than 0
 	if num <= 0 {
 		return
 	}
@@ -1117,7 +1117,7 @@ func (ipr *ipRange) Extract(num int) (IPList []net.IP) {
 	for num > 0 {
 		num_in_bytes := makeBytes(uint(1), len(newIP))
 		newIP = ipShift(newIP, num_in_bytes)
-		// some error occured
+		// some error shown
 		if newIP == nil {
 			return
 		}
@@ -1143,7 +1143,7 @@ func (ipr *ipRange) ExtractReverse(num int) (IPList []net.IP) {
 	if !ipr.isValid() {
 		return
 	}
-	// num should greate than 0
+	// num should greater than 0
 	if num <= 0 {
 		return
 	}
@@ -1186,7 +1186,7 @@ func (ipr *ipRange) ExtractReverse(num int) (IPList []net.IP) {
 }
 
 func (ipr *ipRange) ExtractAll() (IPList []net.IP) {
-	// we limit the max retult length to MaxHostLen (currently, 65536), if it's to big, return nil
+	// we limit the max result length to MaxHostLen (currently, 65536), if it's to big, return nil
 	// or it's don't have any IPS to extract, return nil
 	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 || ipr.Len.Cmp(big.NewInt(maxHostLen)) == 1 {
 		return
@@ -1199,7 +1199,7 @@ func (ipr *ipRange) GetRandomX(num int) (IPList []net.IP) {
 	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
 		return
 	}
-	// we extract all while ipr don't have enogth ips for extracted
+	// we extract all while ipr don't have enough ips for extracted
 	if big.NewInt(int64(num)).Cmp(ipr.Len) >= 0 {
 		m := ipr.ExtractAll()
 		if m == nil {
@@ -1208,7 +1208,7 @@ func (ipr *ipRange) GetRandomX(num int) (IPList []net.IP) {
 		for i := 0; i < len(m); i++ {
 			IPList = append(IPList, m[i])
 		}
-		// suffle
+		// shuffle
 		myRand.Shuffle(len(IPList), func(i, j int) {
 			IPList[i], IPList[j] = IPList[j], IPList[i]
 		})
@@ -1285,8 +1285,8 @@ func printCancelWithoutSync() {
 	printOneRow(0, titleCancelRow, titleStyleCancel, titleCancel)
 }
 
-func printCancelComfirmWithoutSync() {
-	printOneRow(0, titleCancelRow, titleStyleCancel, titleCancelComfirm)
+func printCancelConfirmWithoutSync() {
+	printOneRow(0, titleCancelRow, titleStyleCancel, titleCancelConfirm)
 }
 
 func printQuitWaitingWithoutSync() {
@@ -1298,8 +1298,8 @@ func printCancel() {
 	(*termAll).Show()
 }
 
-func printCancelComfirm() {
-	printCancelComfirmWithoutSync()
+func printCancelConfirm() {
+	printCancelConfirmWithoutSync()
 	(*termAll).Show()
 }
 
@@ -1308,7 +1308,7 @@ func printQuitWaiting() {
 	(*termAll).Show()
 }
 
-func printQuitingCountDown(sec int) {
+func printQuittingCountDown(sec int) {
 	for i := sec; i > 0; i-- {
 		printOneRow(0, titleCancelRow, titleStyleCancel, fmt.Sprintf("Exit in %ds...", i))
 		(*termAll).Show()
@@ -1557,7 +1557,7 @@ func updateTcellDetails(isResult bool, v []VerifyResults) {
 // test detail
 // loglvl should be logLevelDebug or logLevelInfo
 // when: 1. in non-debug mode, just print pure qualified IPs.
-//  2. in debug mode, we show more as tcell or non-tcel form.
+//  2. in debug mode, we show more as tcell or non-tcell form.
 //
 // isResult: used for tcell mode, indicate show in result area or debug area.
 func displayDetails(isResult bool, v []VerifyResults) {
@@ -1572,7 +1572,7 @@ func displayDetails(isResult bool, v []VerifyResults) {
 	}
 }
 
-// task statistic - only work in debug mode both in tcell and notcell mode
+// task statistic - only work in debug mode both in tcell and non-tcell mode
 func displayStat(ov overAllStat) {
 	if !tcellMode { // no-tcell
 		myLogger.PrintOverAllStat(logLevelDebug, ov)
@@ -1617,7 +1617,7 @@ func MinInt(a, b int, num ...int) (t int) {
 }
 
 // we get count - num from every IPR in srcIPR and srcIPRsCache
-func extractCIDRHosts(num int) (targIPs []*string) {
+func extractCIDRHosts(num int) (targetIPs []*string) {
 	if num < 0 {
 		return
 	}
@@ -1640,12 +1640,12 @@ func extractCIDRHosts(num int) (targIPs []*string) {
 	}
 	for _, t_ip := range t_ips {
 		tIP := t_ip.String()
-		targIPs = append(targIPs, &tIP)
+		targetIPs = append(targetIPs, &tIP)
 	}
-	// randomlize
+	// randomize
 	if !testAll {
-		myRand.Shuffle(len(targIPs), func(m, n int) {
-			targIPs[m], targIPs[n] = targIPs[n], targIPs[m]
+		myRand.Shuffle(len(targetIPs), func(m, n int) {
+			targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
 		})
 	}
 	return

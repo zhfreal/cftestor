@@ -22,7 +22,7 @@ import (
 const (
 	workerStopSignal    = "0"
 	workOnGoing         = 1
-	controlerInterval   = 100               // in millisecond
+	controllerInterval  = 100               // in millisecond
 	statisticIntervalT  = 1000              // in millisecond, valid in tcell mode
 	statisticIntervalNT = 10000             // in millisecond, valid in non-tcell mode
 	quitWaitingTime     = 3                 // in second
@@ -86,12 +86,12 @@ var (
 	titleDebugHintRow                      = titleResultRow + maxResultsDisplay + 2
 	titleDebugRow                          = titleDebugHintRow + 1
 	titleCancel                            = "Press ESC to cancel!"
-	titleCancelComfirm                     = "Press ENTER to confirm; Any other key to back!"
+	titleCancelConfirm                     = "Press ENTER to confirm; Any other key to back!"
 	titleWaitQuit                          = "Waiting for exit..."
 	titleResultHint                        = "Result:"
 	titleDebugHint                         = "Debug Msg:"
 	cancelSigFromTerm                      = false
-	terminateComfirm                       = false
+	terminateConfirm                       = false
 	resultStatIndent                       = 9
 	dtThreadNumLen, dltThreadNumLen        = 0, 0
 	tcellMode                              = false
@@ -109,7 +109,7 @@ func init() {
 
 	// version = "dev"
 	var help = runTime + " " + version + `
-    CF CDN IP sanner, evaluation througth delay and download speed, find your best IPs Cloudfare CDN applications.
+    CF CDN IP scanner, evaluation through delay and download speed, find your best IPs Cloudflare CDN applications.
     https://github.com/zhfreal/cftestor
 
     Usage: ` + runTime + ` [options]
@@ -123,13 +123,13 @@ func init() {
         -t, --dt-timeout    int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS 
                                     or HTTPS request and response should be finished before timeout. 
                                     It should not be less than "-k|--delay-limit", It should be 
-                                    longger when we perform https connections test by "-dt-via-https" 
+                                    longer when we perform https connections test by "-dt-via-https" 
                                     than when we perform SSL/TLS test by default.
         -c, --dt-count      int     Tries of DT for a IP, default 4.
         -p, --port          int     Port to test, default 443. It's valid when "--only-dt" and "--dt-via-https".
             --hostname      string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
-                                    is not provoided.
-            --dt-via-https          DT via https other than SSL/TLS shakehand. It's disabled by default,
+                                    is not provided.
+            --dt-via-https          DT via https other than SSL/TLS shaking hands. It's disabled by default,
                                     we do DT via SSL/TLS.
         -n, --dlt-thread    int     Number of concurrent Threads for Download Test(DLT), default 1. 
                                     How many IPs can be perform DLT at the same time.
@@ -158,18 +158,18 @@ func init() {
                                     then it will do IPv6 test from build-in IPs from CloudFlare by using
                                     this flag.
         -a  --test-all              Test all IPs until no more IP left. It's disabled by default. 
-        -w, --store-to-file         Write result to csv file, disabled by default. If it is provoided and 
-                                    "-o|--result-file" is not provoided, the result file will be named
+        -w, --store-to-file         Write result to csv file, disabled by default. If it is provided and 
+                                    "-o|--result-file" is not provided, the result file will be named
                                     as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-        -o, --result-file   string  File name of result. If it don't provoided and "-w|--store-to-file"
-                                    is provoided, the result file will be named as 
-                                    "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stroed in current DIR.
-        -e, --store-to-db           Write result to sqlite3 db file, disabled by default. If it's provoided
-                                    and "-f|--db-file" is not provoided, it will be named "ip.db" and
+        -o, --result-file   string  File name of result. If it don't provided and "-w|--store-to-file"
+                                    is provided, the result file will be named as 
+                                    "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
+        -e, --store-to-db           Write result to sqlite3 db file, disabled by default. If it's provided
+                                    and "-f|--db-file" is not provided, it will be named "ip.db" and
                                     store in current directory.
-        -f, --db-file       string  Sqlite3 db file name. If it's not provoided and "-e|--store-to-db" is
-                                    provoided, it will be named "ip.db" and store in current directory.
-        -g, --label         string  Lable for a part of the result file's name and sqlite3 record. It's 
+        -f, --db-file       string  Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
+                                    provided, it will be named "ip.db" and store in current directory.
+        -g, --label         string  the label for a part of the result file's name and sqlite3 record. It's 
                                     hostname from "--hostname" or "-u|--url" by default.
         -V, --debug                 Print debug message.
             --tcell                 Use tcell to display the running procedure when in debug mode.
@@ -186,7 +186,7 @@ func init() {
 	flag.IntVarP(&dtCount, "dt-count", "c", 4, "Tries of DT for a IP.")
 	flag.IntVarP(&port, "port", "p", 443, "Port to test")
 	flag.StringVar(&hostName, "hostname", DefaultTestHost, "Hostname for DT test.")
-	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https other than SSL/TLS shakehand.")
+	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https other than SSL/TLS shaking hands.")
 
 	flag.IntVarP(&dltWorkerThread, "dlt-thread", "n", 1, "Number of concurrent Threads for Download Test(DLT).")
 	flag.IntVarP(&dltDurMax, "dlt-period", "d", 10, "The total times escaped for single DLT, default 10s.")
@@ -210,7 +210,7 @@ func init() {
 	flag.StringVarP(&resultFile, "result-file", "o", "", "File name of result. ")
 	flag.BoolVarP(&storeToDB, "store-to-db", "e", false, "Write result to sqlite3 db file.")
 	flag.StringVarP(&dbFile, "db-file", "f", "", "Sqlite3 db file name.")
-	flag.StringVarP(&suffixLabel, "label", "g", "", "Lable for a part of the result file's name and sqlite3 record.")
+	flag.StringVarP(&suffixLabel, "label", "g", "", "the label for a part of the result file's name and sqlite3 record.")
 
 	flag.BoolVarP(&debug, "debug", "V", false, "Print debug message.")
 	flag.BoolVar(&tcellMode, "tcell", false, "Use tcell form to show debug messages.")
@@ -231,7 +231,7 @@ func init() {
 	}
 	if dtOnly && dltOnly {
 		print_version()
-		println("\"--dt-only\" and \"--dlt-only\" should not be provoided at the same time!")
+		println("\"--dt-only\" and \"--dlt-only\" should not be provided at the same time!")
 		os.Exit(1)
 	}
 
@@ -272,7 +272,7 @@ func init() {
 	// it's invalid when ipv4Mode and ipv6Mode is both true or false
 	if ipv4Mode == ipv6Mode {
 		print_version()
-		myLogger.Fatalln("\"-4|--ipv4\" and \"-6|--ipv6\" should not be provoided at the same time!")
+		myLogger.Fatalln("\"-4|--ipv4\" and \"-6|--ipv6\" should not be provided at the same time!")
 	}
 
 	// trim whitespace
@@ -291,7 +291,7 @@ func init() {
 	if len(ipFile) != 0 {
 		file, err := os.Open(ipFile)
 		if err != nil {
-			myLogger.Fatalf("Sqlite3 db file is not accessable! \"%s\"\n", ipFile)
+			myLogger.Fatalf("Sqlite3 db file is not accessible! \"%s\"\n", ipFile)
 		}
 		scanner := bufio.NewScanner(file)
 		scanner.Split(bufio.ScanLines)
@@ -366,7 +366,7 @@ func init() {
 		if ipr == nil {
 			myLogger.Fatalf("\"%v\" is invalid!\n", *srcIPS[i])
 		}
-		// when it do not testAll and ipr is not bigger than maxHostLenBig, extracto to cache
+		// when it do not testAll and ipr is not bigger than maxHostLenBig, extract to to cache
 		t_qty = t_qty.Add(t_qty, ipr.Len)
 		if !testAll && ipr.Len.Cmp(maxHostLenBig) < 1 {
 			srcIPRsCache = append(srcIPRsCache, ipr.ExtractAll()...)
@@ -377,7 +377,7 @@ func init() {
 	}
 	// shuffle srcIPR and srcIPRsCache when do not testAll
 	// and fix resultMin
-	t_resultmin := big.NewInt(int64(resultMin))
+	t_result_min := big.NewInt(int64(resultMin))
 	if !testAll {
 		myRand.Shuffle(len(srcIPRs), func(m, n int) {
 			srcIPRs[m], srcIPRs[n] = srcIPRs[n], srcIPRs[m]
@@ -385,7 +385,7 @@ func init() {
 		myRand.Shuffle(len(srcIPRsCache), func(m, n int) {
 			srcIPRsCache[m], srcIPRsCache[n] = srcIPRsCache[n], srcIPRsCache[m]
 		})
-		if t_qty.Cmp(t_resultmin) == -1 {
+		if t_qty.Cmp(t_result_min) == -1 {
 			resultMin = int(t_qty.Int64())
 		}
 	} else {
@@ -481,16 +481,16 @@ func init() {
 func controllerWorker(dtTaskChan chan *string, dtResultChan chan singleVerifyResult, dltTaskChan chan *string,
 	dltResultChan chan singleVerifyResult, wg *sync.WaitGroup, dtOnGoingChan chan int, dltOnGoingChan chan int) {
 	defer func() {
-		// send terminate sigal to
-		terminateComfirm = true
+		// send terminate signal to
+		terminateConfirm = true
 		(*wg).Done()
 	}()
 	dtTasks := 0
 	dltTasks := 0
 	dtDoneTasks := 0
-	dtTaskCacher := make([]*string, 0)
+	dtTaskCache := make([]*string, 0)
 	dltDoneTasks := 0
-	dltTaskCacher := make([]*string, 0)
+	dltTaskCache := make([]*string, 0)
 	cacheResultMap := make(map[string]VerifyResults)
 	haveEnoughResult := false
 	noMoreSourcesDT := false
@@ -508,14 +508,14 @@ LOOP:
 					<-(dtTaskChan)
 					dtTasks--
 				}
-				dtTaskCacher = []*string{}
+				dtTaskCache = []*string{}
 			}
 			if !dtOnly {
 				for len(dltTaskChan) > 0 {
 					<-(dltTaskChan)
 					dltTasks--
 				}
-				dltTaskCacher = []*string{}
+				dltTaskCache = []*string{}
 			}
 			// show waiting msg, only when debug
 			if debug && !showQuitWaiting {
@@ -540,7 +540,7 @@ LOOP:
 						if !dtOnly { // there are download test ongoing
 							// put ping test result to cacheResultMap for later
 							cacheResultMap[*tVerifyResult.ip] = tVerifyResult
-							dltTaskCacher = append(dltTaskCacher, tVerifyResult.ip)
+							dltTaskCache = append(dltTaskCache, tVerifyResult.ip)
 							// debug msg, show only in debug mode
 							if debug {
 								displayDetails(false, []VerifyResults{tVerifyResult})
@@ -565,49 +565,49 @@ LOOP:
 					displayStat(overAllStat{
 						dtTasksDone:  dtDoneTasks,
 						dtOnGoing:    len(dtOnGoingChan),
-						dtCached:     len(dtTaskCacher) + len(dtTaskChan),
+						dtCached:     len(dtTaskCache) + len(dtTaskChan),
 						dltTasksDone: dltDoneTasks,
 						dltOnGoing:   len(dltOnGoingChan),
-						dltCached:    len(dltTaskCacher) + len(dltTaskChan),
+						dltCached:    len(dltTaskCache) + len(dltTaskChan),
 						resultCount:  len(verifyResultsMap),
 					})
 					OverAllStatTimer = time.Now()
 				}
 			}
-			// DT task control, when it have enougth source ip, don't get cancel signal from term,
+			// DT task control, when it have enough source ip, don't get cancel signal from term,
 			// don't result as expected, and the task chan is not full
 			if !noMoreSourcesDT && !cancelSigFromTerm && !haveEnoughResult {
 				if len(dtTaskChan) < cap(dtTaskChan) { // this condition is not apply for #line 587
-					// get more Hosts while we don't have enough hosts in dtTaskCacher
-					if len(dtTaskCacher) == 0 {
-						dtTaskCacher = extractCIDRHosts(2 * dtWorkerThread)
+					// get more Hosts while we don't have enough hosts in dtTaskCache
+					if len(dtTaskCache) == 0 {
+						dtTaskCache = extractCIDRHosts(2 * dtWorkerThread)
 						// if no more hosts, but just in dt-only mode, we set noMoSources to true
-						if len(dtTaskCacher) == 0 {
+						if len(dtTaskCache) == 0 {
 							noMoreSourcesDT = true
 						}
 					}
 					// when it's dt-only mode or, download task pool has less ip than 2*cap(dltTaskChan)
-					// we put ping task into dtTaskCacher
+					// we put ping task into dtTaskCache
 					// simplify algorithm
-					if dtOnly || len(dltTaskCacher) < 2*cap(dltTaskChan) {
-						for len(dtTaskCacher) > 0 &&
+					if dtOnly || len(dltTaskCache) < 2*cap(dltTaskChan) {
+						for len(dtTaskCache) > 0 &&
 							len(dtTaskChan) < cap(dtTaskChan) &&
 							len(dtTaskChan)+len(dtOnGoingChan)+len(dtResultChan) < cap(dtResultChan) {
 							// to prevent overflow of dtResultChan
 							// the total IP and task in dtTaskChan, dtOnGoingChan and dtResultChan is less than the capacity of dtResultChan
 							dtTasks += 1
-							dtTaskChan <- dtTaskCacher[0]
-							if len(dtTaskCacher) > 1 {
-								dtTaskCacher = dtTaskCacher[1:]
+							dtTaskChan <- dtTaskCache[0]
+							if len(dtTaskCache) > 1 {
+								dtTaskCache = dtTaskCache[1:]
 							} else {
-								dtTaskCacher = []*string{}
+								dtTaskCache = []*string{}
 							}
 						}
 					}
 				}
 			} else if dtOnly && // mission control
 				len(dtOnGoingChan) == 0 &&
-				len(dtTaskCacher) == 0 &&
+				len(dtTaskCache) == 0 &&
 				len(dtTaskChan) == 0 &&
 				dtDoneTasks >= dtTasks { // we did all ping works in dt-only mode, "dtDoneTasks >= dtTasks", make sure all DT tasks did done.
 				break LOOP
@@ -669,46 +669,46 @@ LOOP:
 					displayStat(overAllStat{
 						dtTasksDone:  dtDoneTasks,
 						dtOnGoing:    len(dtOnGoingChan),
-						dtCached:     len(dtTaskCacher) + len(dtTaskChan),
+						dtCached:     len(dtTaskCache) + len(dtTaskChan),
 						dltTasksDone: dltDoneTasks,
 						dltOnGoing:   len(dltOnGoingChan),
-						dltCached:    len(dltTaskCacher) + len(dltTaskChan),
+						dltCached:    len(dltTaskCache) + len(dltTaskChan),
 						resultCount:  len(verifyResultsMap),
 					})
 					OverAllStatTimer = time.Now()
 				}
 			}
 			// DLT task control, when it don't get cancel signal from term, don't result as expected
-			if !cancelSigFromTerm && !haveEnoughResult && ((!dltOnly && len(dltTaskCacher) > 0) || (dltOnly && !noMoreSourcesDLT)) {
-				// get more hosts while it's on downlaod-only mode
-				if dltOnly && len(dltTaskCacher) == 0 {
-					dltTaskCacher = extractCIDRHosts(2 * dltWorkerThread)
-					if len(dltTaskCacher) == 0 {
+			if !cancelSigFromTerm && !haveEnoughResult && ((!dltOnly && len(dltTaskCache) > 0) || (dltOnly && !noMoreSourcesDLT)) {
+				// get more hosts while it's on download-only mode
+				if dltOnly && len(dltTaskCache) == 0 {
+					dltTaskCache = extractCIDRHosts(2 * dltWorkerThread)
+					if len(dltTaskCache) == 0 {
 						noMoreSourcesDLT = true
 					}
 				}
 				// put task to download chan when we have IPs from delay test and the task chan have empty slot
-				for len(dltTaskCacher) > 0 && // it has IP in dltTaskCacher
+				for len(dltTaskCache) > 0 && // it has IP in dltTaskCache
 					len(dltTaskChan) < cap(dltTaskChan) && // dltTaskChan is not full
 					len(dltTaskChan)+len(dltOnGoingChan)+len(dltResultChan) < cap(dltResultChan) {
 					// to prevent overflow of dltResultChan
 					// the total IP and task in dltTaskChan, dltOnGoingChan and dltResultChan is less than the capacity of dltResultChan
-					dltTaskChan <- dltTaskCacher[0]
+					dltTaskChan <- dltTaskCache[0]
 					dltTasks += 1
-					if len(dltTaskCacher) > 1 {
-						dltTaskCacher = dltTaskCacher[1:]
+					if len(dltTaskCache) > 1 {
+						dltTaskCache = dltTaskCache[1:]
 					} else {
-						dltTaskCacher = []*string{}
+						dltTaskCache = []*string{}
 					}
 				}
 			} else if len(dltOnGoingChan) == 0 && // mission control
 				len(dltTaskChan) == 0 &&
-				len(dltTaskCacher) == 0 &&
+				len(dltTaskCache) == 0 &&
 				dltDoneTasks >= dltTasks && // "dltDoneTasks >= dltTasks", make sure all DLT tasks did done.
 				(dltOnly ||
 					(len(dtOnGoingChan) == 0 &&
 						len(dtTaskChan) == 0 &&
-						len(dtTaskCacher) == 0) &&
+						len(dtTaskCache) == 0) &&
 						dtDoneTasks >= dtTasks) { // "dtDoneTasks >= dtTasks", make sure all DT tasks did done.
 				break LOOP
 			}
@@ -718,24 +718,24 @@ LOOP:
 			displayStat(overAllStat{
 				dtTasksDone:  dtDoneTasks,
 				dtOnGoing:    len(dtOnGoingChan),
-				dtCached:     len(dtTaskCacher) + len(dtTaskChan),
+				dtCached:     len(dtTaskCache) + len(dtTaskChan),
 				dltTasksDone: dltDoneTasks,
 				dltOnGoing:   len(dltOnGoingChan),
-				dltCached:    len(dltTaskCacher) + len(dltTaskChan),
+				dltCached:    len(dltTaskCache) + len(dltTaskChan),
 				resultCount:  len(verifyResultsMap),
 			})
 			OverAllStatTimer = time.Now()
 		}
-		time.Sleep(time.Duration(controlerInterval) * time.Millisecond)
+		time.Sleep(time.Duration(controllerInterval) * time.Millisecond)
 	}
 	// update statistic just before quit controller
 	displayStat(overAllStat{
 		dtTasksDone:  dtDoneTasks,
 		dtOnGoing:    len(dtOnGoingChan),
-		dtCached:     len(dtTaskCacher) + len(dtTaskChan),
+		dtCached:     len(dtTaskCache) + len(dtTaskChan),
 		dltTasksDone: dltDoneTasks,
 		dltOnGoing:   len(dltOnGoingChan),
-		dltCached:    len(dltTaskCacher) + len(dltTaskChan),
+		dltCached:    len(dltTaskCache) + len(dltTaskChan),
 		resultCount:  len(verifyResultsMap),
 	})
 	// put stop signal to all delay test workers and download worker
@@ -757,7 +757,7 @@ func termControl(wg *sync.WaitGroup) {
 	defer (*wg).Done()
 	defer (*termAll).Fini()
 LOOP:
-	for !terminateComfirm {
+	for !terminateConfirm {
 		if !(*termAll).HasPendingEvent() {
 			time.Sleep(100 * time.Millisecond)
 			continue
@@ -767,14 +767,14 @@ LOOP:
 		case *tcell.EventKey:
 			switch ev.Key() {
 			case tcell.KeyEscape:
-				if !terminateComfirm && !cancelSigFromTerm && confirmQuit() {
+				if !terminateConfirm && !cancelSigFromTerm && confirmQuit() {
 					cancelSigFromTerm = true
 				}
-				if terminateComfirm {
+				if terminateConfirm {
 					break LOOP
 				}
 			default:
-				if terminateComfirm {
+				if terminateConfirm {
 					break LOOP
 				}
 			}
@@ -782,11 +782,11 @@ LOOP:
 			initScreen()
 		}
 	}
-	printQuitingCountDown(quitWaitingTime)
+	printQuittingCountDown(quitWaitingTime)
 }
 
 func confirmQuit() bool {
-	printCancelComfirm()
+	printCancelConfirm()
 	for {
 		ev := (*termAll).PollEvent()
 		switch ev := ev.(type) {
@@ -801,7 +801,7 @@ func confirmQuit() bool {
 			}
 		case *tcell.EventResize:
 			initScreen()
-			printCancelComfirm()
+			printCancelConfirm()
 		}
 	}
 }
@@ -847,7 +847,7 @@ func main() {
 		}
 	}
 	wg.Wait()
-	// close chans
+	// close all chan
 	close(dtTaskChan)
 	close(dtResultChan)
 	close(dtOnGoingChan)

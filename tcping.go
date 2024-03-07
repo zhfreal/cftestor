@@ -97,7 +97,7 @@ func downloadHandler(ip net.IP, port int, tUrl *string, HttpRspTimeoutDuration t
 		}
 		var currentResult = singleResult{false, 0, 0, false, false, 0, 0}
 		response, err := client.Do(tReq)
-		// pingect is failed(network error), won't continue
+		// connection is failed(network error), won't continue
 		if err != nil {
 			allResult = append(allResult, currentResult)
 			time.Sleep(time.Duration(interval) * time.Millisecond)
@@ -106,7 +106,7 @@ func downloadHandler(ip net.IP, port int, tUrl *string, HttpRspTimeoutDuration t
 		currentResult.dTPassed = true
 		currentResult.dTDuration = tResultHttp.tlsEndAt.Sub(tResultHttp.tcpStartAt)
 		currentResult.httpReqRspDur = tResultHttp.httpRspAt.Sub(tResultHttp.httpReqAt)
-		// pingection test only, won't do download test
+		// connection test only, won't do download test
 		if dtOnly {
 			allResult = append(allResult, currentResult)
 			time.Sleep(time.Duration(interval) * time.Millisecond)
@@ -114,7 +114,7 @@ func downloadHandler(ip net.IP, port int, tUrl *string, HttpRspTimeoutDuration t
 		}
 		// if download test permitted, set DownloadPerformed to true
 		currentResult.dLTWasDone = true
-		// pingect is not make(uri error or server error), won't do download test
+		// connection is not make(uri error or server error), won't do download test
 		if response.StatusCode != 200 {
 			allResult = append(allResult, currentResult)
 			time.Sleep(time.Duration(interval) * time.Millisecond)
@@ -134,7 +134,7 @@ func downloadHandler(ip net.IP, port int, tUrl *string, HttpRspTimeoutDuration t
 		var tTimer = 0
 		for contentRead < contentLength && time.Now().Before(timeEndExpected) {
 			bufferRead, tErr := response.Body.Read(buffer)
-			// there is an error occured and it's not io.EOF(read ended)
+			// there is an error shown and it's not io.EOF(read ended)
 			// don't download anymore
 			if tErr != nil {
 				if tErr2, ok := tErr.(net.Error); ok && tErr2.Timeout() {
@@ -191,8 +191,8 @@ LOOP:
 		chanOut <- tVerifyResult
 		// pull out an element from chanOnGoing, means that a test work is finished.
 		<-chanOnGoing
-		// nanrrowed the gap between two different task by controlerInterval
-		time.Sleep(time.Duration(controlerInterval) * time.Millisecond)
+		// narrowed the gap between two different task by controllerInterval
+		time.Sleep(time.Duration(controllerInterval) * time.Millisecond)
 	}
 }
 
@@ -207,7 +207,7 @@ func sslDTHandler(ip net.IP, hostName *string, port int, dtTimeoutDuration time.
 	// loop for test
 	for i := 0; i < totalRound; i++ {
 		var currentResult = singleResult{false, 0, 0, false, false, 0, 0}
-		// pingection time duration begin:
+		// connection time duration begin:
 		var timeStart = time.Now()
 		// conn, tErr := net.DialTimeout("tcp", fullAddress, dtTimeoutDuration)
 		conn, tErr := tls.DialWithDialer(&dialer, "tcp", fullAddress, conf)
@@ -247,7 +247,7 @@ LOOP:
 		chanOut <- tVerifyResult
 		// pull out an element from chanOnGoing, means that a test work is finished.
 		<-chanOnGoing
-		// nanrrowed the gap between two different task by controlerInterval
-		time.Sleep(time.Duration(controlerInterval) * time.Millisecond)
+		// narrowed the gap between two different task by controllerInterval
+		time.Sleep(time.Duration(controllerInterval) * time.Millisecond)
 	}
 }
