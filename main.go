@@ -109,7 +109,7 @@ func init() {
 
 	// version = "dev"
 	var help = runTime + " " + version + `
-    CF CDN IP scanner, evaluation through delay and download speed, find your best IPs Cloudflare CDN applications.
+    CF CDN IP scanner, evaluation through delay and download speed, find best IPs for your Cloudflare CDN applications.
     https://github.com/zhfreal/cftestor
 
     Usage: ` + runTime + ` [options]
