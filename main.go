@@ -95,7 +95,7 @@ var (
 	cancelSigFromTerm                       = false
 	terminateConfirm                        = false
 	resultStatIndent                        = 9
-	dtThreadNumLen, dltThreadNumLen         = 0, 0
+	dtThreadsAmount, dltThreadsAmount       = 0, 0
 	tcellMode                               = false
 	fastMode                                = false
 	statInterval                            = statisticIntervalNT
@@ -345,14 +345,14 @@ func init() {
 	if resultMin <= 0 {
 		myLogger.Fatalf("\"-r|--result %v\" should not be smaller than 0!\n", resultMin)
 	}
-	dtThreadNumLen = len(strconv.Itoa(dtWorkerThread))
+	dtThreadsAmount = len(strconv.Itoa(dtWorkerThread))
 	if dtCount <= 0 {
 		myLogger.Fatalf("\"-c|--dt-count %v\" should not be smaller than 0!\n", dtCount)
 	}
 	if dltWorkerThread <= 0 {
 		myLogger.Fatalf("\"-n|--dlt-thread %v\" should not be smaller than 0!\n", dltWorkerThread)
 	}
-	dltThreadNumLen = len(strconv.Itoa(dltWorkerThread))
+	dltThreadsAmount = len(strconv.Itoa(dltWorkerThread))
 	if dltCount <= 0 {
 		myLogger.Fatalf("\"-b|--dlt-count %v\" should not be smaller than 0!\n", dltCount)
 	}
@@ -592,7 +592,7 @@ LOOP:
 				if len(dtTaskChan) < cap(dtTaskChan) { // this condition is not apply for #line 587
 					// get more Hosts while we don't have enough hosts in dtTaskCache
 					if len(dtTaskCache) == 0 {
-						dtTaskCache = retrieveCIDRHosts(retrieveCount)
+						dtTaskCache = retrieveCIDRHosts(2 * dtThreadsAmount)
 						// if no more hosts, but just in dt-only mode, we set noMoSources to true
 						if len(dtTaskCache) == 0 {
 							noMoreSourcesDT = true
@@ -694,7 +694,7 @@ LOOP:
 			if !cancelSigFromTerm && !haveEnoughResult && ((!dltOnly && len(dltTaskCache) > 0) || (dltOnly && !noMoreSourcesDLT)) {
 				// get more hosts while it's on download-only mode
 				if dltOnly && len(dltTaskCache) == 0 {
-					dltTaskCache = retrieveCIDRHosts(retrieveCount)
+					dltTaskCache = retrieveCIDRHosts(2 * dtThreadsAmount)
 					if len(dltTaskCache) == 0 {
 						noMoreSourcesDLT = true
 					}

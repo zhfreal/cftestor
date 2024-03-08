@@ -1457,7 +1457,7 @@ func updateTaskStatStr(ov overAllStat) {
 	t_dltCachedSNumLen := len(strconv.Itoa(t_dltCachedS))
 	t_dtDoneNumLen := len(strconv.Itoa(ov.dtTasksDone))
 	t_dltDoneNumLen := len(strconv.Itoa(ov.dltTasksDone))
-	t_indent := MaxInt(dtThreadNumLen, dltThreadNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
+	t_indent := MaxInt(dtThreadsAmount, dltThreadsAmount, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
 	if !dltOnly {
 		if dtOnly {
 			t.WriteString(fmt.Sprintf("DT - Tested:%-*d%s", t_indent, ov.dtTasksDone, myIndent))
@@ -1616,26 +1616,27 @@ func MinInt(a, b int, num ...int) (t int) {
 	return
 }
 
-// we get target IPs based on <num>. We will get amount of <num> from every IPR in srcIPR and  from srcIPRsCache
-func retrieveCIDRHosts(num int) (targetIPs []*string) {
-	if num < 0 {
-		return
+// we get target IPs based on <amount>. We will get amount of <amount> from every IPR in srcIPR and  from srcIPRsCache
+func retrieveCIDRHosts(amount int) (targetIPs []*string) {
+	if amount < 0 || amount < retrieveCount {
+		amount = retrieveCount
 	}
+
 	t_ips := []net.IP{}
 	for _, ipr := range srcIPRs {
 		if !testAll {
-			t_ips = append(t_ips, ipr.GetRandomX(num)...)
+			t_ips = append(t_ips, ipr.GetRandomX(amount)...)
 		} else {
-			t_ips = append(t_ips, ipr.Extract(num)...)
+			t_ips = append(t_ips, ipr.Extract(amount)...)
 		}
 	}
 	if len(srcIPRsCache) > 0 {
-		if len(srcIPRsCache) <= num {
+		if len(srcIPRsCache) <= amount {
 			t_ips = append(t_ips, srcIPRsCache...)
 			srcIPRsCache = []net.IP{}
 		} else {
-			t_ips = append(t_ips, srcIPRsCache[0:num]...)
-			srcIPRsCache = srcIPRsCache[num:]
+			t_ips = append(t_ips, srcIPRsCache[0:amount]...)
+			srcIPRsCache = srcIPRsCache[amount:]
 		}
 	}
 	for _, t_ip := range t_ips {
