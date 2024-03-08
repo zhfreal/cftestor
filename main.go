@@ -391,26 +391,28 @@ func init() {
 		if dtCount <= 0 {
 			myLogger.Fatalf("\"-c|--dt-count %v\" should not be smaller than 0!\n", dtCount)
 		}
-		if dltWorkerThread <= 0 {
-			myLogger.Fatalf("\"-n|--dlt-thread %v\" should not be smaller than 0!\n", dltWorkerThread)
+		if dtTimeout <= 0 {
+			myLogger.Fatalf("\"-t|--dt-timeout %v\" should not be smaller than 0!\n", dtTimeout)
 		}
-		if dtTimeout < dtEvaluationDelay {
-			timeoutFlag := flag.Lookup("dt-timeout")
-			// reset dtTimeout, when dtTimeout less than delayMax and did not set value of dtTimeout from cmdline
-			if !timeoutFlag.Changed {
-				dtTimeout = dtEvaluationDelay + int(dtEvaluationDelay/2)
-			} else {
-				myLogger.Warning(fmt.Sprintf("\"-t|--dt-timeout\" - %v is less than \"-k|--evaluate-dt-delay\" - %v. This will led to failure for some test!", dtTimeout, dtEvaluationDelay))
-				if !confirm("Continue?", 3) {
-					os.Exit(0)
+		if enableDTEvaluation {
+			if dtEvaluationDelay <= 0 {
+				myLogger.Fatalf("\"-k|--evaluate-dt-delay %v\" should not be smaller than 0!\n", dtEvaluationDelay)
+			}
+			if dtTimeout < dtEvaluationDelay {
+				timeoutFlag := flag.Lookup("dt-timeout")
+				// reset dtTimeout, when dtTimeout less than delayMax and did not set value of dtTimeout from cmdline
+				if !timeoutFlag.Changed {
+					dtTimeout = dtEvaluationDelay + int(dtEvaluationDelay/2)
+				} else {
+					myLogger.Warning(fmt.Sprintf("\"-t|--dt-timeout\" - %v is less than \"-k|--evaluate-dt-delay\" - %v. This will led to failure for some test!", dtTimeout, dtEvaluationDelay))
+					if !confirm("Continue?", 3) {
+						os.Exit(0)
+					}
 				}
 			}
 		}
-		if dtEvaluationDelay <= 0 {
-			myLogger.Fatalf("\"-k|--evaluate-dt-delay %v\" should not be smaller than 0!\n", dtEvaluationDelay)
-		}
-		// if we ping via ssl negotiation and don't perform download test, we need check hostname and port
 		dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
+		// if we ping via ssl negotiation and don't perform download test, we need check hostname and port
 		if !dtHttps {
 			//ping via ssl negotiation
 			if len(hostName) == 0 {
@@ -429,6 +431,9 @@ func init() {
 	// set downloadTimeMaxDuration only when we need do DLT
 	if !dtOnly {
 		// dltThreadsAmount = len(strconv.Itoa(dltWorkerThread))
+		if dltWorkerThread <= 0 {
+			myLogger.Fatalf("\"-n|--dlt-thread %v\" should not be smaller than 0!\n", dltWorkerThread)
+		}
 		if dltCount <= 0 {
 			myLogger.Fatalf("\"-b|--dlt-count %v\" should not be smaller than 0!\n", dltCount)
 		}
