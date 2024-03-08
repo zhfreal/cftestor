@@ -10,6 +10,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -97,10 +98,10 @@ var (
 	cancelSigFromTerm                       = false
 	terminateConfirm                        = false
 	resultStatIndent                        = 9
-	// dtThreadsAmount, dltThreadsAmount       = 0, 0
-	tcellMode    = false
-	fastMode     = false
-	statInterval = statisticIntervalNT
+	dtThreadsNumLen, dltThreadsNumLen       = 0, 0
+	tcellMode                               = false
+	fastMode                                = false
+	statInterval                            = statisticIntervalNT
 	// titleExitHint                          = "Press any key to exit!"
 	appArt string = `
   ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
@@ -343,7 +344,6 @@ func init() {
 	if resultMin <= 0 {
 		myLogger.Fatalf("\"-r|--result %v\" should not be smaller than 0!\n", resultMin)
 	}
-	// dtThreadsAmount = len(strconv.Itoa(dtWorkerThread))
 
 	if interval <= 0 {
 		myLogger.Fatalf("\"-I|--interval %v\" should not be smaller than 0!\n", interval)
@@ -427,6 +427,7 @@ func init() {
 			ParseUrl(dtUrl)
 			dtSource = dtsHTTPS
 		}
+		dtThreadsNumLen = len(strconv.Itoa(dtWorkerThread))
 	}
 	// set downloadTimeMaxDuration only when we need do DLT
 	if !dtOnly {
@@ -451,6 +452,7 @@ func init() {
 		ParseUrl(dltUrl)
 		httpRspTimeoutDuration = time.Duration(dltTimeout) * time.Millisecond
 		dltTimeDurationMax = time.Duration(dltDurMax) * time.Second
+		dltThreadsNumLen = len(strconv.Itoa(dltWorkerThread))
 	}
 
 	//

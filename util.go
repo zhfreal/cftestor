@@ -1455,7 +1455,13 @@ func updateTaskStatStr(ov overAllStat) {
 	t_dltCachedSNumLen := len(strconv.Itoa(t_dltCachedS))
 	t_dtDoneNumLen := len(strconv.Itoa(ov.dtTasksDone))
 	t_dltDoneNumLen := len(strconv.Itoa(ov.dltTasksDone))
-	t_indent := MaxInt(dtWorkerThread, dltWorkerThread, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
+	var t_indent = 0
+	if !dltOnly {
+		t_indent = MaxInt(dtThreadsNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
+	}
+	if !dtOnly {
+		t_indent = MaxInt(t_indent, dltThreadsNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
+	}
 	if !dltOnly {
 		if dtOnly {
 			t.WriteString(fmt.Sprintf("DT - Tested:%-*d%s", t_indent, ov.dtTasksDone, myIndent))
