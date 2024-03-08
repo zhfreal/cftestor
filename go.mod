@@ -1,6 +1,6 @@
 module cftestor
 
-go 1.22.0
+go 1.22
 
 require (
 	github.com/gdamore/tcell/v2 v2.7.4
