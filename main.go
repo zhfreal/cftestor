@@ -20,23 +20,24 @@ import (
 )
 
 const (
-	workerStopSignal    = "0"
-	workOnGoing         = 1
-	controllerInterval  = 100               // in millisecond
-	statisticIntervalT  = 1000              // in millisecond, valid in tcell mode
-	statisticIntervalNT = 10000             // in millisecond, valid in non-tcell mode
-	quitWaitingTime     = 3                 // in second
-	downloadBufferSize  = 1024 * 16         // in byte
-	fileDefaultSize     = 1024 * 1024 * 300 // in byte
-	downloadSizeMin     = 1024 * 1024       // in byte
-	defaultTestUrl      = "https://cf.9999876.xyz/500mb.dat"
-	userAgent           = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.54 Safari/537.36"
-	defaultDBFile       = "ip.db"
-	DefaultTestHost     = "cf.9999876.xyz"
-	maxHostLen          = 1 << 16
-	dtsSSL              = "SSL"
-	dtsHTTPS            = "HTTPS"
-	runTime             = "cftestor"
+	workerStopSignal        = "0"
+	workOnGoing             = 1
+	controllerInterval      = 100               // in millisecond
+	statisticIntervalT      = 1000              // in millisecond, valid in tcell mode
+	statisticIntervalNT     = 10000             // in millisecond, valid in non-tcell mode
+	quitWaitingTime         = 3                 // in second
+	downloadBufferSize      = 1024 * 16         // in byte
+	fileDefaultSize         = 1024 * 1024 * 300 // in byte
+	downloadSizeMin         = 1024 * 1024       // in byte
+	defaultTestUrl          = "https://cf.9999876.xyz/500mb.dat"
+	userAgent               = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.54 Safari/537.36"
+	defaultDBFile           = "ip.db"
+	DefaultTestHost         = "cf.9999876.xyz"
+	maxHostLen              = 1 << 16
+	dtsSSL                  = "SSL"
+	dtsHTTPS                = "HTTPS"
+	runTime                 = "cftestor"
+	retrieveCount       int = 100
 )
 
 var (
@@ -580,7 +581,7 @@ LOOP:
 				if len(dtTaskChan) < cap(dtTaskChan) { // this condition is not apply for #line 587
 					// get more Hosts while we don't have enough hosts in dtTaskCache
 					if len(dtTaskCache) == 0 {
-						dtTaskCache = extractCIDRHosts(2 * dtWorkerThread)
+						dtTaskCache = retrieveCIDRHosts(retrieveCount)
 						// if no more hosts, but just in dt-only mode, we set noMoSources to true
 						if len(dtTaskCache) == 0 {
 							noMoreSourcesDT = true
@@ -682,7 +683,7 @@ LOOP:
 			if !cancelSigFromTerm && !haveEnoughResult && ((!dltOnly && len(dltTaskCache) > 0) || (dltOnly && !noMoreSourcesDLT)) {
 				// get more hosts while it's on download-only mode
 				if dltOnly && len(dltTaskCache) == 0 {
-					dltTaskCache = extractCIDRHosts(2 * dltWorkerThread)
+					dltTaskCache = retrieveCIDRHosts(retrieveCount)
 					if len(dltTaskCache) == 0 {
 						noMoreSourcesDLT = true
 					}

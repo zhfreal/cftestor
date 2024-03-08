@@ -1616,8 +1616,8 @@ func MinInt(a, b int, num ...int) (t int) {
 	return
 }
 
-// we get count - num from every IPR in srcIPR and srcIPRsCache
-func extractCIDRHosts(num int) (targetIPs []*string) {
+// we get target IPs based on <num>. We will get amount of <num> from every IPR in srcIPR and  from srcIPRsCache
+func retrieveCIDRHosts(num int) (targetIPs []*string) {
 	if num < 0 {
 		return
 	}
