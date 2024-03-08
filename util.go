@@ -638,13 +638,11 @@ func WriteResult(data []VerifyResults, filePath string) {
 func ParseUrl(urlStr string) (tHostName string, tPort int) {
 	urlStr = strings.TrimSpace(urlStr)
 	if len(urlStr) == 0 {
-		urlStr = defaultTestUrl
+		urlStr = defaultDLTUrl
 	}
 	u, err := url.ParseRequestURI(urlStr)
 	if err != nil || u == nil || len(u.Host) == 0 {
 		myLogger.Fatal(fmt.Sprintf("url is not valid: %s\n", urlStr))
-		// it will never get here, just fool IDE
-		panic(u)
 	}
 	tHost := strings.Split(u.Host, ":")
 	tHostName = tHost[0]
@@ -683,7 +681,7 @@ func getASNAndCityWithIP(ipStr *string) (ASN int, city string) {
 			Transport:     nil,
 			CheckRedirect: nil,
 			Jar:           nil,
-			Timeout:       HttpRspTimeoutDuration + 1*time.Second,
+			Timeout:       httpRspTimeoutDuration + 1*time.Second,
 		}
 		if len(*ipStr) > 0 && isValidIPs(*ipStr) {
 			fullAddress := getConnPeerAddressFromStr(*ipStr, 443)
@@ -1420,19 +1418,19 @@ func initTitleStr() {
 	// }
 	if dtOnly {
 		titlePre[0][2] = "Max Delay:"
-		titlePre[0][3] = fmt.Sprintf(" %vms", delayMax)
+		titlePre[0][3] = fmt.Sprintf(" %vms", dtEvaluationDelay)
 		titlePre[1][0] = "Min Stab.:"
-		titlePre[1][1] = fmt.Sprintf(" %v", dtPassedRateMin) + "%"
+		titlePre[1][1] = fmt.Sprintf(" %v", dtEvaluationDTPR) + "%"
 	} else if dltOnly {
 		titlePre[0][2] = "Min Speed:"
-		titlePre[0][3] = fmt.Sprintf(" %vKB/s", speedMinimal)
+		titlePre[0][3] = fmt.Sprintf(" %vKB/s", dltEvaluationSpeed)
 	} else {
 		titlePre[0][2] = "Min Speed:"
-		titlePre[0][3] = fmt.Sprintf(" %vKB/s", speedMinimal)
+		titlePre[0][3] = fmt.Sprintf(" %vKB/s", dltEvaluationSpeed)
 		titlePre[1][0] = "Max Delay:"
-		titlePre[1][1] = fmt.Sprintf(" %vms", delayMax)
+		titlePre[1][1] = fmt.Sprintf(" %vms", dtEvaluationDelay)
 		titlePre[1][2] = "Min Stab.:"
-		titlePre[1][3] = fmt.Sprintf(" %v", dtPassedRateMin) + "%"
+		titlePre[1][3] = fmt.Sprintf(" %v", dtEvaluationDTPR) + "%"
 	}
 	detailTitleSlice = append(detailTitleSlice, "IP")
 	if !dtOnly {
@@ -1457,7 +1455,7 @@ func updateTaskStatStr(ov overAllStat) {
 	t_dltCachedSNumLen := len(strconv.Itoa(t_dltCachedS))
 	t_dtDoneNumLen := len(strconv.Itoa(ov.dtTasksDone))
 	t_dltDoneNumLen := len(strconv.Itoa(ov.dltTasksDone))
-	t_indent := MaxInt(dtThreadsAmount, dltThreadsAmount, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
+	t_indent := MaxInt(dtWorkerThread, dltWorkerThread, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
 	if !dltOnly {
 		if dtOnly {
 			t.WriteString(fmt.Sprintf("DT - Tested:%-*d%s", t_indent, ov.dtTasksDone, myIndent))

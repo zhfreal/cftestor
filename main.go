@@ -10,7 +10,6 @@ import (
 	"os"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,8 +28,9 @@ const (
 	downloadBufferSize      = 1024 * 16         // in byte
 	fileDefaultSize         = 1024 * 1024 * 300 // in byte
 	downloadSizeMin         = 1024 * 1024       // in byte
-	defaultTestUrl          = "https://cf.9999876.xyz/500mb.dat"
-	userAgent               = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.54 Safari/537.36"
+	defaultDLTUrl           = "https://cf.9999876.xyz/500mb.dat"
+	defaultDTUrl            = "https://cf.9999876.xyz/test.dat"
+	userAgent               = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 	defaultDBFile           = "ip.db"
 	DefaultTestHost         = "cf.9999876.xyz"
 	maxHostLen              = 1 << 16
@@ -51,18 +51,20 @@ var (
 	dtCount, dtWorkerThread, port           int
 	dltDurMax, dltWorkerThread              int
 	dltCount, resultMin                     int
-	interval, delayMax, dtTimeout           int
-	hostName, urlStr, dtSource              string
-	dtPassedRateMin, speedMinimal           float64
+	interval, dtEvaluationDelay, dtTimeout  int
+	hostName, dltUrl, dtSource, dtUrl       string
+	dltTimeout                              int
+	dtEvaluationDTPR, dltEvaluationSpeed    float64
 	dtHttps, disableDownload                bool
+	enableDTEvaluation                      bool
 	ipv4Mode, ipv6Mode, dtOnly, dltOnly     bool
 	storeToFile, storeToDB, testAll, debug  bool
 	resultFile, suffixLabel, dbFile         string
 	myLogger                                MyLogger
 	loggerLevel                             LogLevel
-	HttpRspTimeoutDuration                  time.Duration
+	httpRspTimeoutDuration                  time.Duration
 	dtTimeoutDuration                       time.Duration
-	downloadTimeMaxDuration                 time.Duration
+	dltTimeDurationMax                      time.Duration
 	verifyResultsMap                        = make(map[*string]VerifyResults)
 	defaultASN                              = 0
 	defaultCity                             = ""
@@ -95,10 +97,10 @@ var (
 	cancelSigFromTerm                       = false
 	terminateConfirm                        = false
 	resultStatIndent                        = 9
-	dtThreadsAmount, dltThreadsAmount       = 0, 0
-	tcellMode                               = false
-	fastMode                                = false
-	statInterval                            = statisticIntervalNT
+	// dtThreadsAmount, dltThreadsAmount       = 0, 0
+	tcellMode    = false
+	fastMode     = false
+	statInterval = statisticIntervalNT
 	// titleExitHint                          = "Press any key to exit!"
 	appArt string = `
   ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
@@ -109,67 +111,73 @@ var (
 
 var help = `Usage: ` + runTime + ` [options]
 options:
-    -s, --ip            string  Specific IP or CIDR for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32", 
-                                "-s 1.0.0.1/24".
-    -i, --in            string  Specific file for test, which contains multiple lines. Each line
-                                represent one IP or CIDR.
-    -m, --dt-thread     int     Number of concurrent threads for Delay Test(DT). How many IPs can 
-                                be perform DT at the same time. Default 20 threads.
-    -t, --dt-timeout    int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS 
-                                or HTTPS request and response should be finished before timeout. 
-                                It should not be less than "-k|--delay-limit", It should be 
-                                longer when we perform https connections test by "-dt-via-https" 
-                                than when we perform SSL/TLS test by default.
-    -c, --dt-count      int     Tries of DT for a IP, default 4.
-    -p, --port          int     Port to test, default 443. It's valid when "--only-dt" and "--dt-via-https".
-        --hostname      string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
-                                is not provided.
-        --dt-via-https          DT via https other than SSL/TLS shaking hands. It's disabled by default,
-                                we do DT via SSL/TLS.
-    -n, --dlt-thread    int     Number of concurrent Threads for Download Test(DLT), default 1. 
-                                How many IPs can be perform DLT at the same time.
-    -d, --dlt-period    int     The total times escaped for single DLT, default 10s.
-    -b, --dlt-count     int     Tries of DLT for a IP, default 1.
-    -u, --url           string  Customize test URL for DLT.
-    -I  --interval      int     Interval between two tests, unit ms, default 500ms.
-    -k, --delay-limit   int     Delay filter for DT, unit ms, default 600ms. If A ip's average delay 
-                                bigger than this value after DT, it is not qualified and won't do 
-                                DLT if DLT required.
-    -S, --dtpr-limit    float   The DT pass rate filter, default 100%. It means do 4 times DTs by
-                                default for a IP, it's passed just when no single DT failed.
-    -l, --speed         float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's 
-                                qualified when its speed is not lower than this value.
-    -r, --result        int     The total IPs qualified limitation, default 10. The Process will stop 
-                                after it got equal or more than this indicated. It would be invalid if
-                                "--test-all" was set.
-        --dt-only               Do DT only, we do DT & DLT at the same time by default.
-        --dlt-only              Do DLT only, we do DT & DLT at the same time by default.
-        --fast                  Fast mode, use inner IPs for fast detection. Just when neither"-s/--ip"
-                                nor "-i/--in" is provided, and this flag is provided. It will be working
-                                Disabled by default.
-        -4, --ipv4              Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
-                                then it will do IPv4 test from build-in IPs from CloudFlare by default.
-    -6, --ipv6                  Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
-                                then it will do IPv6 test from build-in IPs from CloudFlare by using
-                                this flag.
-    -a  --test-all              Test all IPs until no more IP left. It's disabled by default. 
-    -w, --store-to-file         Write result to csv file, disabled by default. If it is provided and 
-                                "-o|--result-file" is not provided, the result file will be named
-                                as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -o, --result-file   string  File name of result. If it don't provided and "-w|--store-to-file"
-                                is provided, the result file will be named as 
-                                "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -e, --store-to-db           Write result to sqlite3 db file, disabled by default. If it's provided
-                                and "-f|--db-file" is not provided, it will be named "ip.db" and
-                                store in current directory.
-    -f, --db-file       string  Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
-                                provided, it will be named "ip.db" and store in current directory.
-    -g, --label         string  the label for a part of the result file's name and sqlite3 record. It's 
-                                hostname from "--hostname" or "-u|--url" by default.
-    -V, --debug                 Print debug message.
-        --tcell                 Use tcell to display the running procedure when in debug mode.
-                                Turn this on will activate "--debug".
-    -v, --version               Show version.
+    -s, --ip                    string  Specify IP or CIDR for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32", 
+                                        "-s 1.0.0.1/24".
+    -i, --in                    string  Specify file for test, which contains multiple lines. Each line
+                                        represent one IP or CIDR.
+    -m, --dt-thread             int     Number of concurrent threads for Delay Test(DT). How many IPs can 
+                                        be perform DT at the same time. Default 20 threads.
+    -t, --dt-timeout            int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS 
+                                        or HTTPS request and response should be finished before timeout. 
+                                        It should not be less than "-k|--evaluate-dt-delay", It should be 
+                                        longer when we perform https connections test by "-dt-via-https" 
+                                        than when we perform SSL/TLS test by default.
+    -c, --dt-count              int     Tries of DT for a IP, default 4.
+    -p, --port                  int     Port to test, default 443. It's valid when "--only-dt" and "--dt-via-https".
+        --hostname              string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
+                                        is not provided.
+        --dt-via-https                  DT via https other than SSL/TLS shaking hands. It's disabled by default,
+                                        we do DT via SSL/TLS.
+        --dt-url                string  Specify test URL for DT.
+    -n, --dlt-thread            int     Number of concurrent Threads for Download Test(DLT), default 1. 
+                                        How many IPs can be perform DLT at the same time.
+    -d, --dlt-period            int     The total times escaped for single DLT, default 10s.
+    -b, --dlt-count             int     Tries of DLT for a IP, default 1.
+    -u, --dlt-url               string  Specify test URL for DLT.
+        --dlt-timeout           int     Specify the timeout for http response when do DLT. In ms, default as 5000 ms.
+    -I  --interval              int     Interval between two tests, unit ms, default 500ms.
+        --evaluate-dt                   Evaluate DT, we'll try <-c|--dt-count> times to evaluate delay;
+                                        if we don't turn this on, we'll stop DT after we got the first
+                                        successfull DT; if we turn this on, we'll evaluate the test result 
+                                        through average delay of singe DT and statistic of all successfull
+                                        DT by these two thresholds  <-k|--evaluate-dt-delay> and 
+                                        <-S|--evaluate-dt-dtpr>. default turn off.
+    -k, --evaluate-dt-delay     int     single DT's delay should not bigger than this, unit ms, default 600ms.
+    -S, --evaluate-dt-dtpr      float   The DT pass rate should not lower than this, default 100, means 100%, all
+                                        DT must be below <-k|--evaluate-dt-delay>'s value.
+    -l, --speed                 float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's 
+                                        qualified when its speed is not lower than this value.
+    -r, --result                int     The total IPs qualified limitation, default 10. The Process will stop 
+                                        after it got equal or more than this indicated. It would be invalid if
+                                        "--test-all" was set.
+        --dt-only                       Do DT only, we do DT & DLT at the same time by default.
+        --dlt-only                      Do DLT only, we do DT & DLT at the same time by default.
+        --fast                          Fast mode, use inner IPs for fast detection. Just when neither"-s/--ip"
+                                        nor "-i/--in" is provided, and this flag is provided. It will be working
+                                        Disabled by default.
+        -4, --ipv4                      Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
+                                        then it will do IPv4 test from build-in IPs from CloudFlare by default.
+    -6, --ipv6                          Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
+                                        then it will do IPv6 test from build-in IPs from CloudFlare by using
+                                        this flag.
+    -a  --test-all                      Test all IPs until no more IP left. It's disabled by default. 
+    -w, --store-to-file                 Write result to csv file, disabled by default. If it is provided and 
+                                        "-o|--result-file" is not provided, the result file will be named
+                                        as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
+    -o, --result-file           string  File name of result. If it don't provided and "-w|--store-to-file"
+                                        is provided, the result file will be named as 
+                                        "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
+    -e, --store-to-db                   Write result to sqlite3 db file, disabled by default. If it's provided
+                                        and "-f|--db-file" is not provided, it will be named "ip.db" and
+                                        store in current directory.
+    -f, --db-file               string  Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
+                                        provided, it will be named "ip.db" and store in current directory.
+    -g, --label                 string  the label for a part of the result file's name and sqlite3 record. It's 
+                                        hostname from "--hostname" or "-u|--url" by default.
+    -V, --debug                         Print debug message.
+        --tcell                         Use tcell to display the running procedure when in debug mode.
+                                        Turn this on will activate "--debug".
+    -v, --version                       Show version.
 `
 
 func print_version() {
@@ -194,21 +202,24 @@ func init() {
 	flag.StringVarP(&ipFile, "in", "i", "", "Specific file of IPs and CIDRs for test.")
 
 	flag.IntVarP(&dtWorkerThread, "dt-thread", "m", 20, "Number of concurrent threads for Delay Test(DT).")
-	flag.IntVarP(&dtTimeout, "dt-timeout", "t", 1000, "Timeout for single DT(ms).")
+	flag.IntVarP(&dtTimeout, "dt-timeout", "t", 2000, "Timeout for single DT(ms).")
 	flag.IntVarP(&dtCount, "dt-count", "c", 4, "Tries of DT for a IP.")
 	flag.IntVarP(&port, "port", "p", 443, "Port to test")
 	flag.StringVar(&hostName, "hostname", DefaultTestHost, "Hostname for DT test.")
-	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https other than SSL/TLS shaking hands.")
+	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https rather than SSL/TLS shaking hands.")
+	flag.StringVar(&dtUrl, "dt-url", defaultDTUrl, "Specific the url while DT via https.")
 
 	flag.IntVarP(&dltWorkerThread, "dlt-thread", "n", 1, "Number of concurrent Threads for Download Test(DLT).")
-	flag.IntVarP(&dltDurMax, "dlt-period", "d", 10, "The total times escaped for single DLT, default 10s.")
+	flag.IntVarP(&dltDurMax, "dlt-period", "d", 10, "The total times escaped for single DLT in seconds, default 10s.")
 	flag.IntVarP(&dltCount, "dlt-count", "b", 1, "Tries of DLT for a IP, default 1.")
-	flag.StringVarP(&urlStr, "url", "u", defaultTestUrl, "Customize test URL for DLT.")
+	flag.StringVarP(&dltUrl, "dlt-url", "u", defaultDLTUrl, "Customize test URL for DLT.")
+	flag.IntVar(&dltTimeout, "dlt-timeout", 5000, "Specify the timeout for http reponse when do DLT in milliseconds, default 5000 ms.")
 	flag.IntVarP(&interval, "interval", "I", 500, "Interval between two tests, unit ms, default 500ms.")
 
-	flag.IntVarP(&delayMax, "delay-limit", "k", 600, "Delay filter for DT, unit ms, default 600ms.")
-	flag.Float64VarP(&dtPassedRateMin, "dtpr-limit", "S", 100, "The DT pass rate filter, default 100%.")
-	flag.Float64VarP(&speedMinimal, "speed", "l", 6000, "Download speed filter, Unit KB/s, default 6000KB/s.")
+	flag.BoolVar(&enableDTEvaluation, "evaluate-dt", false, "Evaluate DT test result. Default as disabled")
+	flag.IntVarP(&dtEvaluationDelay, "evaluate-dt-delay", "k", 600, "Delay for DT is beyond this one will be cause failure, unit ms, default 600ms.")
+	flag.Float64VarP(&dtEvaluationDTPR, "evaluate-dt-dtpr", "S", 100, "The DT successful rate below this will be cause failure, default 100%.")
+	flag.Float64VarP(&dltEvaluationSpeed, "speed", "l", 6000, "Download speed should not less than this, Unit KB/s, default 6000KB/s.")
 	flag.IntVarP(&resultMin, "result", "r", 10, "The total IPs qualified limitation, default 10")
 
 	flag.BoolVar(&disableDownload, "disable-download", false, "Deprecated, use --dt-only instead.")
@@ -268,18 +279,6 @@ func init() {
 	if (!v4Flag.Changed) && ipv6Mode {
 		ipv4Mode = false
 	}
-	if dtTimeout < delayMax {
-		timeoutFlag := flag.Lookup("dt-timeout")
-		// reset dtTimeout, when dtTimeout less than delayMax and did not set value of dtTimeout from cmdline
-		if !timeoutFlag.Changed {
-			dtTimeout = delayMax + int(delayMax/2)
-		} else {
-			myLogger.Warning(fmt.Sprintf("\"-t|--dt-timeout\" - %v is less than \"-k|--delay-limit\" - %v. This will led to failure for some test!", dtTimeout, delayMax))
-			if !confirm("Continue?", 3) {
-				os.Exit(0)
-			}
-		}
-	}
 
 	// it's invalid when ipv4Mode and ipv6Mode is both true or false
 	if ipv4Mode == ipv6Mode {
@@ -292,7 +291,8 @@ func init() {
 	resultFile = strings.TrimSpace(resultFile)
 	suffixLabel = strings.TrimSpace(suffixLabel)
 	hostName = strings.TrimSpace(hostName)
-	urlStr = strings.TrimSpace(urlStr)
+	dtUrl = strings.TrimSpace(dtUrl)
+	dltUrl = strings.TrimSpace(dltUrl)
 	dbFile = strings.TrimSpace(dbFile)
 
 	if len(ipStr) != 0 {
@@ -338,37 +338,14 @@ func init() {
 			}
 		}
 	}
-	// check parameters
-	if dtWorkerThread <= 0 {
-		myLogger.Fatalf("\"-m|--dt-thread %v\" should not be smaller than 0!\n", dtWorkerThread)
-	}
+
 	if resultMin <= 0 {
 		myLogger.Fatalf("\"-r|--result %v\" should not be smaller than 0!\n", resultMin)
 	}
-	dtThreadsAmount = len(strconv.Itoa(dtWorkerThread))
-	if dtCount <= 0 {
-		myLogger.Fatalf("\"-c|--dt-count %v\" should not be smaller than 0!\n", dtCount)
-	}
-	if dltWorkerThread <= 0 {
-		myLogger.Fatalf("\"-n|--dlt-thread %v\" should not be smaller than 0!\n", dltWorkerThread)
-	}
-	dltThreadsAmount = len(strconv.Itoa(dltWorkerThread))
-	if dltCount <= 0 {
-		myLogger.Fatalf("\"-b|--dlt-count %v\" should not be smaller than 0!\n", dltCount)
-	}
+	// dtThreadsAmount = len(strconv.Itoa(dtWorkerThread))
 
-	if dltDurMax <= 0 {
-		myLogger.Fatalf("\"-d|--dl-period %v\" should not be smaller than 0!\n", dltDurMax)
-	}
-
-	if delayMax <= 0 {
-		myLogger.Fatalf("\"-k|--delay-limit %v\" should not be smaller than 0!\n", delayMax)
-	}
 	if interval <= 0 {
 		myLogger.Fatalf("\"-I|--interval %v\" should not be smaller than 0!\n", interval)
-	}
-	if speedMinimal <= 0 {
-		myLogger.Fatalf("\"-l|--speed %v\" should not be smaller than 0!\n", speedMinimal)
 	}
 
 	// init srcIPR and srcIPRsCache
@@ -404,11 +381,35 @@ func init() {
 		resultMin = -1
 	}
 
-	dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
-
 	// set DT parameters when we perform DT
 	if !dltOnly {
+		// check parameters
+		if dtWorkerThread <= 0 {
+			myLogger.Fatalf("\"-m|--dt-thread %v\" should not be smaller than 0!\n", dtWorkerThread)
+		}
+		if dtCount <= 0 {
+			myLogger.Fatalf("\"-c|--dt-count %v\" should not be smaller than 0!\n", dtCount)
+		}
+		if dltWorkerThread <= 0 {
+			myLogger.Fatalf("\"-n|--dlt-thread %v\" should not be smaller than 0!\n", dltWorkerThread)
+		}
+		if dtTimeout < dtEvaluationDelay {
+			timeoutFlag := flag.Lookup("dt-timeout")
+			// reset dtTimeout, when dtTimeout less than delayMax and did not set value of dtTimeout from cmdline
+			if !timeoutFlag.Changed {
+				dtTimeout = dtEvaluationDelay + int(dtEvaluationDelay/2)
+			} else {
+				myLogger.Warning(fmt.Sprintf("\"-t|--dt-timeout\" - %v is less than \"-k|--evaluate-dt-delay\" - %v. This will led to failure for some test!", dtTimeout, dtEvaluationDelay))
+				if !confirm("Continue?", 3) {
+					os.Exit(0)
+				}
+			}
+		}
+		if dtEvaluationDelay <= 0 {
+			myLogger.Fatalf("\"-k|--evaluate-dt-delay %v\" should not be smaller than 0!\n", dtEvaluationDelay)
+		}
 		// if we ping via ssl negotiation and don't perform download test, we need check hostname and port
+		dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
 		if !dtHttps {
 			//ping via ssl negotiation
 			if len(hostName) == 0 {
@@ -418,18 +419,32 @@ func init() {
 				port = 443
 			}
 			dtSource = dtsSSL
-			HttpRspTimeoutDuration = dtTimeoutDuration
 		} else {
-			// we perform download test or just ping via https request
-			hostName, port = ParseUrl(urlStr)
+			// check dtUrl is valid or not by ParseUrl()
+			ParseUrl(dtUrl)
 			dtSource = dtsHTTPS
-			// we set HttpRspTimeoutDuration to 2 times of dtTimeoutDuration if we perform ping via https
-			HttpRspTimeoutDuration = dtTimeoutDuration * 2
 		}
 	}
 	// set downloadTimeMaxDuration only when we need do DLT
 	if !dtOnly {
-		downloadTimeMaxDuration = time.Duration(dltDurMax) * time.Second
+		// dltThreadsAmount = len(strconv.Itoa(dltWorkerThread))
+		if dltCount <= 0 {
+			myLogger.Fatalf("\"-b|--dlt-count %v\" should not be smaller than 0!\n", dltCount)
+		}
+
+		if dltDurMax <= 0 {
+			myLogger.Fatalf("\"-d|--dlt-period %v\" should not be smaller than 0!\n", dltDurMax)
+		}
+		if dltEvaluationSpeed <= 0 {
+			myLogger.Fatalf("\"-l|--speed %v\" should not be smaller than 0!\n", dltEvaluationSpeed)
+		}
+		if dltTimeout > dltDurMax {
+			myLogger.Fatalf("\"<--dlt-timeout> %v\" should not be bigger than <-d|--dlt-period> %v!\n", dltTimeout, dltDurMax)
+		}
+		// check dltUrl is valid or not by ParseUrl()
+		ParseUrl(dltUrl)
+		httpRspTimeoutDuration = time.Duration(dltTimeout) * time.Millisecond
+		dltTimeDurationMax = time.Duration(dltDurMax) * time.Second
 	}
 
 	//
@@ -553,7 +568,7 @@ LOOP:
 					// if ip not test then put it into dltTaskChan
 					dtDoneTasks += 1
 					var tVerifyResult = singleResultStatistic(dtResult, false)
-					if tVerifyResult.da > 0.0 && tVerifyResult.da <= float64(delayMax) && tVerifyResult.dtpr*100.0 >= float64(dtPassedRateMin) {
+					if tVerifyResult.da > 0.0 && tVerifyResult.da <= float64(dtEvaluationDelay) && tVerifyResult.dtpr*100.0 >= float64(dtEvaluationDTPR) {
 						if !dtOnly { // there are download test ongoing
 							// put ping test result to cacheResultMap for later
 							cacheResultMap[*tVerifyResult.ip] = tVerifyResult
@@ -597,7 +612,7 @@ LOOP:
 				if len(dtTaskChan) < cap(dtTaskChan) { // this condition is not apply for #line 587
 					// get more Hosts while we don't have enough hosts in dtTaskCache
 					if len(dtTaskCache) == 0 {
-						dtTaskCache = retrieveCIDRHosts(2 * dtThreadsAmount)
+						dtTaskCache = retrieveCIDRHosts(2 * dtWorkerThread)
 						// if no more hosts, but just in dt-only mode, we set noMoSources to true
 						if len(dtTaskCache) == 0 {
 							noMoreSourcesDT = true
@@ -666,7 +681,7 @@ LOOP:
 					}
 					tVerifyResult = v
 					// check speed and data size downloaded
-					if v.dls >= speedMinimal && v.dlds > downloadSizeMin {
+					if v.dls >= dltEvaluationSpeed && v.dlds > downloadSizeMin {
 						// put v into verifyResultsMap
 						verifyResultsMap[tVerifyResult.ip] = tVerifyResult
 						// we have expected result
@@ -699,7 +714,7 @@ LOOP:
 			if !cancelSigFromTerm && !haveEnoughResult && ((!dltOnly && len(dltTaskCache) > 0) || (dltOnly && !noMoreSourcesDLT)) {
 				// get more hosts while it's on download-only mode
 				if dltOnly && len(dltTaskCache) == 0 {
-					dltTaskCache = retrieveCIDRHosts(2 * dtThreadsAmount)
+					dltTaskCache = retrieveCIDRHosts(2 * dltWorkerThread)
 					if len(dltTaskCache) == 0 {
 						noMoreSourcesDLT = true
 					}
@@ -845,11 +860,11 @@ func main() {
 	if !dltOnly {
 		for i := 0; i < dtWorkerThread; i++ {
 			if dtHttps {
-				go downloadWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &urlStr, port,
-					dtTimeoutDuration, HttpRspTimeoutDuration, dtCount, interval, true)
+				go downloadWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &dtUrl,
+					dtTimeoutDuration, -1, dtCount, interval, true, enableDTEvaluation)
 			} else {
 				go sslDTWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &hostName, port,
-					dtTimeoutDuration, dtCount, interval)
+					dtTimeoutDuration, dtCount, interval, enableDTEvaluation)
 			}
 			wg.Add(1)
 		}
@@ -858,8 +873,8 @@ func main() {
 	// start download worker if don't do ping only
 	if !dtOnly {
 		for i := 0; i < dltWorkerThread; i++ {
-			go downloadWorker(dltTaskChan, dltResultChan, dltOnGoingChan, &wg, &urlStr, port,
-				HttpRspTimeoutDuration, downloadTimeMaxDuration, dltCount, interval, false)
+			go downloadWorker(dltTaskChan, dltResultChan, dltOnGoingChan, &wg, &dltUrl,
+				httpRspTimeoutDuration, dltTimeDurationMax, dltCount, interval, false, false)
 			wg.Add(1)
 		}
 	}
