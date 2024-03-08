@@ -173,6 +173,10 @@ func downloadHandler(ip net.IP, tUrl *string, httpRspTimeoutDuration time.Durati
 		_ = response.Body.Close()
 		time.Sleep(time.Duration(interval) * time.Millisecond)
 	}
+	// just get the last record in allResult while enable dtOnly and disable enableDTEvaluation
+	if dtOnly && !enableDTEvaluation {
+		allResult = allResult[len(allResult)-1:]
+	}
 	return allResult
 }
 
@@ -234,6 +238,10 @@ func sslDTHandler(ip net.IP, hostName *string, port int, dtTimeoutDuration time.
 			break
 		}
 		time.Sleep(time.Duration(interval) * time.Millisecond)
+	}
+	// we just get the last record in all allResult while we diable enableDTEvaluation
+	if !enableDTEvaluation {
+		allResult = allResult[len(allResult)-1:]
 	}
 	return allResult
 }

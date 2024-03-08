@@ -111,73 +111,74 @@ var (
 
 var help = `Usage: ` + runTime + ` [options]
 options:
-    -s, --ip                    string  Specify IP or CIDR for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32", 
-                                        "-s 1.0.0.1/24".
-    -i, --in                    string  Specify file for test, which contains multiple lines. Each line
-                                        represent one IP or CIDR.
-    -m, --dt-thread             int     Number of concurrent threads for Delay Test(DT). How many IPs can 
-                                        be perform DT at the same time. Default 20 threads.
-    -t, --dt-timeout            int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS 
-                                        or HTTPS request and response should be finished before timeout. 
-                                        It should not be less than "-k|--evaluate-dt-delay", It should be 
-                                        longer when we perform https connections test by "-dt-via-https" 
-                                        than when we perform SSL/TLS test by default.
-    -c, --dt-count              int     Tries of DT for a IP, default 4.
-    -p, --port                  int     Port to test, default 443. It's valid when "--only-dt" and "--dt-via-https".
-        --hostname              string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
-                                        is not provided.
-        --dt-via-https                  DT via https other than SSL/TLS shaking hands. It's disabled by default,
-                                        we do DT via SSL/TLS.
-        --dt-url                string  Specify test URL for DT.
-    -n, --dlt-thread            int     Number of concurrent Threads for Download Test(DLT), default 1. 
-                                        How many IPs can be perform DLT at the same time.
-    -d, --dlt-period            int     The total times escaped for single DLT, default 10s.
-    -b, --dlt-count             int     Tries of DLT for a IP, default 1.
-    -u, --dlt-url               string  Specify test URL for DLT.
-        --dlt-timeout           int     Specify the timeout for http response when do DLT. In ms, default as 5000 ms.
-    -I  --interval              int     Interval between two tests, unit ms, default 500ms.
-        --evaluate-dt                   Evaluate DT, we'll try <-c|--dt-count> times to evaluate delay;
-                                        if we don't turn this on, we'll stop DT after we got the first
-                                        successfull DT; if we turn this on, we'll evaluate the test result 
-                                        through average delay of singe DT and statistic of all successfull
-                                        DT by these two thresholds  <-k|--evaluate-dt-delay> and 
-                                        <-S|--evaluate-dt-dtpr>. default turn off.
-    -k, --evaluate-dt-delay     int     single DT's delay should not bigger than this, unit ms, default 600ms.
-    -S, --evaluate-dt-dtpr      float   The DT pass rate should not lower than this, default 100, means 100%, all
-                                        DT must be below <-k|--evaluate-dt-delay>'s value.
-    -l, --speed                 float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's 
-                                        qualified when its speed is not lower than this value.
-    -r, --result                int     The total IPs qualified limitation, default 10. The Process will stop 
-                                        after it got equal or more than this indicated. It would be invalid if
-                                        "--test-all" was set.
-        --dt-only                       Do DT only, we do DT & DLT at the same time by default.
-        --dlt-only                      Do DLT only, we do DT & DLT at the same time by default.
-        --fast                          Fast mode, use inner IPs for fast detection. Just when neither"-s/--ip"
-                                        nor "-i/--in" is provided, and this flag is provided. It will be working
-                                        Disabled by default.
-        -4, --ipv4                      Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
-                                        then it will do IPv4 test from build-in IPs from CloudFlare by default.
-    -6, --ipv6                          Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
-                                        then it will do IPv6 test from build-in IPs from CloudFlare by using
-                                        this flag.
-    -a  --test-all                      Test all IPs until no more IP left. It's disabled by default. 
-    -w, --store-to-file                 Write result to csv file, disabled by default. If it is provided and 
-                                        "-o|--result-file" is not provided, the result file will be named
-                                        as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -o, --result-file           string  File name of result. If it don't provided and "-w|--store-to-file"
-                                        is provided, the result file will be named as 
-                                        "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -e, --store-to-db                   Write result to sqlite3 db file, disabled by default. If it's provided
-                                        and "-f|--db-file" is not provided, it will be named "ip.db" and
-                                        store in current directory.
-    -f, --db-file               string  Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
-                                        provided, it will be named "ip.db" and store in current directory.
-    -g, --label                 string  the label for a part of the result file's name and sqlite3 record. It's 
-                                        hostname from "--hostname" or "-u|--url" by default.
-    -V, --debug                         Print debug message.
-        --tcell                         Use tcell to display the running procedure when in debug mode.
-                                        Turn this on will activate "--debug".
-    -v, --version                       Show version.
+    -s, --ip           string  Specify IP or CIDR for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32", 
+                               "-s 1.0.0.1/24".
+    -i, --in           string  Specify file for test, which contains multiple lines. Each line
+                               represent one IP or CIDR.
+    -m, --dt-thread    int     Number of concurrent threads for Delay Test(DT). How many IPs can 
+                               be perform DT at the same time. Default 20 threads.
+    -t, --dt-timeout   int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS 
+                               or HTTPS request and response should be finished before timeout. 
+                               It should not be less than "-k|--evaluate-dt-delay", It should be 
+                               longer when we perform https connections test by "-dt-via-https" 
+                               than when we perform SSL/TLS test by default.
+    -c, --dt-count     int     Tries of DT for a IP, default 4.
+    -p, --port         int     Port to test, default 443. It's valid when "--only-dt" and "--dt-via-https".
+        --hostname     string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
+                               is not provided.
+        --dt-via-https         DT via https other than SSL/TLS shaking hands. It's disabled by default,
+                               we do DT via SSL/TLS.
+        --dt-url       string  Specify test URL for DT.
+        --ev-dt                Evaluate DT, we'll try <-c|--dt-count> times to evaluate delay;
+                               if we don't turn this on, we'll stop DT after we got the first
+                               successfull DT; if we turn this on, we'll evaluate the test result 
+                               through average delay of singe DT and statistic of all successfull
+                               DT by these two thresholds  <-k|--evaluate-dt-delay> and 
+                               <-S|--evaluate-dt-dtpr>. default turn off.
+    -k, --ev-dt-delay  int     single DT's delay should not bigger than this, unit ms, default 600ms.
+    -S, --ev-dt-dtpr   float   The DT pass rate should not lower than this, default 100, means 100%, all
+                               DT must be below <-k|--evaluate-dt-delay>'s value.
+    -n, --dlt-thread   int     Number of concurrent Threads for Download Test(DLT), default 1. 
+                               How many IPs can be perform DLT at the same time.
+    -d, --dlt-period   int     The total times escaped for single DLT, default 10s.
+    -b, --dlt-count    int     Tries of DLT for a IP, default 1.
+    -u, --dlt-url      string  Specify test URL for DLT.
+        --dlt-timeout  int     Specify the timeout for http response when do DLT. In ms, default as 5000 ms.
+    -I  --interval     int     Interval between two tests, unit ms, default 500ms.
+
+    -l, --speed        float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's 
+                               qualified when its speed is not lower than this value.
+    -r, --result       int     The total IPs qualified limitation, default 10. The Process will stop 
+                               after it got equal or more than this indicated. It would be invalid if
+                               "--test-all" was set.
+        --dt-only              Do DT only, we do DT & DLT at the same time by default.
+        --dlt-only             Do DLT only, we do DT & DLT at the same time by default.
+        --fast                 Fast mode, use inner IPs for fast detection. Just when neither"-s/--ip"
+                               nor "-i/--in" is provided, and this flag is provided. It will be working
+                               Disabled by default.
+        -4, --ipv4             Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
+                               then it will do IPv4 test from build-in IPs from CloudFlare by default.
+    -6, --ipv6                 Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
+                               then it will do IPv6 test from build-in IPs from CloudFlare by using
+                               this flag.
+    -a  --test-all             Test all IPs until no more IP left. It's disabled by default. 
+    -w, --to-file              Write result to csv file, disabled by default. If it is provided and 
+                               "-o|--result-file" is not provided, the result file will be named
+                               as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
+    -o, --outfile      string  File name of result. If it don't provided and "-w|--store-to-file"
+                               is provided, the result file will be named as 
+                               "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
+    -e, --to-db                Write result to sqlite3 db file, disabled by default. If it's provided
+                               and "-f|--db-file" is not provided, it will be named "ip.db" and
+                               store in current directory.
+    -f, --dbfile       string  Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
+                               provided, it will be named "ip.db" and store in current directory.
+    -g, --label        string  the label for a part of the result file's name and sqlite3 record. It's 
+                               hostname from "--hostname" or "-u|--url" by default.
+    -V, --debug                Print debug message.
+        --tcell                Use tcell to display the running procedure when in debug mode.
+                               Turn this on will activate "--debug".
+    -v, --version              Show version.
 `
 
 func print_version() {
@@ -216,9 +217,9 @@ func init() {
 	flag.IntVar(&dltTimeout, "dlt-timeout", 5000, "Specify the timeout for http reponse when do DLT in milliseconds, default 5000 ms.")
 	flag.IntVarP(&interval, "interval", "I", 500, "Interval between two tests, unit ms, default 500ms.")
 
-	flag.BoolVar(&enableDTEvaluation, "evaluate-dt", false, "Evaluate DT test result. Default as disabled")
-	flag.IntVarP(&dtEvaluationDelay, "evaluate-dt-delay", "k", 600, "Delay for DT is beyond this one will be cause failure, unit ms, default 600ms.")
-	flag.Float64VarP(&dtEvaluationDTPR, "evaluate-dt-dtpr", "S", 100, "The DT successful rate below this will be cause failure, default 100%.")
+	flag.BoolVar(&enableDTEvaluation, "ev-dt", false, "Evaluate DT test result. Default as disabled")
+	flag.IntVarP(&dtEvaluationDelay, "ev-dt-delay", "k", 600, "Delay for DT is beyond this one will be cause failure, unit ms, default 600ms.")
+	flag.Float64VarP(&dtEvaluationDTPR, "ev-dt-dtpr", "S", 100, "The DT successful rate below this will be cause failure, default 100%.")
 	flag.Float64VarP(&dltEvaluationSpeed, "speed", "l", 6000, "Download speed should not less than this, Unit KB/s, default 6000KB/s.")
 	flag.IntVarP(&resultMin, "result", "r", 10, "The total IPs qualified limitation, default 10")
 
@@ -229,10 +230,10 @@ func init() {
 	flag.BoolVarP(&ipv6Mode, "ipv6", "6", false, "Just test IPv6.")
 	flag.BoolVarP(&testAll, "test-all", "a", false, "Test all IPs until no more IP left.")
 
-	flag.BoolVarP(&storeToFile, "store-to-file", "w", false, "Write result to csv file, disabled by default.")
-	flag.StringVarP(&resultFile, "result-file", "o", "", "File name of result. ")
-	flag.BoolVarP(&storeToDB, "store-to-db", "e", false, "Write result to sqlite3 db file.")
-	flag.StringVarP(&dbFile, "db-file", "f", "", "Sqlite3 db file name.")
+	flag.BoolVarP(&storeToFile, "to-file", "w", false, "Write result to csv file, disabled by default.")
+	flag.StringVarP(&resultFile, "outfile", "o", "", "File name of result. ")
+	flag.BoolVarP(&storeToDB, "to-db", "e", false, "Write result to sqlite3 db file.")
+	flag.StringVarP(&dbFile, "dbfile", "f", "", "Sqlite3 db file name.")
 	flag.StringVarP(&suffixLabel, "label", "g", "", "the label for a part of the result file's name and sqlite3 record.")
 
 	flag.BoolVarP(&debug, "debug", "V", false, "Print debug message.")
@@ -438,7 +439,7 @@ func init() {
 		if dltEvaluationSpeed <= 0 {
 			myLogger.Fatalf("\"-l|--speed %v\" should not be smaller than 0!\n", dltEvaluationSpeed)
 		}
-		if dltTimeout > dltDurMax {
+		if dltTimeout > dltDurMax*1000 {
 			myLogger.Fatalf("\"<--dlt-timeout> %v\" should not be bigger than <-d|--dlt-period> %v!\n", dltTimeout, dltDurMax)
 		}
 		// check dltUrl is valid or not by ParseUrl()
