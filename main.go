@@ -405,28 +405,33 @@ func init() {
 	}
 
 	dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
-	// if we ping via ssl negotiation and don't perform download test, we need check hostname and port
-	if !dtHttps && dtOnly {
-		//ping via ssl negotiation
-		if len(hostName) == 0 {
-			myLogger.Fatal("\"--hostname\" should not be empty. \n")
+
+	// set DT parameters when we perform DT
+	if !dltOnly {
+		// if we ping via ssl negotiation and don't perform download test, we need check hostname and port
+		if !dtHttps {
+			//ping via ssl negotiation
+			if len(hostName) == 0 {
+				myLogger.Fatal("\"--hostname\" should not be empty. \n")
+			}
+			if port < 1 || port > 65535 {
+				port = 443
+			}
+			dtSource = dtsSSL
+			HttpRspTimeoutDuration = dtTimeoutDuration
+		} else {
+			// we perform download test or just ping via https request
+			hostName, port = ParseUrl(urlStr)
+			dtSource = dtsHTTPS
+			// we set HttpRspTimeoutDuration to 2 times of dtTimeoutDuration if we perform ping via https
+			HttpRspTimeoutDuration = dtTimeoutDuration * 2
 		}
-		if port < 1 || port > 65535 {
-			port = 443
-		}
-	} else {
-		// we perform download test or just ping via https request
-		hostName, port = ParseUrl(urlStr)
 	}
-	// we set HttpRspTimeoutDuration to 2 times of dtTimeoutDuration if we don't perform ping via https
-	if !dtHttps {
-		dtSource = dtsSSL
-		HttpRspTimeoutDuration = dtTimeoutDuration * 2
-	} else {
-		dtSource = dtsHTTPS
-		HttpRspTimeoutDuration = dtTimeoutDuration
+	// set downloadTimeMaxDuration only when we need do DLT
+	if !dtOnly {
+		downloadTimeMaxDuration = time.Duration(dltDurMax) * time.Second
 	}
-	downloadTimeMaxDuration = time.Duration(dltDurMax) * time.Second
+
 	//
 	if len(suffixLabel) == 0 {
 		suffixLabel = hostName
@@ -841,7 +846,7 @@ func main() {
 		for i := 0; i < dtWorkerThread; i++ {
 			if dtHttps {
 				go downloadWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &urlStr, port,
-					dtTimeoutDuration, downloadTimeMaxDuration, dtCount, interval, true)
+					dtTimeoutDuration, HttpRspTimeoutDuration, dtCount, interval, true)
 			} else {
 				go sslDTWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &hostName, port,
 					dtTimeoutDuration, dtCount, interval)
