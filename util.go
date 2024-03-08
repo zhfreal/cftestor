@@ -1560,13 +1560,14 @@ func updateTcellDetails(isResult bool, v []VerifyResults) {
 
 // test detail
 // loglvl should be logLevelDebug or logLevelInfo
-// when: 1. in non-debug mode, just print pure qualified IPs.
+// when: 1. in non-debug mode, just print stats instead of pure qualified IPs.
 //  2. in debug mode, we show more as tcell or non-tcell form.
 //
 // isResult: used for tcell mode, indicate show in result area or debug area.
 func displayDetails(isResult bool, v []VerifyResults) {
 	if !debug {
-		myLogger.PrintClearIPs(v)
+		// myLogger.PrintClearIPs(v)
+		myLogger.PrintDetails(LogLevel(logLevelInfo), v)
 	} else {
 		if !tcellMode { // no-tcell
 			myLogger.PrintDetails(LogLevel(logLevelDebug), v)
