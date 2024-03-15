@@ -273,7 +273,7 @@ func init() {
 	} else if dtVia == "ssl" || dtVia == "tls" {
 		dtHttps = false
 	} else {
-		println("invalid value found! Please use \"--dt-via https|tls|ssl\"!")
+		println("invalid value found! Please use \"--dt-via <https|tls|ssl>\"!")
 		os.Exit(1)
 	}
 
