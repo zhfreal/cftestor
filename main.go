@@ -57,6 +57,7 @@ var (
 	dltTimeout                              int
 	dtEvaluationDTPR, dltEvaluationSpeed    float64
 	dtHttps, disableDownload                bool
+	dtVia                                   string
 	enableDTEvaluation                      bool
 	ipv4Mode, ipv6Mode, dtOnly, dltOnly     bool
 	storeToFile, storeToDB, testAll, debug  bool
@@ -124,11 +125,13 @@ options:
                                longer when we perform https connections test by "-dt-via-https" 
                                than when we perform SSL/TLS test by default.
     -c, --dt-count     int     Tries of DT for a IP, default 4.
-    -p, --port         int     Port to test, default 443. It's valid when "--only-dt" and "--dt-via-https".
+    -p, --port         int     Port to test, default 443. It's valid when "--dt-only" and "--dt-via-https".
         --hostname     string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
                                is not provided.
-        --dt-via-https         DT via https other than SSL/TLS shaking hands. It's disabled by default,
-                               we do DT via SSL/TLS.
+        --dt-via-https         Deprecated! Using \"--dt-via <https|tls|ssl>\" instead.
+                               DT via https other than SSL/TLS shaking hands. It's enabled by default.
+        --dt-via https|tls|ssl DT via https or SSL/TLS shaking hands, \"--dt-via <https|tls|ssl>\"
+                               default https.
         --dt-url       string  Specify test URL for DT.
         --ev-dt                Evaluate DT, we'll try <-c|--dt-count> times to evaluate delay;
                                if we don't turn this on, we'll stop DT after we got the first
@@ -208,6 +211,7 @@ func init() {
 	flag.IntVarP(&dtCount, "dt-count", "c", 4, "Tries of DT for a IP.")
 	flag.IntVarP(&port, "port", "p", 443, "Port to test")
 	flag.StringVar(&hostName, "hostname", DefaultTestHost, "Hostname for DT test.")
+	flag.StringVar(&dtVia, "dt-via", "https", "DT via https rather than SSL/TLS shaking hands.")
 	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https rather than SSL/TLS shaking hands.")
 	flag.StringVar(&dtUrl, "dt-url", defaultDTUrl, "Specific the url while DT via https.")
 
@@ -255,8 +259,21 @@ func init() {
 		dtOnly = true
 		println("Warning! \"--disable-download\" is deprecated, use \"--dt-only\" instead!")
 	}
+	if dtHttps {
+		dtVia = "https"
+		println("Warning! \"--dt-via-https\" is deprecated, use \"--dt-via https|tls|ssl\" instead!")
+	}
 	if dtOnly && dltOnly {
 		println("\"--dt-only\" and \"--dlt-only\" should not be provided at the same time!")
+		os.Exit(1)
+	}
+	dtVia = strings.ToLower(dtVia)
+	if dtVia == "https" {
+		dtHttps = true
+	} else if dtVia == "ssl" || dtVia == "tls" {
+		dtHttps = false
+	} else {
+		println("invalid value found! Please use \"--dt-via https|tls|ssl\"!")
 		os.Exit(1)
 	}
 
