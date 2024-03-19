@@ -399,6 +399,10 @@ func init() {
 		resultMin = -1
 	}
 
+	// set suffixLabel
+	if len(suffixLabel) == 0 {
+		suffixLabel = hostName
+	}
 	// set DT parameters when we perform DT
 	if !dltOnly {
 		// check parameters
@@ -440,8 +444,8 @@ func init() {
 			}
 			dtSource = dtsSSL
 		} else {
-			// check dtUrl is valid or not by ParseUrl()
-			ParseUrl(dtUrl)
+			// check dtUrl is valid or not by ParseUrl() and set suffixLabel
+			suffixLabel, _ = ParseUrl(dtUrl)
 			dtSource = dtsHTTPS
 		}
 		dtThreadsNumLen = len(strconv.Itoa(dtWorkerThread))
@@ -465,17 +469,13 @@ func init() {
 		if dltTimeout > dltDurMax*1000 {
 			myLogger.Fatalf("\"<--dlt-timeout> %v\" should not be bigger than <-d|--dlt-period> %v!\n", dltTimeout, dltDurMax)
 		}
-		// check dltUrl is valid or not by ParseUrl()
-		ParseUrl(dltUrl)
+		// check dltUrl is valid or not by ParseUrl() and set suffixLabel
+		suffixLabel, _ = ParseUrl(dltUrl)
 		httpRspTimeoutDuration = time.Duration(dltTimeout) * time.Millisecond
 		dltTimeDurationMax = time.Duration(dltDurMax) * time.Second
 		dltThreadsNumLen = len(strconv.Itoa(dltWorkerThread))
 	}
 
-	//
-	if len(suffixLabel) == 0 {
-		suffixLabel = hostName
-	}
 	// if we write result file
 	if len(resultFile) > 0 {
 		storeToFile = true
