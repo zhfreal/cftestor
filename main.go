@@ -137,12 +137,12 @@ options:
     -c, --dt-count     int     Tries of DT for a IP, default 4.
         --hostname     string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
                                is not provided.
-        --dt-via-https         Deprecated! Using \"--dt-via <https|tls|ssl>\" instead.
+        --dt-via-https         Deprecated! Using "--dt-via <https|tls|ssl>" instead.
                                DT via https other than SSL/TLS shaking hands. It's enabled by default.
-        --dt-via https|tls|ssl DT via https or SSL/TLS shaking hands, \"--dt-via <https|tls|ssl>\"
+        --dt-via https|tls|ssl DT via https or SSL/TLS shaking hands, "--dt-via <https|tls|ssl>"
                                default https.
         --dt-url       string  Specify test URL for DT.
-        --ev-dt                Evaluate DT, we'll try <-c|--dt-count> times to evaluate delay;
+        --ev-dt                Evaluate DT, we'll try "<-c|--dt-count> times" to evaluate delay;
                                if we don't turn this on, we'll stop DT after we got the first
                                successfull DT; if we turn this on, we'll evaluate the test result 
                                through average delay of singe DT and statistic of all successfull
@@ -150,7 +150,7 @@ options:
                                <-S|--evaluate-dt-dtpr>. default turn off.
     -k, --ev-dt-delay  int     single DT's delay should not bigger than this, unit ms, default 600ms.
     -S, --ev-dt-dtpr   float   The DT pass rate should not lower than this, default 100, means 100%, all
-                               DT must be below <-k|--evaluate-dt-delay>'s value.
+                               DT must be below "<-k|--evaluate-dt-delay> value".
     -n, --dlt-thread   int     Number of concurrent Threads for Download Test(DLT), default 1. 
                                How many IPs can be perform DLT at the same time.
     -d, --dlt-period   int     The total times escaped for single DLT, default 10s.
@@ -166,7 +166,7 @@ options:
                                "--test-all" was set.
         --dt-only              Do DT only, we do DT & DLT at the same time by default.
         --dlt-only             Do DLT only, we do DT & DLT at the same time by default.
-        --fast                 Fast mode, use inner IPs for fast detection. Just when neither"-s/--ip"
+        --fast                 Fast mode, use inner IPs for fast detection. Just when neither "-s/--ip"
                                nor "-i/--in" is provided, and this flag is provided. It will be working
                                Disabled by default.
     -4, --ipv4                 Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
