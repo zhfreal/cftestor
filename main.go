@@ -175,8 +175,9 @@ options:
                                then it will do IPv6 test from build-in IPs from CloudFlare by using
                                this flag.
         --hello-firefox        Work as firefox to perform tls/https
-		--hello-chrome         Work as Chrome to perform tls/https
+        --hello-chrome         Work as Chrome to perform tls/https
         --hello-edge           Work as Microsoft Edge to perform tls/https
+        --hello-safari         Work as safari to perform tls/https
     -a  --test-all             Test all IPs until no more IP left. It's disabled by default. 
     -w, --to-file              Write result to csv file, disabled by default. If it is provided and 
                                "-o|--result-file" is not provided, the result file will be named
