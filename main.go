@@ -16,29 +16,34 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	utls "github.com/refraction-networking/utls"
 	flag "github.com/spf13/pflag"
 )
 
 const (
-	workerStopSignal        = "0"
-	workOnGoing             = 1
-	controllerInterval      = 100               // in millisecond
-	statisticIntervalT      = 1000              // in millisecond, valid in tcell mode
-	statisticIntervalNT     = 10000             // in millisecond, valid in non-tcell mode
-	quitWaitingTime         = 3                 // in second
-	downloadBufferSize      = 1024 * 16         // in byte
-	fileDefaultSize         = 1024 * 1024 * 300 // in byte
-	downloadSizeMin         = 1024 * 1024       // in byte
-	defaultDLTUrl           = "https://cf.9999876.xyz/500mb.dat"
-	defaultDTUrl            = "https://cf.9999876.xyz/test.dat"
-	userAgent               = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-	defaultDBFile           = "ip.db"
-	DefaultTestHost         = "cf.9999876.xyz"
-	maxHostLen              = 1 << 16
-	dtsSSL                  = "SSL"
-	dtsHTTPS                = "HTTPS"
-	runTime                 = "cftestor"
-	retrieveCount       int = 100
+	workerStopSignal    = "0"
+	workOnGoing         = 1
+	controllerInterval  = 100               // in millisecond
+	statisticIntervalT  = 1000              // in millisecond, valid in tcell mode
+	statisticIntervalNT = 10000             // in millisecond, valid in non-tcell mode
+	quitWaitingTime     = 3                 // in second
+	downloadBufferSize  = 1024 * 1024       // in byte
+	fileDefaultSize     = 1024 * 1024 * 300 // in byte
+	downloadSizeMin     = 1024 * 1024       // in byte
+	defaultDLTUrl       = "https://cf.9999876.xyz/500mb.dat"
+	defaultDTUrl        = "https://cf.9999876.xyz/test.dat"
+	userAgentChrome     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+	userAgentFirefox    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
+	userAgentEdge       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+	userAgentSafari     = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15"
+
+	defaultDBFile       = "ip.db"
+	DefaultTestHost     = "cf.9999876.xyz"
+	maxHostLen          = 1 << 16
+	dtsSSL              = "SSL"
+	dtsHTTPS            = "HTTPS"
+	runTime             = "cftestor"
+	retrieveCount   int = 100
 )
 
 var (
@@ -61,6 +66,8 @@ var (
 	dtVia                                   string
 	enableDTEvaluation                      bool
 	ipv4Mode, ipv6Mode, dtOnly, dltOnly     bool
+	tlsClientID                             utls.ClientHelloID = utls.HelloChrome_Auto
+	userAgent                               string             = userAgentChrome
 	storeToFile, storeToDB, testAll, debug  bool
 	resultFile, suffixLabel, dbFile         string
 	myLogger                                MyLogger
@@ -162,11 +169,14 @@ options:
         --fast                 Fast mode, use inner IPs for fast detection. Just when neither"-s/--ip"
                                nor "-i/--in" is provided, and this flag is provided. It will be working
                                Disabled by default.
-        -4, --ipv4             Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
+    -4, --ipv4                 Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
                                then it will do IPv4 test from build-in IPs from CloudFlare by default.
     -6, --ipv6                 Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
                                then it will do IPv6 test from build-in IPs from CloudFlare by using
                                this flag.
+        --hello-firefox        Work as firefox to perform tls/https
+		--hello-chrome         Work as Chrome to perform tls/https
+        --hello-edge           Work as Microsoft Edge to perform tls/https
     -a  --test-all             Test all IPs until no more IP left. It's disabled by default. 
     -w, --to-file              Write result to csv file, disabled by default. If it is provided and 
                                "-o|--result-file" is not provided, the result file will be named
@@ -201,6 +211,7 @@ func print_version() {
 
 func init() {
 	var printVersion bool
+	var tlsHelloFirefox, tlsHelloChrome, tlsHelloEdge, tlsHelloSafari bool = false, false, false, false
 
 	print_version()
 	// version = "dev"
@@ -237,6 +248,10 @@ func init() {
 	flag.BoolVarP(&ipv4Mode, "ipv4", "4", true, "Just test IPv4.")
 	flag.BoolVarP(&ipv6Mode, "ipv6", "6", false, "Just test IPv6.")
 	flag.BoolVarP(&testAll, "test-all", "a", false, "Test all IPs until no more IP left.")
+	flag.BoolVar(&tlsHelloFirefox, "hello-firefox", false, "work as firefox")
+	flag.BoolVar(&tlsHelloChrome, "hello-chrome", false, "work as chrome")
+	flag.BoolVar(&tlsHelloEdge, "hello-edge", false, "work as edge")
+	flag.BoolVar(&tlsHelloSafari, "hello-safari", false, "work as safari")
 
 	flag.BoolVarP(&storeToFile, "to-file", "w", false, "Write result to csv file, disabled by default.")
 	flag.StringVarP(&resultFile, "outfile", "o", "", "File name of result. ")
@@ -278,6 +293,23 @@ func init() {
 	} else {
 		println("invalid value found! Please use \"--dt-via <https|tls|ssl>\"!")
 		os.Exit(1)
+	}
+
+	if tlsHelloFirefox {
+		tlsClientID = utls.HelloFirefox_Auto
+		userAgent = userAgentFirefox
+	}
+	if tlsHelloChrome {
+		tlsClientID = utls.HelloChrome_Auto
+		userAgent = userAgentChrome
+	}
+	if tlsHelloEdge {
+		tlsClientID = utls.HelloEdge_Auto
+		userAgent = userAgentEdge
+	}
+	if tlsHelloSafari {
+		tlsClientID = utls.HelloSafari_Auto
+		userAgent = userAgentSafari
 	}
 
 	// tcellMode will activate debug automatically

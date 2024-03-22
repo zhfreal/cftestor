@@ -1,0 +1,153 @@
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"net"
+	"net/http"
+	"sync"
+	"time"
+
+	utls "github.com/refraction-networking/utls"
+	"golang.org/x/net/http2"
+)
+
+func NewUTLSTransport(helloID utls.ClientHelloID, hostWithPort string) *UTLSTransport {
+	return &UTLSTransport{clientHello: helloID, hostWithPort: hostWithPort}
+}
+
+type UTLSTransport struct {
+	tr1 http.Transport
+	tr2 http2.Transport
+
+	mu           sync.RWMutex
+	clientHello  utls.ClientHelloID
+	hostWithPort string
+	startAt      time.Time
+	tlsShakedAt  time.Time
+	responseAt   time.Time
+	conn         net.Conn
+}
+
+func (b *UTLSTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	switch req.URL.Scheme {
+	case "https":
+		return b.httpsRoundTrip(req)
+	case "http":
+		return b.tr1.RoundTrip(req)
+	default:
+		return nil, fmt.Errorf("unsupported scheme: %s", req.URL.Scheme)
+	}
+}
+
+func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error) {
+	if len(b.hostWithPort) == 0 {
+		port := req.URL.Port()
+		if port == "" {
+			port = "443"
+		}
+		b.hostWithPort = fmt.Sprintf("%s:%s", req.URL.Host, port)
+	}
+
+	b.startAt = time.Now()
+	conn, err := net.Dial("tcp", b.hostWithPort)
+	if err != nil {
+		return nil, fmt.Errorf("tcp net dial fail: %w", err)
+	}
+	// don't close conn this time
+	// defer conn.Close() // nolint
+
+	tlsConn, err := b.tlsConnect(conn, req)
+	b.tlsShakedAt = time.Now()
+	if err != nil {
+		return nil, fmt.Errorf("tls connect fail: %w", err)
+	}
+	b.tlsShakedAt = time.Now()
+	httpVersion := tlsConn.ConnectionState().NegotiatedProtocol
+	resp := &http.Response{}
+	switch httpVersion {
+	case "h2":
+		var h2_conn *http2.ClientConn
+		h2_conn, err = b.tr2.NewClientConn(tlsConn)
+		if err != nil {
+			resp, err = nil, fmt.Errorf("create http2 client with connection fail: %w", err)
+		} else {
+			// don't close conn this time
+			// defer conn.Close() // nolint
+			resp, err = h2_conn.RoundTrip(req)
+		}
+	case "http/1.1", "":
+		err = req.Write(tlsConn)
+		if err != nil {
+			resp, err = nil, fmt.Errorf("write http1 tls connection fail: %w", err)
+		} else {
+			resp, err = http.ReadResponse(bufio.NewReader(tlsConn), req)
+		}
+	default:
+		resp, err = nil, fmt.Errorf("unsuported http version: %s", httpVersion)
+	}
+	b.responseAt = time.Now()
+	return resp, err
+}
+
+func (b *UTLSTransport) getTLSConfig(req *http.Request) *utls.Config {
+	host_name, _, err := net.SplitHostPort(req.URL.Host)
+	if err != nil {
+		host_name = req.URL.Host
+	}
+	return &utls.Config{
+		ServerName:         host_name,
+		InsecureSkipVerify: false,
+	}
+}
+
+func (b *UTLSTransport) tlsConnect(conn net.Conn, req *http.Request) (*utls.UConn, error) {
+	b.mu.RLock()
+	tlsConn := utls.UClient(conn, b.getTLSConfig(req), b.clientHello)
+	b.mu.RUnlock()
+
+	if err := tlsConn.Handshake(); err != nil {
+		return nil, fmt.Errorf("tls handshake fail: %w", err)
+	}
+	return tlsConn, nil
+}
+
+func (b *UTLSTransport) Stat() (time.Duration, time.Duration) {
+	return b.tlsShakedAt.Sub(b.startAt), b.responseAt.Sub(b.tlsShakedAt)
+}
+
+func (b *UTLSTransport) SetClientHello(hello utls.ClientHelloID) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.clientHello = hello
+}
+
+func (b *UTLSTransport) CloseConn() {
+	if b.conn != nil {
+		_ = b.conn.Close()
+	}
+}
+
+func newHttpClient(helloID utls.ClientHelloID, hostWithPort string, timeout time.Duration) (*http.Client, *UTLSTransport) {
+	tr := NewUTLSTransport(helloID, hostWithPort)
+	var client = &http.Client{
+		Timeout:   timeout,
+		Transport: tr,
+	}
+	return client, tr
+}
+
+func performUtlsDial(host string, hostName string, timeout time.Duration, hellID utls.ClientHelloID) bool {
+	dialer := net.Dialer{Timeout: timeout}
+	dialConn, err := dialer.Dial("tcp", host)
+	if err != nil {
+		return false
+	}
+	conf := &utls.Config{
+		ServerName: hostName,
+	}
+	tlsConn := utls.UClient(dialConn, conf, hellID)
+	err = tlsConn.Handshake()
+	_ = dialConn.Close()
+	return err == nil
+}
