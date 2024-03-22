@@ -19,127 +19,137 @@ $ git clone https://github.com/zhfreal/cftestor.git
 $ cd cftestor
 $ go build .
 ```
-### Help
-```bash
-$ ./cftestor -h
-cftestor 1.6.0
-    CF CDN IP sanner, evaluation througth delay and download speed, find your best IPs Cloudfare CDN applications.
-    https://github.com/zhfreal/cftestor
-
-    Usage: cftestor [options]
-    options:
-        -s, --ip            string  Specific IP or CIDR for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32",
-                                    "-s 1.0.0.1/24".
-        -i, --in            string  Specific file for test, which contains multiple lines. Each line
-                                    represent one IP or CIDR.
-        -m, --dt-thread     int     Number of concurrent threads for Delay Test(DT). How many IPs can
-                                    be perform DT at the same time. Default 20 threads.
-        -t, --dt-timeout    int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS
-                                    or HTTPS request and response should be finished before timeout.
-                                    It should not be less than "-k|--delay-limit", It should be
-                                    longger when we perform https connections test by "-dt-via-https"
-                                    than when we perform SSL/TLS test by default.
-        -c, --dt-count      int     Tries of DT for a IP, default 4.
-        -p, --port          int     Port to test, default 443. It's valid when "--only-dt" and "--dt-via-https".
-            --hostname      string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https"
-                                    is not provoided.
-            --dt-via-https          DT via https other than SSL/TLS shakehand. It's disabled by default,
-                                    we do DT via SSL/TLS.
-        -n, --dlt-thread    int     Number of concurrent Threads for Download Test(DLT), default 1.
-                                    How many IPs can be perform DLT at the same time.
-        -d, --dlt-period    int     The total times escaped for single DLT, default 10s.
-        -b, --dlt-count     int     Tries of DLT for a IP, default 1.
-        -u, --url           string  Customize test URL for DLT.
-        -I  --interval      int     Interval between two tests, unit ms, default 500ms.
-        -k, --delay-limit   int     Delay filter for DT, unit ms, default 600ms. If A ip's average delay
-                                    bigger than this value after DT, it is not qualified and won't do
-                                    DLT if DLT required.
-        -S, --dtpr-limit    float   The DT pass rate filter, default 100%. It means do 4 times DTs by
-                                    default for a IP, it's passed just when no single DT failed.
-        -l, --speed         float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's
-                                    qualified when its speed is not lower than this value.
-        -r, --result        int     The total IPs qualified limitation, default 10. The Process will stop
-                                    after it got equal or more than this indicated. It would be invalid if
-                                    "--test-all" was set.
-            --dt-only               Do DT only, we do DT & DLT at the same time by default.
-            --dlt-only              Do DLT only, we do DT & DLT at the same time by default.
-            --fast                  Fast mode, use inner IPs for fast detection. Just when neither"-s/--ip"
-                                    nor "-i/--in" is provided, and this flag is provided. It will be working
-                                    Disabled by default.
-            -4, --ipv4              Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
-                                    then it will do IPv4 test from build-in IPs from CloudFlare by default.
-        -6, --ipv6                  Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
-                                    then it will do IPv6 test from build-in IPs from CloudFlare by using
-                                    this flag.
-        -a  --test-all              Test all IPs until no more IP left. It's disabled by default.
-        -w, --store-to-file         Write result to csv file, disabled by default. If it is provoided and
-                                    "-o|--result-file" is not provoided, the result file will be named
-                                    as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-        -o, --result-file   string  File name of result. If it don't provoided and "-w|--store-to-file"
-                                    is provoided, the result file will be named as
-                                    "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stroed in current DIR.
-        -e, --store-to-db           Write result to sqlite3 db file, disabled by default. If it's provoided
-                                    and "-f|--db-file" is not provoided, it will be named "ip.db" and
-                                    store in current directory.
-        -f, --db-file       string  Sqlite3 db file name. If it's not provoided and "-e|--store-to-db" is
-                                    provoided, it will be named "ip.db" and store in current directory.
-        -g, --label         string  Lable for a part of the result file's name and sqlite3 record. It's
-                                    hostname from "--hostname" or "-u|--url" by default.
-        -V, --debug                 Print debug message.
-            --tcell                 Use tcell to display the running procedure when in debug mode.
-                                    Turn this on will activate "--debug".
-        -v, --version               Show version.
-    pflag: help requested
-$
-```
 ### Runing without any flags
 ```bash
 $ cftestor
-172.66.43.126
-172.64.85.237
-172.64.159.125
-172.66.45.132
-172.64.146.244
-172.64.92.214
-172.64.84.72
-172.64.154.210
-172.64.148.54
-172.66.40.255
 
-```
+  ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
+  ░█░░░█▀▀░░█░░█▀▀░▀▀█░░█░░█░█░█▀▄
+  ░▀▀▀░▀░░░░▀░░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀
 
-### Runing in debug mode with tcell screen
-```bash
-$ cftestor --tcell
-```
-tcell screen during running:
+  CF CDN IP scanner, find best IPs for your Cloudflare CDN applications.
+  https://github.com/zhfreal/cftestor
 
-![alt text](Result.png "running")</br>
-Result:
-```bash
-$./cftestor --tcell
+Version: v2.0.2
+BuildOn: 2024-03-22 13:55:58 +0000
+BuildTag: release, by zhfreal
+BuildFrom: b94f853e38e0136cf97fba0b9b93286ac6e594fe
 
-All Results:
-
-TestTime IP              Speed(KB/s) DelayAvg(ms) Stability(%) 
-12:45:24 172.64.84.168   19372.29    344          100.00       
-12:49:34 172.64.155.184  16830.32    351          100.00       
-12:47:32 172.64.158.11   16047.98    345          100.00       
-12:44:06 172.64.87.142   15392.62    383          100.00       
-12:47:58 172.64.151.160  15384.43    367          100.00       
-12:48:19 172.64.92.152   15366.41    355          100.00       
-12:48:46 172.64.86.7     14924.04    369          100.00       
-12:44:37 172.64.95.95    14593.90    352          100.00       
-12:46:31 172.64.159.113  14113.03    379          100.00       
-12:49:46 172.64.150.206  13438.01    372          100.00       
-12:46:01 172.64.150.156  12569.66    394          100.00       
-
+17:29:45 INFO IP:104.21.200.128:443 Speed(KB/s):9955.78 Delay(ms):584 Stab.(%):100.00
+17:29:56 INFO IP:104.20.139.155:443 Speed(KB/s):14214.61 Delay(ms):297 Stab.(%):100.00
 ```
 
 ```
 > Speed(KB/s): Download speed in KB/s
-> DelayAvg(ms): Average delay for DT in ms
-> Stability(%): DT pass rate(%)
+> Delay(ms): Average delay for DT in ms
+> Stab.(%): DT pass rate(%)
+```
+
+### Lower latency and higher speed:
+#### expected the latency less than 200 milliseconds and speed more than 10000 kbps
+```bash
+$ cftestor -k 200 -l 10000
+```
+
+### Just test delay:
+#### expected the latency less than 200 milliseconds and expect 20 results
+```bash
+$ cftestor -k 200 --dt-only -r 20
+```
+
+### More usages
+```bash
+$ ./cftestor -h
+
+  ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
+  ░█░░░█▀▀░░█░░█▀▀░▀▀█░░█░░█░█░█▀▄
+  ░▀▀▀░▀░░░░▀░░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀
+
+  CF CDN IP scanner, find best IPs for your Cloudflare CDN applications.
+  https://github.com/zhfreal/cftestor
+
+Version: v2.0.2
+BuildOn: 2024-03-22 13:55:58 +0000
+BuildTag: release, by zhfreal
+BuildFrom: b94f853e38e0136cf97fba0b9b93286ac6e594fe
+
+Usage: cftestor [options]
+options:
+    -s, --ip           string  Specify IP, CIDR, or host for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32",
+                               "-s 1.0.0.1/24", "-s 1.1.1.1:2053".
+    -i, --in           string  Specify file for test, which contains multiple lines. Each line
+                               represent one IP, CIDR, host.
+    -p, --port         int     Port to test, could be specific one or more ports at same time,
+                               The port should be working via SSL/TLS/HTTPS protocol,  default 443.
+    -m, --dt-thread    int     Number of concurrent threads for Delay Test(DT). How many IPs can
+                               be perform DT at the same time. Default 20 threads.
+    -t, --dt-timeout   int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS
+                               or HTTPS request and response should be finished before timeout.
+                               It should not be less than "-k|--evaluate-dt-delay", It should be
+                               longer when we perform https connections test by "-dt-via-https"
+                               than when we perform SSL/TLS test by default.
+    -c, --dt-count     int     Tries of DT for a IP, default 4.
+        --hostname     string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via https"
+                               is not provided.
+        --dt-via https|tls|ssl DT via https or SSL/TLS shaking hands, "--dt-via <https|tls|ssl>"
+                               default https.
+        --dt-url       string  Specify test URL for DT.
+        --ev-dt                Evaluate DT, we'll try "-c|--dt-count <value>" to evaluate delay;
+                               if we don't turn this on, we'll stop DT after we got the first
+                               successfull DT; if we turn this on, we'll evaluate the test result
+                               through average delay of singe DT and statistic of all successfull
+                               DT by these two thresholds "-k|--evaluate-dt-delay <value>" and
+                               "-S|--evaluate-dt-dtpr <value>", default turn off.
+    -k, --ev-dt-delay  int     single DT's delay should not bigger than this, unit ms, default 600ms.
+    -S, --ev-dt-dtpr   float   The DT pass rate should not lower than this, default 100, means 100%, all
+                               DT must be below "-k|--evaluate-dt-delay <value>".
+    -n, --dlt-thread   int     Number of concurrent Threads for Download Test(DLT), default 1.
+                               How many IPs can be perform DLT at the same time.
+    -d, --dlt-period   int     The total times escaped for single DLT, default 10s.
+    -b, --dlt-count    int     Tries of DLT for a IP, default 1.
+    -u, --dlt-url      string  Specify test URL for DLT.
+        --dlt-timeout  int     Specify the timeout for http response when do DLT. In ms, default as 5000 ms.
+    -I  --interval     int     Interval between two tests, unit ms, default 500ms.
+
+    -l, --speed        float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's
+                               qualified when its speed is not lower than this value.
+    -r, --result       int     The total IPs qualified limitation, default 10. The Process will stop
+                               after it got equal or more than this indicated. It would be invalid if
+                               "--test-all" was set.
+        --dt-only              Do DT only, we do DT & DLT at the same time by default.
+        --dlt-only             Do DLT only, we do DT & DLT at the same time by default.
+        --fast                 Fast mode, use inner IPs for fast detection. Just when neither "-s/--ip"
+                               nor "-i/--in" is provided, and this flag is provided. It will be working
+                               Disabled by default.
+    -4, --ipv4                 Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
+                               then it will do IPv4 test from build-in IPs from CloudFlare by default.
+    -6, --ipv6                 Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
+                               then it will do IPv6 test from build-in IPs from CloudFlare by using
+                               this flag.
+        --hello-firefox        Work as firefox to perform tls/https
+        --hello-chrome         Work as Chrome to perform tls/https
+        --hello-edge           Work as Microsoft Edge to perform tls/https
+        --hello-safari         Work as safari to perform tls/https
+    -a  --test-all             Test all IPs until no more IP left. It's disabled by default.
+    -w, --to-file              Write result to csv file, disabled by default. If it is provided and
+                               "-o|--result-file <value>" is not provided, the result file will be named
+                               as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
+    -o, --outfile      string  File name of result. If it don't provided and "-w|--store-to-file"
+                               is provided, the result file will be named as
+                               "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
+    -e, --to-db                Write result to sqlite3 db file, disabled by default. If it's provided
+                               and "-f|--db-file" is not provided, it will be named "ip.db" and
+                               store in current directory.
+    -f, --dbfile       string  Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
+                               provided, it will be named "ip.db" and store in current directory.
+    -g, --label        string  the label for a part of the result file's name and sqlite3 record. It's
+                               hostname from "--hostname" or "-u|--url" by default.
+    -V, --debug                Print debug message.
+        --tcell                Use tcell to display the running procedure when in debug mode.
+                               Turn this on will activate "--debug".
+    -v, --version              Show version.
+pflag: help requested
+$
 ```
 
 ### Data stored in sqlite3 DB
@@ -148,7 +158,7 @@ TestTime IP              Speed(KB/s) DelayAvg(ms) Stability(%)
     TestTime      datetime     when the test happened
     ASN           int          ASN of your local network
     CITY          text         city of your local network
-    IP            text         valid IP for CloudFare CDN access
+    IP            text         valid IP with port for CloudFare CDN access
     LABEL         text         label while stand for your CloudFare CDN resources
     DTS           text         the method for DT (SSL or HTTPS)
     DTC           int          tries for DT
