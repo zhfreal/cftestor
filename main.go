@@ -44,12 +44,13 @@ const (
 var (
 	maxHostLenBig                           = big.NewInt(maxHostLen)
 	ipFile                                  string
-	version, buildTag, buildDate, buildHash string = "dev", "dev", "dev", "dev"
-	srcIPS                                  []*string
-	srcIPRs                                 []*ipRange
-	srcIPRsCache                            []net.IP
+	version, buildTag, buildDate, buildHash string     = "dev", "dev", "dev", "dev"
+	srcIPRsRaw                              []*ipRange // CIDR slice
+	srcIPRsExtracted                        []net.IP   // net.IP slice
+	srcHosts                                []*string  // slice stored host: <ip>:<port>
 	ipStr                                   arrayFlags
-	dtCount, dtWorkerThread, port           int
+	dtCount, dtWorkerThread                 int
+	ports                                   []int
 	dltDurMax, dltWorkerThread              int
 	dltCount, resultMin                     int
 	interval, dtEvaluationDelay, dtTimeout  int
@@ -117,6 +118,8 @@ options:
                                "-s 1.0.0.1/24".
     -i, --in           string  Specify file for test, which contains multiple lines. Each line
                                represent one IP or CIDR.
+    -p, --port         int     Port to test, could be specific one or more ports at same time,
+                               The port should be working via SSL/TLS/HTTPS protocol,  default 443.
     -m, --dt-thread    int     Number of concurrent threads for Delay Test(DT). How many IPs can 
                                be perform DT at the same time. Default 20 threads.
     -t, --dt-timeout   int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS 
@@ -125,7 +128,6 @@ options:
                                longer when we perform https connections test by "-dt-via-https" 
                                than when we perform SSL/TLS test by default.
     -c, --dt-count     int     Tries of DT for a IP, default 4.
-    -p, --port         int     Port to test, default 443. It's valid when "--dt-only" and "--dt-via-https".
         --hostname     string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
                                is not provided.
         --dt-via-https         Deprecated! Using \"--dt-via <https|tls|ssl>\" instead.
@@ -209,7 +211,8 @@ func init() {
 	flag.IntVarP(&dtWorkerThread, "dt-thread", "m", 20, "Number of concurrent threads for Delay Test(DT).")
 	flag.IntVarP(&dtTimeout, "dt-timeout", "t", 2000, "Timeout for single DT(ms).")
 	flag.IntVarP(&dtCount, "dt-count", "c", 4, "Tries of DT for a IP.")
-	flag.IntVarP(&port, "port", "p", 443, "Port to test")
+	// flag.IntVarP(&port, "port", "p", 443, "Port to test")
+	flag.IntSliceVarP(&ports, "port", "p", []int{443}, "Port to test, could be specific one or more ports at same time.")
 	flag.StringVar(&hostName, "hostname", DefaultTestHost, "Hostname for DT test.")
 	flag.StringVar(&dtVia, "dt-via", "https", "DT via https rather than SSL/TLS shaking hands.")
 	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https rather than SSL/TLS shaking hands.")
@@ -305,6 +308,11 @@ func init() {
 		os.Exit(1)
 	}
 
+	// check -I|--interval
+	if interval <= 0 {
+		myLogger.Fatalf("\"-I|--interval %v\" should not be smaller than 0!\n", interval)
+	}
+
 	// trim whitespace
 	ipFile = strings.TrimSpace(ipFile)
 	resultFile = strings.TrimSpace(resultFile)
@@ -314,6 +322,7 @@ func init() {
 	dltUrl = strings.TrimSpace(dltUrl)
 	dbFile = strings.TrimSpace(dbFile)
 
+	var srcIPS []*string
 	if len(ipStr) != 0 {
 		for i := 0; i < len(ipStr); i++ {
 			srcIPS = append(srcIPS, &ipStr[i])
@@ -322,7 +331,7 @@ func init() {
 	if len(ipFile) != 0 {
 		file, err := os.Open(ipFile)
 		if err != nil {
-			myLogger.Fatalf("Sqlite3 db file is not accessible! \"%s\"\n", ipFile)
+			myLogger.Fatalf("file \"%s\" is not accessible! \n", ipFile)
 		}
 		scanner := bufio.NewScanner(file)
 		scanner.Split(bufio.ScanLines)
@@ -331,14 +340,11 @@ func init() {
 			if len(tIp) == 0 {
 				continue
 			}
-			if isValidIPs(tIp) {
-				srcIPS = append(srcIPS, &tIp)
-			} else {
-				myLogger.Fatalf("\"%s\" is not a valid IP or CIDR.\n", tIp)
-			}
 		}
 	}
-	if len(ipStr) == 0 && len(ipFile) == 0 {
+
+	// no source IPs provided
+	if len(ipStr) == 0 && len(ipFile) == 0 || len(srcIPS) == 0 {
 		if !ipv6Mode {
 			t_cf_ipv4 := CFIPV4FULL
 			if fastMode {
@@ -358,47 +364,60 @@ func init() {
 		}
 	}
 
+	// shuffle srcIPR and srcIPRsCache when do not testAll
+	// and fix resultMin
+	t_qty := big.NewInt(0)
+	for i := 0; i < len(srcIPS); i++ {
+		ips := strings.TrimSpace(*srcIPS[i])
+		if isValidIPs(ips) {
+			ipr := NewIPRangeFromCIDR(&ips)
+			if ipr == nil {
+				myLogger.Fatalf("\"%v\" is invalid!\n", ips)
+			}
+			// when it do not testAll and ipr is not bigger than maxHostLenBig, extract to to cache
+			t_qty = t_qty.Add(t_qty, ipr.Len)
+			if !testAll && ipr.Len.Cmp(maxHostLenBig) < 1 {
+				srcIPRsExtracted = append(srcIPRsExtracted, ipr.ExtractAll()...)
+			} else {
+				// when it do not perform tealAll or not bigger than maxHostLenBig, just put it to srcIPRs
+				srcIPRsRaw = append(srcIPRsRaw, ipr)
+			}
+		} else if isValidHost(ips) {
+			srcHosts = append(srcHosts, &ips)
+			t_qty = t_qty.Add(t_qty, big.NewInt(1))
+		} else {
+			myLogger.Fatalf("\"%v\" is neither valid IP/CIDR nor host!\n", ips)
+		}
+	}
+	// shuffle srcIPRsRaw, srcIPRsExtracted, and srcHosts
+	myRand.Shuffle(len(srcIPRsRaw), func(m, n int) {
+		srcIPRsRaw[m], srcIPRsRaw[n] = srcIPRsRaw[n], srcIPRsRaw[m]
+	})
+	myRand.Shuffle(len(srcIPRsExtracted), func(m, n int) {
+		srcIPRsExtracted[m], srcIPRsExtracted[n] = srcIPRsExtracted[n], srcIPRsExtracted[m]
+	})
+	myRand.Shuffle(len(srcHosts), func(m, n int) {
+		srcHosts[m], srcHosts[n] = srcHosts[n], srcHosts[m]
+	})
+	// check resultMin
 	if resultMin <= 0 {
 		myLogger.Fatalf("\"-r|--result %v\" should not be smaller than 0!\n", resultMin)
 	}
-
-	if interval <= 0 {
-		myLogger.Fatalf("\"-I|--interval %v\" should not be smaller than 0!\n", interval)
-	}
-
-	// init srcIPR and srcIPRsCache
-	t_qty := big.NewInt(0)
-	for i := 0; i < len(srcIPS); i++ {
-		ipr := NewIPRangeFromCIDR(srcIPS[i])
-		if ipr == nil {
-			myLogger.Fatalf("\"%v\" is invalid!\n", *srcIPS[i])
-		}
-		// when it do not testAll and ipr is not bigger than maxHostLenBig, extract to to cache
-		t_qty = t_qty.Add(t_qty, ipr.Len)
-		if !testAll && ipr.Len.Cmp(maxHostLenBig) < 1 {
-			srcIPRsCache = append(srcIPRsCache, ipr.ExtractAll()...)
-		} else {
-			// when it do not perform tealAll or not bigger than maxHostLenBig, just put it to srcIPRs
-			srcIPRs = append(srcIPRs, ipr)
-		}
-	}
-	// shuffle srcIPR and srcIPRsCache when do not testAll
-	// and fix resultMin
+	// re-caculate resultMin based on the source IPs
 	t_result_min := big.NewInt(int64(resultMin))
-	if !testAll {
-		myRand.Shuffle(len(srcIPRs), func(m, n int) {
-			srcIPRs[m], srcIPRs[n] = srcIPRs[n], srcIPRs[m]
-		})
-		myRand.Shuffle(len(srcIPRsCache), func(m, n int) {
-			srcIPRsCache[m], srcIPRsCache[n] = srcIPRsCache[n], srcIPRsCache[m]
-		})
+	if testAll {
+		resultMin = -1
+	} else {
 		if t_qty.Cmp(t_result_min) == -1 {
 			resultMin = int(t_qty.Int64())
 		}
-	} else {
-		resultMin = -1
 	}
-
+	// validate ports
+	for _, port := range ports {
+		if port < 1 || port > 65535 {
+			myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", port)
+		}
+	}
 	// set suffixLabel
 	if len(suffixLabel) == 0 {
 		suffixLabel = hostName
@@ -438,9 +457,6 @@ func init() {
 			//ping via ssl negotiation
 			if len(hostName) == 0 {
 				myLogger.Fatal("\"--hostname\" should not be empty. \n")
-			}
-			if port < 1 || port > 65535 {
-				port = 443
 			}
 			dtSource = dtsSSL
 		} else {
@@ -535,6 +551,8 @@ func init() {
 	}
 }
 
+// :param: dtTaskChan, dltTaskChan, every item in them should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
+// :param: dtResultChan, dltResultChan, should have port in every single item
 func controllerWorker(dtTaskChan chan *string, dtResultChan chan singleVerifyResult, dltTaskChan chan *string,
 	dltResultChan chan singleVerifyResult, wg *sync.WaitGroup, dtOnGoingChan chan int, dltOnGoingChan chan int) {
 	defer func() {
@@ -545,9 +563,12 @@ func controllerWorker(dtTaskChan chan *string, dtResultChan chan singleVerifyRes
 	dtTasks := 0
 	dltTasks := 0
 	dtDoneTasks := 0
+	// the item in dtTaskCache is a ip string.
 	dtTaskCache := make([]*string, 0)
 	dltDoneTasks := 0
+	// the item in dltTaskCache is a ip string.
 	dltTaskCache := make([]*string, 0)
+	// the key of cacheResultMap should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
 	cacheResultMap := make(map[string]VerifyResults)
 	haveEnoughResult := false
 	noMoreSourcesDT := false
@@ -637,23 +658,33 @@ LOOP:
 				if len(dtTaskChan) < cap(dtTaskChan) { // this condition is not apply for #line 587
 					// get more Hosts while we don't have enough hosts in dtTaskCache
 					if len(dtTaskCache) == 0 {
-						dtTaskCache = retrieveCIDRHosts(2 * dtWorkerThread)
+						t_dtTaskCache := retrieveIPsFromIPR(2 * dtWorkerThread)
+						for _, ipStr := range t_dtTaskCache {
+							for _, port := range ports {
+								host := genHostFromIPStrPort(*ipStr, port)
+								dtTaskCache = append(dtTaskCache, &host)
+							}
+						}
+						t_dtTaskCache_2 := retrieveHosts(2 * dtWorkerThread)
+						dtTaskCache = append(dtTaskCache, t_dtTaskCache_2...)
 						// if no more hosts, but just in dt-only mode, we set noMoSources to true
-						if len(dtTaskCache) == 0 {
+						if len(t_dtTaskCache) == 0 && len(t_dtTaskCache_2) == 0 {
 							noMoreSourcesDT = true
 						}
+						t_dtTaskCache = nil
+						t_dtTaskCache_2 = nil
 					}
 					// when it's dt-only mode or, download task pool has less ip than 2*cap(dltTaskChan)
 					// we put ping task into dtTaskCache
 					// simplify algorithm
 					if dtOnly || len(dltTaskCache) < 2*cap(dltTaskChan) {
 						for len(dtTaskCache) > 0 &&
-							len(dtTaskChan) < cap(dtTaskChan) &&
+							len(dtTaskChan) < cap(dtTaskChan) && // dtTaskChan has enough room
 							len(dtTaskChan)+len(dtOnGoingChan)+len(dtResultChan) < cap(dtResultChan) {
 							// to prevent overflow of dtResultChan
 							// the total IP and task in dtTaskChan, dtOnGoingChan and dtResultChan is less than the capacity of dtResultChan
-							dtTasks += 1
 							dtTaskChan <- dtTaskCache[0]
+							dtTasks += 1
 							if len(dtTaskCache) > 1 {
 								dtTaskCache = dtTaskCache[1:]
 							} else {
@@ -739,10 +770,21 @@ LOOP:
 			if !cancelSigFromTerm && !haveEnoughResult && ((!dltOnly && len(dltTaskCache) > 0) || (dltOnly && !noMoreSourcesDLT)) {
 				// get more hosts while it's on download-only mode
 				if dltOnly && len(dltTaskCache) == 0 {
-					dltTaskCache = retrieveCIDRHosts(2 * dltWorkerThread)
-					if len(dltTaskCache) == 0 {
-						noMoreSourcesDLT = true
+					t_dltTaskCache := retrieveIPsFromIPR(2 * dltWorkerThread)
+					for _, ips := range t_dltTaskCache {
+						for _, port := range ports {
+							host := genHostFromIPStrPort(*ips, port)
+							dltTaskCache = append(dltTaskCache, &host)
+						}
 					}
+					t_dltTaskCache_2 := retrieveHosts(2 * dltWorkerThread)
+					dltTaskCache = append(dltTaskCache, t_dltTaskCache_2...)
+					// if no more hosts, but just in dlt-only mode, we set noMoSources to true
+					if len(t_dltTaskCache) == 0 && len(t_dltTaskCache_2) == 0 {
+						noMoreSourcesDT = true
+					}
+					t_dltTaskCache = nil
+					t_dltTaskCache_2 = nil
 				}
 				// put task to download chan when we have IPs from delay test and the task chan have empty slot
 				for len(dltTaskCache) > 0 && // it has IP in dltTaskCache
@@ -865,11 +907,11 @@ func confirmQuit() bool {
 
 func main() {
 	var wg sync.WaitGroup
-	var dtTaskChan = make(chan *string, dtWorkerThread)
-	var dtResultChan = make(chan singleVerifyResult, dtWorkerThread*4)
+	var dtTaskChan = make(chan *string, dtWorkerThread*len(ports))
+	var dtResultChan = make(chan singleVerifyResult, cap(dtTaskChan)*2)
 	var dtOnGoingChan = make(chan int, dtWorkerThread)
-	var dltTaskChan = make(chan *string, dltWorkerThread)
-	var dltResultChan = make(chan singleVerifyResult, dltWorkerThread*4)
+	var dltTaskChan = make(chan *string, dltWorkerThread*len(ports))
+	var dltResultChan = make(chan singleVerifyResult, cap(dltTaskChan)*2)
 	var dltOnGoingChan = make(chan int, dltWorkerThread)
 
 	if debug && tcellMode {
@@ -888,7 +930,7 @@ func main() {
 				go downloadWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &dtUrl,
 					dtTimeoutDuration, -1, dtCount, interval, true, enableDTEvaluation)
 			} else {
-				go sslDTWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &hostName, port,
+				go sslDTWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &hostName,
 					dtTimeoutDuration, dtCount, interval, enableDTEvaluation)
 			}
 			wg.Add(1)

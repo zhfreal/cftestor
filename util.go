@@ -216,13 +216,13 @@ type singleResult struct {
 
 type singleVerifyResult struct {
 	testTime    time.Time
-	ip          net.IP
+	host        string
 	resultSlice []singleResult
 }
 
 type VerifyResults struct {
 	testTime time.Time // test time
-	ip       *string   // ip address in string
+	ip       *string   // should be <ipv4:port> or <[ipv6]:port>, not just a ip string.
 	dtc      int       // Delay Test(DT) tried count
 	dtpc     int       // DT passed count
 	dtpr     float64   // DT passed rate, in decimal
@@ -661,6 +661,29 @@ func ParseUrl(urlStr string) (tHostName string, tPort int) {
 	return
 }
 
+func NewUrl(urlStr, port string) string {
+	urlStr = strings.TrimSpace(urlStr)
+	if len(urlStr) == 0 {
+		urlStr = defaultDLTUrl
+	}
+	u, err := url.ParseRequestURI(urlStr)
+	if err != nil || u == nil || len(u.Host) == 0 {
+		myLogger.Fatal(fmt.Sprintf("url is not valid: %s\n", urlStr))
+	}
+	host, old_port, err := net.SplitHostPort(u.Host)
+	newHost := ""
+	if err != nil {
+		newHost = net.JoinHostPort(u.Host, port)
+	} else {
+		if old_port == port {
+			return urlStr
+		}
+		newHost = net.JoinHostPort(host, port)
+	}
+	u.Host = newHost
+	return u.String()
+}
+
 func initRandSeed() {
 	myRand.Seed(time.Now().UnixNano())
 }
@@ -684,7 +707,7 @@ func getASNAndCityWithIP(ipStr *string) (ASN int, city string) {
 			Timeout:       httpRspTimeoutDuration + 1*time.Second,
 		}
 		if len(*ipStr) > 0 && isValidIPs(*ipStr) {
-			fullAddress := getConnPeerAddressFromStr(*ipStr, 443)
+			fullAddress := genHostFromIPStrPort(*ipStr, 443)
 			client.Transport = &http.Transport{
 				DialContext: GetDialContextByAddr(fullAddress),
 				//ResponseHeaderTimeout: HttpRspTimeoutDuration,
@@ -815,7 +838,7 @@ func GetDialContextByAddr(addrPort string) func(ctx context.Context, network, ad
 func singleResultStatistic(out singleVerifyResult, statisticDownload bool) VerifyResults {
 	var tVerifyResult = VerifyResults{}
 	tVerifyResult.testTime = out.testTime
-	tIP := out.ip.String()
+	tIP := out.host
 	tVerifyResult.ip = &tIP
 	if len(out.resultSlice) == 0 {
 		return tVerifyResult
@@ -1587,7 +1610,7 @@ func displayStat(ov overAllStat) {
 }
 
 func HaveIPv6() bool {
-	for _, ipr := range srcIPRs {
+	for _, ipr := range srcIPRsRaw {
 		if ipr.IsV6() {
 			return true
 		}
@@ -1622,26 +1645,26 @@ func MinInt(a, b int, num ...int) (t int) {
 }
 
 // we get target IPs based on <amount>. We will get amount of <amount> from every IPR in srcIPR and  from srcIPRsCache
-func retrieveCIDRHosts(amount int) (targetIPs []*string) {
+func retrieveIPsFromIPR(amount int) (targetIPs []*string) {
 	if amount < 0 || amount < retrieveCount {
 		amount = retrieveCount
 	}
 
 	t_ips := []net.IP{}
-	for _, ipr := range srcIPRs {
+	for _, ipr := range srcIPRsRaw {
 		if !testAll {
 			t_ips = append(t_ips, ipr.GetRandomX(amount)...)
 		} else {
 			t_ips = append(t_ips, ipr.Extract(amount)...)
 		}
 	}
-	if len(srcIPRsCache) > 0 {
-		if len(srcIPRsCache) <= amount {
-			t_ips = append(t_ips, srcIPRsCache...)
-			srcIPRsCache = []net.IP{}
+	if len(srcIPRsExtracted) > 0 {
+		if len(srcIPRsExtracted) <= amount {
+			t_ips = append(t_ips, srcIPRsExtracted...)
+			srcIPRsExtracted = []net.IP{}
 		} else {
-			t_ips = append(t_ips, srcIPRsCache[0:amount]...)
-			srcIPRsCache = srcIPRsCache[amount:]
+			t_ips = append(t_ips, srcIPRsExtracted[0:amount]...)
+			srcIPRsExtracted = srcIPRsExtracted[amount:]
 		}
 	}
 	for _, t_ip := range t_ips {
@@ -1649,30 +1672,83 @@ func retrieveCIDRHosts(amount int) (targetIPs []*string) {
 		targetIPs = append(targetIPs, &tIP)
 	}
 	// randomize
-	if !testAll {
-		myRand.Shuffle(len(targetIPs), func(m, n int) {
-			targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
-		})
+	myRand.Shuffle(len(targetIPs), func(m, n int) {
+		targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
+	})
+	return
+}
+
+func retrieveHosts(amount int) (targetHosts []*string) {
+	if amount <= 0 || len(srcHosts) == 0 {
+		return
+	}
+	t_amount := amount
+	if len(srcHosts) < amount {
+		t_amount = len(srcHosts)
+	}
+	targetHosts = append(targetHosts, srcHosts[:t_amount]...)
+	if len(srcHosts) <= amount {
+		srcHosts = []*string{}
+	} else {
+		srcHosts = srcHosts[t_amount:]
 	}
 	return
+}
+
+func isValidCIDR(ips string) bool {
+	_, _, err := net.ParseCIDR(ips)
+	return err == nil
+}
+
+func isValidIP(ip string) bool {
+	tIP := net.ParseIP(ip)
+	return tIP != nil
 }
 
 func isValidIPs(ips string) bool {
-	_, _, err := net.ParseCIDR(ips)
-	if err != nil {
-		tIP := net.ParseIP(ips)
-		return tIP != nil
+	ips = strings.TrimSpace(ips)
+	if isValidCIDR(ips) {
+		return true
+	} else {
+		return isValidIP(ips)
 	}
-	// valid CIDR
-	return true
 }
 
-func getConnPeerAddress(ip net.IP, port int) (connStr string) {
-	connStr = getConnPeerAddressFromStr(ip.String(), port)
-	return
+func isValidHost(host string) bool {
+	ok, _, _ := splitHost(host)
+	return ok
 }
 
-func getConnPeerAddressFromStr(ipStr string, port int) (connStr string) {
+func splitHost(host string) (bool, string, int) {
+	host = strings.TrimSpace(host)
+	if len(host) == 0 {
+		return false, "", -1
+	}
+	ip, port, err := net.SplitHostPort(host)
+	if err != nil {
+		return false, "", -1
+	}
+	// invalid ip in host
+	if !isValidIPs(ip) {
+		return false, "", -1
+	}
+	// invalid port
+	t_port, err := strconv.Atoi(port)
+	if err != nil {
+		return false, "", -1
+	}
+	if t_port <= 0 || t_port > 65535 {
+		return false, "", -1
+	}
+	return true, ip, t_port
+}
+
+// func genHostFromIPPort(ip net.IP, port int) (connStr string) {
+// 	connStr = genHostFromIPStrPort(ip.String(), port)
+// 	return
+// }
+
+func genHostFromIPStrPort(ipStr string, port int) (connStr string) {
 	if !isValidIPs(ipStr) {
 		return
 	}

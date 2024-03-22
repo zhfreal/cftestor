@@ -68,14 +68,18 @@ func WithHTTPStat(ctx context.Context, r *ResultHttp) context.Context {
 }
 
 // download test core
-func downloadHandler(ip net.IP, tUrl *string, httpRspTimeoutDuration time.Duration, dltTimeDurationMax time.Duration,
+func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, dltTimeDurationMax time.Duration,
 	dltCount int, interval int, dtOnly, evaluationDT bool) []singleResult {
-	_, port := ParseUrl(*tUrl)
-	fullAddress := getConnPeerAddress(ip, port)
 	var allResult = make([]singleResult, 0)
+	_, port, err := net.SplitHostPort(*host)
+	// invalid host
+	if err != nil {
+		return allResult
+	}
+	new_url := NewUrl(*tUrl, port)
 	// loop for test
 	for i := 0; i < dltCount; i++ {
-		tReq, err := http.NewRequest("GET", *tUrl, nil)
+		tReq, err := http.NewRequest("GET", new_url, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -86,7 +90,7 @@ func downloadHandler(ip net.IP, tUrl *string, httpRspTimeoutDuration time.Durati
 		tReq.Header.Set("User-Agent", userAgent)
 		var client = http.Client{
 			Transport: &http.Transport{
-				DialContext: GetDialContextByAddr(fullAddress),
+				DialContext: GetDialContextByAddr(*host),
 				//ResponseHeaderTimeout: HttpRspTimeoutDuration,
 			},
 			CheckRedirect: nil,
@@ -186,20 +190,19 @@ func downloadWorker(chanIn chan *string, chanOut chan singleVerifyResult, chanOn
 	defer (*wg).Done()
 LOOP:
 	for {
-		ip, ok := <-chanIn
+		host, ok := <-chanIn
 		if !ok {
 			break LOOP
 		}
-		if *ip == workerStopSignal {
+		if *host == workerStopSignal {
 			//log.Println("Download task finished!")
 			break LOOP
 		}
 		// push an element to chanOnGoing, means that there is a test ongoing.
 		// push it immediately once we confirm it's a normal task
 		chanOnGoing <- workOnGoing
-		Ip := net.ParseIP(*ip)
-		tResultSlice := downloadHandler(Ip, tUrl, httpRspTimeoutDuration, dltTimeDurationMax, dltCount, interval, dtOnly, evaluationDT)
-		tVerifyResult := singleVerifyResult{time.Now(), Ip, tResultSlice}
+		tResultSlice := downloadHandler(host, tUrl, httpRspTimeoutDuration, dltTimeDurationMax, dltCount, interval, dtOnly, evaluationDT)
+		tVerifyResult := singleVerifyResult{time.Now(), *host, tResultSlice}
 		chanOut <- tVerifyResult
 		// pull out an element from chanOnGoing, means that a test work is finished.
 		<-chanOnGoing
@@ -208,13 +211,12 @@ LOOP:
 	}
 }
 
-func sslDTHandler(ip net.IP, hostName *string, port int, dtTimeoutDuration time.Duration,
+func sslDTHandler(host *string, hostName *string, dtTimeoutDuration time.Duration,
 	totalRound int, interval int, evaluateDT bool) []singleResult {
 	conf := &tls.Config{
 		ServerName: *hostName,
 	}
 	dialer := net.Dialer{Timeout: dtTimeoutDuration}
-	fullAddress := getConnPeerAddress(ip, port)
 	var allResult = make([]singleResult, 0)
 	// loop for test
 	for i := 0; i < totalRound; i++ {
@@ -222,7 +224,7 @@ func sslDTHandler(ip net.IP, hostName *string, port int, dtTimeoutDuration time.
 		// connection time duration begin:
 		var timeStart = time.Now()
 		// conn, tErr := net.DialTimeout("tcp", fullAddress, dtTimeoutDuration)
-		conn, tErr := tls.DialWithDialer(&dialer, "tcp", fullAddress, conf)
+		conn, tErr := tls.DialWithDialer(&dialer, "tcp", *host, conf)
 		tDur := time.Since(timeStart)
 		if tErr != nil {
 			allResult = append(allResult, currentResult)
@@ -247,23 +249,22 @@ func sslDTHandler(ip net.IP, hostName *string, port int, dtTimeoutDuration time.
 }
 
 func sslDTWorker(chanIn chan *string, chanOut chan singleVerifyResult, chanOnGoing chan int, wg *sync.WaitGroup,
-	hostName *string, port int, dtTimeoutDuration time.Duration, totalRound int, interval int, evaluateDT bool) {
+	hostName *string, dtTimeoutDuration time.Duration, totalRound int, interval int, evaluateDT bool) {
 	defer (*wg).Done()
 LOOP:
 	for {
-		ip, ok := <-chanIn
+		host, ok := <-chanIn
 		if !ok {
 			break LOOP
 		}
-		if *ip == workerStopSignal {
+		if *host == workerStopSignal {
 			break LOOP
 		}
 		// push an element to chanOnGoing, means that there is a test ongoing.
 		// push it immediately once we confirm it's a normal task
 		chanOnGoing <- workOnGoing
-		Ip := net.ParseIP(*ip)
-		tResultSlice := sslDTHandler(Ip, hostName, port, dtTimeoutDuration, totalRound, interval, evaluateDT)
-		tVerifyResult := singleVerifyResult{time.Now(), Ip, tResultSlice}
+		tResultSlice := sslDTHandler(host, hostName, dtTimeoutDuration, totalRound, interval, evaluateDT)
+		tVerifyResult := singleVerifyResult{time.Now(), *host, tResultSlice}
 		chanOut <- tVerifyResult
 		// pull out an element from chanOnGoing, means that a test work is finished.
 		<-chanOnGoing
