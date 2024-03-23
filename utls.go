@@ -12,8 +12,8 @@ import (
 	"golang.org/x/net/http2"
 )
 
-func NewUTLSTransport(helloID utls.ClientHelloID, hostWithPort string) *UTLSTransport {
-	return &UTLSTransport{clientHello: helloID, hostWithPort: hostWithPort}
+func NewUTLSTransport(helloID utls.ClientHelloID, hostWithPort string, timeout time.Duration) *UTLSTransport {
+	return &UTLSTransport{clientHello: helloID, hostWithPort: hostWithPort, timeout: timeout}
 }
 
 type UTLSTransport struct {
@@ -27,6 +27,7 @@ type UTLSTransport struct {
 	tlsShakedAt  time.Time
 	responseAt   time.Time
 	conn         net.Conn
+	timeout      time.Duration
 }
 
 func (b *UTLSTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -50,14 +51,14 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	b.startAt = time.Now()
-	conn, err := net.Dial("tcp", b.hostWithPort)
+	var err error
+	b.conn, err = net.DialTimeout("tcp", b.hostWithPort, b.timeout)
 	if err != nil {
 		return nil, fmt.Errorf("tcp net dial fail: %w", err)
 	}
-	// don't close conn this time
 	// defer conn.Close() // nolint
 
-	tlsConn, err := b.tlsConnect(conn, req)
+	tlsConn, err := b.tlsConnect(b.conn, req)
 	b.tlsShakedAt = time.Now()
 	if err != nil {
 		return nil, fmt.Errorf("tls connect fail: %w", err)
@@ -72,8 +73,7 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 		if err != nil {
 			resp, err = nil, fmt.Errorf("create http2 client with connection fail: %w", err)
 		} else {
-			// don't close conn this time
-			// defer conn.Close() // nolint
+			// defer h2_conn.Close() // nolint
 			resp, err = h2_conn.RoundTrip(req)
 		}
 	case "http/1.1", "":
@@ -129,7 +129,7 @@ func (b *UTLSTransport) CloseConn() {
 }
 
 func newHttpClient(helloID utls.ClientHelloID, hostWithPort string, timeout time.Duration) (*http.Client, *UTLSTransport) {
-	tr := NewUTLSTransport(helloID, hostWithPort)
+	tr := NewUTLSTransport(helloID, hostWithPort, timeout)
 	var client = &http.Client{
 		Timeout:   timeout,
 		Transport: tr,

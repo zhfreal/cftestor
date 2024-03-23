@@ -174,7 +174,7 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 
 func downloadWorker(chanIn chan *string, chanOut chan singleVerifyResult, chanOnGoing chan int, wg *sync.WaitGroup,
 	tUrl *string, httpRspTimeoutDuration time.Duration, dltTimeDurationMax time.Duration,
-	dltCount int, interval int, dtOnly, evaluationDT bool) {
+	dltCount int, dtOnly, evaluationDT bool) {
 	defer (*wg).Done()
 LOOP:
 	for {
@@ -231,8 +231,7 @@ func sslDTHandler(host *string, hostName *string, dtTimeoutDuration time.Duratio
 	return allResult
 }
 
-func sslDTWorker(chanIn chan *string, chanOut chan singleVerifyResult, chanOnGoing chan int, wg *sync.WaitGroup,
-	hostName *string, dtTimeoutDuration time.Duration, totalRound int, interval int, evaluateDT bool) {
+func sslDTWorker(chanIn chan *string, chanOut chan singleVerifyResult, chanOnGoing chan int, wg *sync.WaitGroup, evaluateDT bool) {
 	defer (*wg).Done()
 LOOP:
 	for {
@@ -246,7 +245,7 @@ LOOP:
 		// push an element to chanOnGoing, means that there is a test ongoing.
 		// push it immediately once we confirm it's a normal task
 		chanOnGoing <- workOnGoing
-		tResultSlice := sslDTHandler(host, hostName, dtTimeoutDuration, totalRound, interval, evaluateDT)
+		tResultSlice := sslDTHandler(host, &hostName, dtTimeoutDuration, dtCount, interval, evaluateDT)
 		tVerifyResult := singleVerifyResult{time.Now(), *host, tResultSlice}
 		chanOut <- tVerifyResult
 		// pull out an element from chanOnGoing, means that a test work is finished.

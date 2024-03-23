@@ -959,10 +959,9 @@ func main() {
 		for i := 0; i < dtWorkerThread; i++ {
 			if dtHttps {
 				go downloadWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &dtUrl,
-					dtTimeoutDuration, -1, dtCount, interval, true, enableDTEvaluation)
+					dtTimeoutDuration, -1, dtCount, true, enableDTEvaluation)
 			} else {
-				go sslDTWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &hostName,
-					dtTimeoutDuration, dtCount, interval, enableDTEvaluation)
+				go sslDTWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, enableDTEvaluation)
 			}
 			wg.Add(1)
 		}
@@ -972,7 +971,7 @@ func main() {
 	if !dtOnly {
 		for i := 0; i < dltWorkerThread; i++ {
 			go downloadWorker(dltTaskChan, dltResultChan, dltOnGoingChan, &wg, &dltUrl,
-				httpRspTimeoutDuration, dltTimeDurationMax, dltCount, interval, false, false)
+				httpRspTimeoutDuration, dltTimeDurationMax, dltCount, false, false)
 			wg.Add(1)
 		}
 	}
