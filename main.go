@@ -110,6 +110,7 @@ var (
 	dtThreadsNumLen, dltThreadsNumLen       = 0, 0
 	tcellMode                               = false
 	fastMode                                = false
+	silenceMode                             = false
 	statInterval                            = statisticIntervalNT
 	// titleExitHint                          = "Press any key to exit!"
 	appArt string = `
@@ -190,6 +191,7 @@ options:
                                provided, it will be named "ip.db" and store in current directory.
     -g, --label        string  the label for a part of the result file's name and sqlite3 record. It's
                                hostname from "--hostname" or "-u|--url" by default.
+        --silence              Silence mode.
     -V, --debug                Print debug message.
         --tcell                Use tcell to display the running procedure when in debug mode.
                                Turn this on will activate "--debug".
@@ -212,7 +214,6 @@ func init() {
 	var printVersion bool
 	var tlsHelloFirefox, tlsHelloChrome, tlsHelloEdge, tlsHelloSafari bool = false, false, false, false
 
-	print_version()
 	// version = "dev"
 	flag.BoolVar(&fastMode, "fast", false, "Fast mode")
 	flag.VarP(&ipStr, "ip", "s", "Specific IP or CIDR for test.")
@@ -258,6 +259,7 @@ func init() {
 	flag.StringVarP(&dbFile, "dbfile", "f", "", "Sqlite3 db file name.")
 	flag.StringVarP(&suffixLabel, "label", "g", "", "the label for a part of the result file's name and sqlite3 record.")
 
+	flag.BoolVar(&silenceMode, "silence", false, "silence mode.")
 	flag.BoolVarP(&debug, "debug", "V", false, "Print debug message.")
 	flag.BoolVar(&tcellMode, "tcell", false, "Use tcell form to show debug messages.")
 	flag.BoolVarP(&printVersion, "version", "v", false, "Show version.")
@@ -265,7 +267,14 @@ func init() {
 		fmt.Print(help)
 	}
 	flag.Parse()
-
+	if !silenceMode {
+		print_version()
+	} else {
+		debug = false
+		tcellMode = false
+		storeToDB = false
+		storeToFile = false
+	}
 	if len(version) == 0 {
 		version = "dev"
 	}
@@ -320,7 +329,11 @@ func init() {
 	if debug {
 		loggerLevel = logLevelDebug
 	} else {
-		loggerLevel = logLevelInfo
+		if !silenceMode {
+			loggerLevel = logLevelInfo
+		} else {
+			loggerLevel = logLevelFatal
+		}
 	}
 	// init myLogger
 	myLogger = myLogger.newLogger(loggerLevel)
@@ -983,27 +996,33 @@ func main() {
 	close(dltTaskChan)
 	close(dltResultChan)
 	close(dltOnGoingChan)
-	if debug && len(verifyResultsMap) > 0 {
+	if len(verifyResultsMap) > 0 {
 		verifyResultsSlice := make([]VerifyResults, 0)
 		for _, v := range verifyResultsMap {
 			verifyResultsSlice = append(verifyResultsSlice, v)
 		}
-		// write to csv file
-		if storeToFile {
-			myLogger.Print("Write to csv " + resultFile)
-			WriteResult(verifyResultsSlice, resultFile)
-			myLogger.Println("  Done!")
+		if !silenceMode {
+			// write to csv file
+			if storeToFile {
+				myLogger.Print("Write to csv " + resultFile)
+				WriteResult(verifyResultsSlice, resultFile)
+				myLogger.Println("  Done!")
+			}
+			// write to db
+			if storeToDB {
+				myLogger.Print("Write to sqlite3 db file " + dbFile)
+				InsertIntoDb(verifyResultsSlice, dbFile)
+				myLogger.Println("  Done!")
+			}
+			// sort by speed
+			sort.Sort(sort.Reverse(resultSpeedSorter(verifyResultsSlice)))
+			myLogger.Println()
+			myLogger.Println("All Results:")
+			PrintFinalStat(verifyResultsSlice, dtOnly)
+		} else {
+			for _, v := range verifyResultsSlice {
+				myLogger.Println(*(v.ip))
+			}
 		}
-		// write to db
-		if storeToDB {
-			myLogger.Print("Write to sqlite3 db file " + dbFile)
-			InsertIntoDb(verifyResultsSlice, dbFile)
-			myLogger.Println("  Done!")
-		}
-		// sort by speed
-		sort.Sort(sort.Reverse(resultSpeedSorter(verifyResultsSlice)))
-		myLogger.Println()
-		myLogger.Println("All Results:")
-		PrintFinalStat(verifyResultsSlice, dtOnly)
 	}
 }
