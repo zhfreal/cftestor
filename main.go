@@ -114,8 +114,8 @@ var (
 
 var help = `Usage: ` + runTime + ` [options]
 options:
-    -s, --ip           string  Specify IP or CIDR for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32", 
-                               "-s 1.0.0.1/24".
+    -s, --ip           string  Specific IP, CIDR or host for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32",
+                               "-s 1.0.0.1/24", "-s 1.1.1.1:443".
     -i, --in           string  Specify file for test, which contains multiple lines. Each line
                                represent one IP or CIDR.
     -p, --port         int     Port to test, could be specific one or more ports at same time,
@@ -130,20 +130,18 @@ options:
     -c, --dt-count     int     Tries of DT for a IP, default 4.
         --hostname     string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
                                is not provided.
-        --dt-via-https         Deprecated! Using \"--dt-via <https|tls|ssl>\" instead.
-                               DT via https other than SSL/TLS shaking hands. It's enabled by default.
-        --dt-via https|tls|ssl DT via https or SSL/TLS shaking hands, \"--dt-via <https|tls|ssl>\"
+        --dt-via https|tls|ssl DT via https or SSL/TLS shaking hands, "--dt-via <https|tls|ssl>"
                                default https.
         --dt-url       string  Specify test URL for DT.
-        --ev-dt                Evaluate DT, we'll try <-c|--dt-count> times to evaluate delay;
+        --ev-dt                Evaluate DT, we'll try "-c|--dt-count value" to evaluate delay;
                                if we don't turn this on, we'll stop DT after we got the first
                                successfull DT; if we turn this on, we'll evaluate the test result 
                                through average delay of singe DT and statistic of all successfull
-                               DT by these two thresholds  <-k|--evaluate-dt-delay> and 
-                               <-S|--evaluate-dt-dtpr>. default turn off.
+                               DT by these two thresholds  "-k|--evaluate-dt-delay value" and 
+                               "-S|--evaluate-dt-dtpr value". default turn off.
     -k, --ev-dt-delay  int     single DT's delay should not bigger than this, unit ms, default 600ms.
     -S, --ev-dt-dtpr   float   The DT pass rate should not lower than this, default 100, means 100%, all
-                               DT must be below <-k|--evaluate-dt-delay>'s value.
+                               DT must be below "-k|--evaluate-dt-delay value".
     -n, --dlt-thread   int     Number of concurrent Threads for Download Test(DLT), default 1. 
                                How many IPs can be perform DLT at the same time.
     -d, --dlt-period   int     The total times escaped for single DLT, default 10s.
@@ -159,12 +157,12 @@ options:
                                "--test-all" was set.
         --dt-only              Do DT only, we do DT & DLT at the same time by default.
         --dlt-only             Do DLT only, we do DT & DLT at the same time by default.
-        --fast                 Fast mode, use inner IPs for fast detection. Just when neither"-s/--ip"
-                               nor "-i/--in" is provided, and this flag is provided. It will be working
+        --fast                 Fast mode, use inner IPs for fast detection. Just when neither"-s|--ip value"
+                               nor "-i|--in value" is provided, and this flag is provided. It will be working
                                Disabled by default.
-        -4, --ipv4             Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
+    -4, --ipv4                 Just test IPv4. When we don't specify IPs by "-s|--ip value" and "-i|--in value",
                                then it will do IPv4 test from build-in IPs from CloudFlare by default.
-    -6, --ipv6                 Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
+    -6, --ipv6                 Just test IPv6. When we don't specify IPs by "-s|--ip value" and "-i|--in value",
                                then it will do IPv6 test from build-in IPs from CloudFlare by using
                                this flag.
     -a  --test-all             Test all IPs until no more IP left. It's disabled by default. 
