@@ -52,7 +52,7 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 
 	b.startAt = time.Now()
 	var err error
-	b.conn, err = net.DialTimeout("tcp", b.hostWithPort, b.timeout/2)
+	b.conn, err = net.DialTimeout("tcp", b.hostWithPort, 2000*time.Millisecond)
 	if err != nil {
 		return nil, fmt.Errorf("tcp net dial fail: %w", err)
 	}
