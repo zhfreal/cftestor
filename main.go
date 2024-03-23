@@ -812,7 +812,7 @@ LOOP:
 					dltTaskCache = append(dltTaskCache, t_dltTaskCache_2...)
 					// if no more hosts, but just in dlt-only mode, we set noMoSources to true
 					if len(t_dltTaskCache) == 0 && len(t_dltTaskCache_2) == 0 {
-						noMoreSourcesDT = true
+						noMoreSourcesDLT = true
 					}
 					t_dltTaskCache = nil
 					t_dltTaskCache_2 = nil
