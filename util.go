@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -751,43 +752,23 @@ func PrintFinalStat(v []VerifyResults, disableDownload bool) {
 	if len(v) == 0 {
 		return
 	}
-	var ipv6 = false
-	for i := 0; i < len(v); i++ {
-		tIP := net.ParseIP(*v[i].ip)
-		if tIP.To4() == nil {
-			ipv6 = true
-			break
-		}
-	}
-	fmt.Printf("%-8v%s", "TestTime", myLogger.indent)
-	if !ipv6 {
-		fmt.Printf("%-15v%s", "IP", myLogger.indent)
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight|tabwriter.Debug)
+	if !dtOnly {
+		fmt.Fprintln(w, "Time\tIP\tSpeed(KB/s)\tDelayAvg(ms)\tStability(%)")
 	} else {
-		fmt.Printf("%-39v%s", "IP", myLogger.indent)
+		fmt.Fprintln(w, "Time\tIP\tDelayAvg(ms)\tStability(%)")
 	}
-	if !disableDownload {
-		fmt.Printf("%-11v%s", "Speed(KB/s)", myLogger.indent)
-	}
-	fmt.Printf("%-12v%s", "DelayAvg(ms)", myLogger.indent)
-	fmt.Printf("%-12v%s", "Stability(%)", myLogger.indent)
 	// close line, LatestLogLength should be 0
 	fmt.Println()
 	for i := 0; i < len(v); i++ {
-		fmt.Printf("%-8v%s", v[i].testTime.Format("15:04:05"), myLogger.indent)
-		if !ipv6 {
-			fmt.Printf("%-15v%s", *v[i].ip, myLogger.indent)
+		if !dtOnly {
+			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), *v[i].ip, v[i].dls, v[i].da, v[i].dtpr*100)
 		} else {
-			fmt.Printf("%-39v%s", *v[i].ip, myLogger.indent)
+			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), *v[i].ip, v[i].da, v[i].dtpr*100)
 		}
-		if !disableDownload {
-			fmt.Printf("%-11.2f%s", v[i].dls, myLogger.indent)
-		}
-		fmt.Printf("%-12.0f%s", v[i].da, myLogger.indent)
-		fmt.Printf("%-12.2f%s", v[i].dtpr*100, myLogger.indent)
-		// close line, LatestLogLength should be 0
-		fmt.Println()
 	}
 	fmt.Println()
+	w.Flush()
 }
 
 func InsertIntoDb(verifyResultsSlice []VerifyResults, dbFile string) {
