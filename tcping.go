@@ -95,7 +95,6 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 		if err != nil {
 			allResult = append(allResult, currentResult)
 			time.Sleep(time.Duration(interval) * time.Millisecond)
-			tr.CloseConn()
 			continue
 		}
 		currentResult.dTPassed = true
@@ -106,7 +105,6 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			// if we need evaluate DT, we'll try DT as many as possible
 			// if we don't, we'll stop after the first successfull try
-			tr.CloseConn()
 			if evaluationDT {
 				continue
 			} else {
@@ -133,6 +131,7 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 		var downloadSuccess = false
 		// just read  the length of content which indicated in response and read before time expire
 		var tTimer = 0
+		defer response.Body.Close()
 		for contentRead < contentLength && time.Now().Before(timeEndExpected) {
 			bufferRead, tErr := response.Body.Read(buffer)
 			contentRead += int64(bufferRead)
@@ -162,7 +161,6 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 		currentResult.dLTDuration = readEndAt.Sub(readAt)
 		currentResult.dLTDataSize = contentRead
 		allResult = append(allResult, currentResult)
-		tr.CloseConn()
 		time.Sleep(time.Duration(interval) * time.Millisecond)
 	}
 	// just get the last record in allResult while enable dtOnly and disable enableDTEvaluation

@@ -26,7 +26,6 @@ type UTLSTransport struct {
 	startAt      time.Time
 	tlsShakedAt  time.Time
 	responseAt   time.Time
-	conn         net.Conn
 	timeout      time.Duration
 }
 
@@ -51,14 +50,14 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	b.startAt = time.Now()
-	var err error
-	b.conn, err = net.DialTimeout("tcp", b.hostWithPort, b.timeout)
+
+	conn, err := net.DialTimeout("tcp", b.hostWithPort, b.timeout)
 	if err != nil {
 		return nil, fmt.Errorf("tcp net dial fail: %w", err)
 	}
-	// defer conn.Close() // nolint
+	defer conn.Close() // nolint
 
-	tlsConn, err := b.tlsConnect(b.conn, req)
+	tlsConn, err := b.tlsConnect(conn, req)
 	b.tlsShakedAt = time.Now()
 	if err != nil {
 		return nil, fmt.Errorf("tls connect fail: %w", err)
@@ -73,7 +72,7 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 		if err != nil {
 			resp, err = nil, fmt.Errorf("create http2 client with connection fail: %w", err)
 		} else {
-			// defer h2_conn.Close() // nolint
+			defer h2_conn.Close() // nolint
 			resp, err = h2_conn.RoundTrip(req)
 		}
 	case "http/1.1", "":
@@ -120,12 +119,6 @@ func (b *UTLSTransport) SetClientHello(hello utls.ClientHelloID) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.clientHello = hello
-}
-
-func (b *UTLSTransport) CloseConn() {
-	if b.conn != nil {
-		_ = b.conn.Close()
-	}
 }
 
 func newHttpClient(helloID utls.ClientHelloID, hostWithPort string, timeout time.Duration) (*http.Client, *UTLSTransport) {
