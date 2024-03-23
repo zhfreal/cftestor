@@ -991,7 +991,7 @@ func main() {
 			PrintFinalStat(verifyResultsSlice, dtOnly)
 		} else {
 			for _, v := range verifyResultsSlice {
-				myLogger.Println(v.ip)
+				myLogger.Println(*(v.ip))
 			}
 		}
 	}
