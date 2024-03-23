@@ -27,7 +27,7 @@ const (
 	statisticIntervalT  = 1000              // in millisecond, valid in tcell mode
 	statisticIntervalNT = 10000             // in millisecond, valid in non-tcell mode
 	quitWaitingTime     = 3                 // in second
-	downloadBufferSize  = 1024 * 1024       // in byte
+	downloadBufferSize  = 1024 * 64         // in byte
 	fileDefaultSize     = 1024 * 1024 * 300 // in byte
 	downloadSizeMin     = 1024 * 1024       // in byte
 	defaultDLTUrl       = "https://cf.9999876.xyz/500mb.dat"
@@ -1003,7 +1003,7 @@ func main() {
 		// sort by speed
 		sort.Sort(sort.Reverse(resultSpeedSorter(verifyResultsSlice)))
 		myLogger.Println()
-		myLogger.Println("All Results:\n")
+		myLogger.Println("All Results:")
 		PrintFinalStat(verifyResultsSlice, dtOnly)
 	}
 }

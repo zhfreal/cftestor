@@ -132,6 +132,7 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 		// just read  the length of content which indicated in response and read before time expire
 		var tTimer = 0
 		defer response.Body.Close()
+		defer tr.CloseIdleConnections()
 		for contentRead < contentLength && time.Now().Before(timeEndExpected) {
 			bufferRead, tErr := response.Body.Read(buffer)
 			contentRead += int64(bufferRead)
