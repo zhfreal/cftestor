@@ -395,7 +395,7 @@ func init() {
 				t_cf_ipv4 = CFIPV4
 			}
 			for i := 0; i < len(t_cf_ipv4); i++ {
-				srcIPS = append(srcIPS, &CFIPV4[i])
+				srcIPS = append(srcIPS, &t_cf_ipv4[i])
 			}
 		} else {
 			t_cf_ipv6 := CFIPV6FULL
@@ -403,7 +403,7 @@ func init() {
 				t_cf_ipv6 = CFIPV6
 			}
 			for i := 0; i < len(t_cf_ipv6); i++ {
-				srcIPS = append(srcIPS, &CFIPV6[i])
+				srcIPS = append(srcIPS, &t_cf_ipv6[i])
 			}
 		}
 	}
