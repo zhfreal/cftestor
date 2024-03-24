@@ -34,11 +34,11 @@ const (
 	userAgent               = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 	defaultDBFile           = "ip.db"
 	DefaultTestHost         = "cf.9999876.xyz"
-	maxHostLen              = 1 << 16
+	maxHostLen              = 1 << 12
 	dtsSSL                  = "SSL"
 	dtsHTTPS                = "HTTPS"
 	runTime                 = "cftestor"
-	retrieveCount       int = 100
+	retrieveCount       int = 32
 )
 
 var (
@@ -128,7 +128,7 @@ options:
                                It should not be less than "-k|--evaluate-dt-delay", It should be 
                                longer when we perform https connections test by "-dt-via-https" 
                                than when we perform SSL/TLS test by default.
-    -c, --dt-count     int     Tries of DT for a IP, default 4.
+    -c, --dt-count     int     Tries of DT for a IP, default 2.
         --hostname     string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
                                is not provided.
         --dt-via https|tls|ssl DT via https or SSL/TLS shaking hands, "--dt-via <https|tls|ssl>"
@@ -209,7 +209,7 @@ func init() {
 
 	flag.IntVarP(&dtWorkerThread, "dt-thread", "m", 20, "Number of concurrent threads for Delay Test(DT).")
 	flag.IntVarP(&dtTimeout, "dt-timeout", "t", 2000, "Timeout for single DT(ms).")
-	flag.IntVarP(&dtCount, "dt-count", "c", 4, "Tries of DT for a IP.")
+	flag.IntVarP(&dtCount, "dt-count", "c", 2, "Tries of DT for a IP.")
 	// flag.IntVarP(&port, "port", "p", 443, "Port to test")
 	flag.IntSliceVarP(&ports, "port", "p", []int{443}, "Port to test, could be specific one or more ports at same time.")
 	flag.StringVar(&hostName, "hostname", DefaultTestHost, "Hostname for DT test.")
@@ -389,7 +389,7 @@ func init() {
 			}
 			// when it do not testAll and ipr is not bigger than maxHostLenBig, extract to to cache
 			t_qty = t_qty.Add(t_qty, ipr.Len)
-			if !testAll && ipr.Len.Cmp(maxHostLenBig) < 1 {
+			if ipr.Len.Cmp(maxHostLenBig) < 1 {
 				srcIPRsExtracted = append(srcIPRsExtracted, ipr.ExtractAll()...)
 			} else {
 				// when it do not perform tealAll or not bigger than maxHostLenBig, just put it to srcIPRs
