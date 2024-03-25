@@ -353,6 +353,7 @@ func init() {
 			if len(tIp) == 0 {
 				continue
 			}
+			srcIPS = append(srcIPS, &tIp)
 		}
 	}
 
