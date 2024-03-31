@@ -16,53 +16,65 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	utls "github.com/refraction-networking/utls"
 	flag "github.com/spf13/pflag"
 )
 
 const (
-	workerStopSignal        = "0"
-	workOnGoing             = 1
-	controllerInterval      = 100               // in millisecond
-	statisticIntervalT      = 1000              // in millisecond, valid in tcell mode
-	statisticIntervalNT     = 10000             // in millisecond, valid in non-tcell mode
-	quitWaitingTime         = 3                 // in second
-	downloadBufferSize      = 1024 * 16         // in byte
-	fileDefaultSize         = 1024 * 1024 * 300 // in byte
-	downloadSizeMin         = 1024 * 1024       // in byte
-	defaultTestUrl          = "https://cf.9999876.xyz/500mb.dat"
-	userAgent               = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.54 Safari/537.36"
-	defaultDBFile           = "ip.db"
-	DefaultTestHost         = "cf.9999876.xyz"
-	maxHostLen              = 1 << 16
-	dtsSSL                  = "SSL"
-	dtsHTTPS                = "HTTPS"
-	runTime                 = "cftestor"
-	retrieveCount       int = 100
+	workerStopSignal    = "0"
+	workOnGoing         = 1
+	controllerInterval  = 100               // in millisecond
+	statisticIntervalT  = 1000              // in millisecond, valid in tcell mode
+	statisticIntervalNT = 10000             // in millisecond, valid in non-tcell mode
+	quitWaitingTime     = 3                 // in second
+	downloadBufferSize  = 1024 * 64         // in byte
+	fileDefaultSize     = 1024 * 1024 * 300 // in byte
+	downloadSizeMin     = 1024 * 1024       // in byte
+	defaultDLTUrl       = "https://cf.9999876.xyz/500mb.dat"
+	defaultDTUrl        = "https://cf.9999876.xyz/test.dat"
+	userAgentChrome     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+	userAgentFirefox    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
+	userAgentEdge       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+	userAgentSafari     = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15"
+
+	defaultDBFile       = "ip.db"
+	DefaultTestHost     = "cf.9999876.xyz"
+	maxHostLen          = 1 << 12
+	dtsSSL              = "SSL"
+	dtsHTTPS            = "HTTPS"
+	runTime             = "cftestor"
+	retrieveCount   int = 32
 )
 
 var (
 	maxHostLenBig                           = big.NewInt(maxHostLen)
 	ipFile                                  string
-	version, buildTag, buildDate, buildHash string = "dev", "dev", "dev", "dev"
-	srcIPS                                  []*string
-	srcIPRs                                 []*ipRange
-	srcIPRsCache                            []net.IP
+	version, buildTag, buildDate, buildHash string     = "dev", "dev", "dev", "dev"
+	srcIPRsRaw                              []*ipRange // CIDR slice
+	srcIPRsExtracted                        []net.IP   // net.IP slice
+	srcHosts                                []*string  // slice stored host: <ip>:<port>
 	ipStr                                   arrayFlags
-	dtCount, dtWorkerThread, port           int
+	dtCount, dtWorkerThread                 int
+	ports                                   []int
 	dltDurMax, dltWorkerThread              int
 	dltCount, resultMin                     int
-	interval, delayMax, dtTimeout           int
-	hostName, urlStr, dtSource              string
-	dtPassedRateMin, speedMinimal           float64
+	interval, dtEvaluationDelay, dtTimeout  int
+	hostName, dltUrl, dtSource, dtUrl       string
+	dltTimeout                              int
+	dtEvaluationDTPR, dltEvaluationSpeed    float64
 	dtHttps, disableDownload                bool
+	dtVia                                   string
+	enableDTEvaluation                      bool
 	ipv4Mode, ipv6Mode, dtOnly, dltOnly     bool
+	tlsClientID                             utls.ClientHelloID = utls.HelloChrome_Auto
+	userAgent                               string             = userAgentChrome
 	storeToFile, storeToDB, testAll, debug  bool
 	resultFile, suffixLabel, dbFile         string
 	myLogger                                MyLogger
 	loggerLevel                             LogLevel
-	HttpRspTimeoutDuration                  time.Duration
+	httpRspTimeoutDuration                  time.Duration
 	dtTimeoutDuration                       time.Duration
-	downloadTimeMaxDuration                 time.Duration
+	dltTimeDurationMax                      time.Duration
 	verifyResultsMap                        = make(map[*string]VerifyResults)
 	defaultASN                              = 0
 	defaultCity                             = ""
@@ -95,9 +107,10 @@ var (
 	cancelSigFromTerm                       = false
 	terminateConfirm                        = false
 	resultStatIndent                        = 9
-	dtThreadsAmount, dltThreadsAmount       = 0, 0
+	dtThreadsNumLen, dltThreadsNumLen       = 0, 0
 	tcellMode                               = false
 	fastMode                                = false
+	silenceMode                             = false
 	statInterval                            = statisticIntervalNT
 	// titleExitHint                          = "Press any key to exit!"
 	appArt string = `
@@ -109,67 +122,80 @@ var (
 
 var help = `Usage: ` + runTime + ` [options]
 options:
-    -s, --ip            string  Specific IP or CIDR for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32", 
-                                "-s 1.0.0.1/24".
-    -i, --in            string  Specific file for test, which contains multiple lines. Each line
-                                represent one IP or CIDR.
-    -m, --dt-thread     int     Number of concurrent threads for Delay Test(DT). How many IPs can 
-                                be perform DT at the same time. Default 20 threads.
-    -t, --dt-timeout    int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS 
-                                or HTTPS request and response should be finished before timeout. 
-                                It should not be less than "-k|--delay-limit", It should be 
-                                longer when we perform https connections test by "-dt-via-https" 
-                                than when we perform SSL/TLS test by default.
-    -c, --dt-count      int     Tries of DT for a IP, default 4.
-    -p, --port          int     Port to test, default 443. It's valid when "--only-dt" and "--dt-via-https".
-        --hostname      string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via-https" 
-                                is not provided.
-        --dt-via-https          DT via https other than SSL/TLS shaking hands. It's disabled by default,
-                                we do DT via SSL/TLS.
-    -n, --dlt-thread    int     Number of concurrent Threads for Download Test(DLT), default 1. 
-                                How many IPs can be perform DLT at the same time.
-    -d, --dlt-period    int     The total times escaped for single DLT, default 10s.
-    -b, --dlt-count     int     Tries of DLT for a IP, default 1.
-    -u, --url           string  Customize test URL for DLT.
-    -I  --interval      int     Interval between two tests, unit ms, default 500ms.
-    -k, --delay-limit   int     Delay filter for DT, unit ms, default 600ms. If A ip's average delay 
-                                bigger than this value after DT, it is not qualified and won't do 
-                                DLT if DLT required.
-    -S, --dtpr-limit    float   The DT pass rate filter, default 100%. It means do 4 times DTs by
-                                default for a IP, it's passed just when no single DT failed.
-    -l, --speed         float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's 
-                                qualified when its speed is not lower than this value.
-    -r, --result        int     The total IPs qualified limitation, default 10. The Process will stop 
-                                after it got equal or more than this indicated. It would be invalid if
-                                "--test-all" was set.
-        --dt-only               Do DT only, we do DT & DLT at the same time by default.
-        --dlt-only              Do DLT only, we do DT & DLT at the same time by default.
-        --fast                  Fast mode, use inner IPs for fast detection. Just when neither"-s/--ip"
-                                nor "-i/--in" is provided, and this flag is provided. It will be working
-                                Disabled by default.
-        -4, --ipv4              Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
-                                then it will do IPv4 test from build-in IPs from CloudFlare by default.
-    -6, --ipv6                  Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
-                                then it will do IPv6 test from build-in IPs from CloudFlare by using
-                                this flag.
-    -a  --test-all              Test all IPs until no more IP left. It's disabled by default. 
-    -w, --store-to-file         Write result to csv file, disabled by default. If it is provided and 
-                                "-o|--result-file" is not provided, the result file will be named
-                                as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -o, --result-file   string  File name of result. If it don't provided and "-w|--store-to-file"
-                                is provided, the result file will be named as 
-                                "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -e, --store-to-db           Write result to sqlite3 db file, disabled by default. If it's provided
-                                and "-f|--db-file" is not provided, it will be named "ip.db" and
-                                store in current directory.
-    -f, --db-file       string  Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
-                                provided, it will be named "ip.db" and store in current directory.
-    -g, --label         string  the label for a part of the result file's name and sqlite3 record. It's 
-                                hostname from "--hostname" or "-u|--url" by default.
-    -V, --debug                 Print debug message.
-        --tcell                 Use tcell to display the running procedure when in debug mode.
-                                Turn this on will activate "--debug".
-    -v, --version               Show version.
+    -s, --ip           string  Specify IP, CIDR, or host for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32",
+                               "-s 1.0.0.1/24", "-s 1.1.1.1:2053".
+    -i, --in           string  Specify file for test, which contains multiple lines. Each line
+                               represent one IP, CIDR, host.
+    -p, --port         int     Port to test, could be specific one or more ports at same time,
+                               The port should be working via SSL/TLS/HTTPS protocol,  default 443.
+    -m, --dt-thread    int     Number of concurrent threads for Delay Test(DT). How many IPs can
+                               be perform DT at the same time. Default 20 threads.
+    -t, --dt-timeout   int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS
+                               or HTTPS request and response should be finished before timeout.
+                               It should not be less than "-k|--evaluate-dt-delay", It should be
+                               longer when we perform https connections test by "-dt-via-https"
+                               than when we perform SSL/TLS test by default.
+    -c, --dt-count     int     Tries of DT for a IP, default 2.
+        --hostname     string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via https"
+                               is not provided.
+        --dt-via https|tls|ssl DT via https or SSL/TLS shaking hands, "--dt-via <https|tls|ssl>"
+                               default https.
+        --dt-url       string  Specify test URL for DT.
+        --ev-dt                Evaluate DT, we'll try "-c|--dt-count <value>" to evaluate delay;
+                               if we don't turn this on, we'll stop DT after we got the first
+                               successfull DT; if we turn this on, we'll evaluate the test result
+                               through average delay of singe DT and statistic of all successfull
+                               DT by these two thresholds "-k|--evaluate-dt-delay <value>" and
+                               "-S|--evaluate-dt-dtpr <value>", default turn off.
+    -k, --ev-dt-delay  int     single DT's delay should not bigger than this, unit ms, default 600ms.
+    -S, --ev-dt-dtpr   float   The DT pass rate should not lower than this, default 100, means 100%, all
+                               DT must be below "-k|--evaluate-dt-delay <value>".
+    -n, --dlt-thread   int     Number of concurrent Threads for Download Test(DLT), default 1.
+                               How many IPs can be perform DLT at the same time.
+    -d, --dlt-period   int     The total times escaped for single DLT, default 10s.
+    -b, --dlt-count    int     Tries of DLT for a IP, default 1.
+    -u, --dlt-url      string  Specify test URL for DLT.
+        --dlt-timeout  int     Specify the timeout for http response when do DLT. In ms, default as 5000 ms.
+    -I  --interval     int     Interval between two tests, unit ms, default 500ms.
+
+    -l, --speed        float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's
+                               qualified when its speed is not lower than this value.
+    -r, --result       int     The total IPs qualified limitation, default 10. The Process will stop
+                               after it got equal or more than this indicated. It would be invalid if
+                               "--test-all" was set.
+        --dt-only              Do DT only, we do DT & DLT at the same time by default.
+        --dlt-only             Do DLT only, we do DT & DLT at the same time by default.
+        --fast                 Fast mode, use inner IPs for fast detection. Just when neither "-s/--ip"
+                               nor "-i/--in" is provided, and this flag is provided. It will be working
+                               Disabled by default.
+    -4, --ipv4                 Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
+                               then it will do IPv4 test from build-in IPs from CloudFlare by default.
+    -6, --ipv6                 Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
+                               then it will do IPv6 test from build-in IPs from CloudFlare by using
+                               this flag.
+        --hello-firefox        Work as firefox to perform tls/https
+        --hello-chrome         Work as Chrome to perform tls/https
+        --hello-edge           Work as Microsoft Edge to perform tls/https
+        --hello-safari         Work as safari to perform tls/https
+    -a  --test-all             Test all IPs until no more IP left. It's disabled by default.
+    -w, --to-file              Write result to csv file, disabled by default. If it is provided and
+                               "-o|--result-file <value>" is not provided, the result file will be named
+                               as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
+    -o, --outfile      string  File name of result. If it don't provided and "-w|--store-to-file"
+                               is provided, the result file will be named as
+                               "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
+    -e, --to-db                Write result to sqlite3 db file, disabled by default. If it's provided
+                               and "-f|--db-file" is not provided, it will be named "ip.db" and
+                               store in current directory.
+    -f, --dbfile       string  Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
+                               provided, it will be named "ip.db" and store in current directory.
+    -g, --label        string  the label for a part of the result file's name and sqlite3 record. It's
+                               hostname from "--hostname" or "-u|--url" by default.
+        --silence              Silence mode.
+    -V, --debug                Print debug message.
+        --tcell                Use tcell to display the running procedure when in debug mode.
+                               Turn this on will activate "--debug".
+    -v, --version              Show version.
 `
 
 func print_version() {
@@ -186,29 +212,34 @@ func print_version() {
 
 func init() {
 	var printVersion bool
+	var tlsHelloFirefox, tlsHelloChrome, tlsHelloEdge, tlsHelloSafari bool = false, false, false, false
 
-	print_version()
 	// version = "dev"
 	flag.BoolVar(&fastMode, "fast", false, "Fast mode")
 	flag.VarP(&ipStr, "ip", "s", "Specific IP or CIDR for test.")
 	flag.StringVarP(&ipFile, "in", "i", "", "Specific file of IPs and CIDRs for test.")
 
 	flag.IntVarP(&dtWorkerThread, "dt-thread", "m", 20, "Number of concurrent threads for Delay Test(DT).")
-	flag.IntVarP(&dtTimeout, "dt-timeout", "t", 1000, "Timeout for single DT(ms).")
-	flag.IntVarP(&dtCount, "dt-count", "c", 4, "Tries of DT for a IP.")
-	flag.IntVarP(&port, "port", "p", 443, "Port to test")
+	flag.IntVarP(&dtTimeout, "dt-timeout", "t", 2000, "Timeout for single DT(ms).")
+	flag.IntVarP(&dtCount, "dt-count", "c", 2, "Tries of DT for a IP.")
+	// flag.IntVarP(&port, "port", "p", 443, "Port to test")
+	flag.IntSliceVarP(&ports, "port", "p", []int{443}, "Port to test, could be specific one or more ports at same time.")
 	flag.StringVar(&hostName, "hostname", DefaultTestHost, "Hostname for DT test.")
-	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https other than SSL/TLS shaking hands.")
+	flag.StringVar(&dtVia, "dt-via", "https", "DT via https rather than SSL/TLS shaking hands.")
+	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https rather than SSL/TLS shaking hands.")
+	flag.StringVar(&dtUrl, "dt-url", defaultDTUrl, "Specific the url while DT via https.")
 
 	flag.IntVarP(&dltWorkerThread, "dlt-thread", "n", 1, "Number of concurrent Threads for Download Test(DLT).")
-	flag.IntVarP(&dltDurMax, "dlt-period", "d", 10, "The total times escaped for single DLT, default 10s.")
+	flag.IntVarP(&dltDurMax, "dlt-period", "d", 10, "The total times escaped for single DLT in seconds, default 10s.")
 	flag.IntVarP(&dltCount, "dlt-count", "b", 1, "Tries of DLT for a IP, default 1.")
-	flag.StringVarP(&urlStr, "url", "u", defaultTestUrl, "Customize test URL for DLT.")
+	flag.StringVarP(&dltUrl, "dlt-url", "u", defaultDLTUrl, "Customize test URL for DLT.")
+	flag.IntVar(&dltTimeout, "dlt-timeout", 5000, "Specify the timeout for http reponse when do DLT in milliseconds, default 5000 ms.")
 	flag.IntVarP(&interval, "interval", "I", 500, "Interval between two tests, unit ms, default 500ms.")
 
-	flag.IntVarP(&delayMax, "delay-limit", "k", 600, "Delay filter for DT, unit ms, default 600ms.")
-	flag.Float64VarP(&dtPassedRateMin, "dtpr-limit", "S", 100, "The DT pass rate filter, default 100%.")
-	flag.Float64VarP(&speedMinimal, "speed", "l", 6000, "Download speed filter, Unit KB/s, default 6000KB/s.")
+	flag.BoolVar(&enableDTEvaluation, "ev-dt", false, "Evaluate DT test result. Default as disabled")
+	flag.IntVarP(&dtEvaluationDelay, "ev-dt-delay", "k", 600, "Delay for DT is beyond this one will be cause failure, unit ms, default 600ms.")
+	flag.Float64VarP(&dtEvaluationDTPR, "ev-dt-dtpr", "S", 100, "The DT successful rate below this will be cause failure, default 100%.")
+	flag.Float64VarP(&dltEvaluationSpeed, "speed", "l", 6000, "Download speed should not less than this, Unit KB/s, default 6000KB/s.")
 	flag.IntVarP(&resultMin, "result", "r", 10, "The total IPs qualified limitation, default 10")
 
 	flag.BoolVar(&disableDownload, "disable-download", false, "Deprecated, use --dt-only instead.")
@@ -217,13 +248,18 @@ func init() {
 	flag.BoolVarP(&ipv4Mode, "ipv4", "4", true, "Just test IPv4.")
 	flag.BoolVarP(&ipv6Mode, "ipv6", "6", false, "Just test IPv6.")
 	flag.BoolVarP(&testAll, "test-all", "a", false, "Test all IPs until no more IP left.")
+	flag.BoolVar(&tlsHelloFirefox, "hello-firefox", false, "work as firefox")
+	flag.BoolVar(&tlsHelloChrome, "hello-chrome", false, "work as chrome")
+	flag.BoolVar(&tlsHelloEdge, "hello-edge", false, "work as edge")
+	flag.BoolVar(&tlsHelloSafari, "hello-safari", false, "work as safari")
 
-	flag.BoolVarP(&storeToFile, "store-to-file", "w", false, "Write result to csv file, disabled by default.")
-	flag.StringVarP(&resultFile, "result-file", "o", "", "File name of result. ")
-	flag.BoolVarP(&storeToDB, "store-to-db", "e", false, "Write result to sqlite3 db file.")
-	flag.StringVarP(&dbFile, "db-file", "f", "", "Sqlite3 db file name.")
+	flag.BoolVarP(&storeToFile, "to-file", "w", false, "Write result to csv file, disabled by default.")
+	flag.StringVarP(&resultFile, "outfile", "o", "", "File name of result. ")
+	flag.BoolVarP(&storeToDB, "to-db", "e", false, "Write result to sqlite3 db file.")
+	flag.StringVarP(&dbFile, "dbfile", "f", "", "Sqlite3 db file name.")
 	flag.StringVarP(&suffixLabel, "label", "g", "", "the label for a part of the result file's name and sqlite3 record.")
 
+	flag.BoolVar(&silenceMode, "silence", false, "silence mode.")
 	flag.BoolVarP(&debug, "debug", "V", false, "Print debug message.")
 	flag.BoolVar(&tcellMode, "tcell", false, "Use tcell form to show debug messages.")
 	flag.BoolVarP(&printVersion, "version", "v", false, "Show version.")
@@ -231,7 +267,14 @@ func init() {
 		fmt.Print(help)
 	}
 	flag.Parse()
-
+	if !silenceMode {
+		print_version()
+	} else {
+		debug = false
+		tcellMode = false
+		storeToDB = false
+		storeToFile = false
+	}
 	if len(version) == 0 {
 		version = "dev"
 	}
@@ -242,9 +285,39 @@ func init() {
 		dtOnly = true
 		println("Warning! \"--disable-download\" is deprecated, use \"--dt-only\" instead!")
 	}
+	if dtHttps {
+		dtVia = "https"
+		println("Warning! \"--dt-via-https\" is deprecated, use \"--dt-via https|tls|ssl\" instead!")
+	}
 	if dtOnly && dltOnly {
 		println("\"--dt-only\" and \"--dlt-only\" should not be provided at the same time!")
 		os.Exit(1)
+	}
+	dtVia = strings.ToLower(dtVia)
+	if dtVia == "https" {
+		dtHttps = true
+	} else if dtVia == "ssl" || dtVia == "tls" {
+		dtHttps = false
+	} else {
+		println("invalid value found! Please use \"--dt-via <https|tls|ssl>\"!")
+		os.Exit(1)
+	}
+
+	if tlsHelloFirefox {
+		tlsClientID = utls.HelloFirefox_Auto
+		userAgent = userAgentFirefox
+	}
+	if tlsHelloChrome {
+		tlsClientID = utls.HelloChrome_Auto
+		userAgent = userAgentChrome
+	}
+	if tlsHelloEdge {
+		tlsClientID = utls.HelloEdge_Auto
+		userAgent = userAgentEdge
+	}
+	if tlsHelloSafari {
+		tlsClientID = utls.HelloSafari_Auto
+		userAgent = userAgentSafari
 	}
 
 	// tcellMode will activate debug automatically
@@ -256,7 +329,11 @@ func init() {
 	if debug {
 		loggerLevel = logLevelDebug
 	} else {
-		loggerLevel = logLevelInfo
+		if !silenceMode {
+			loggerLevel = logLevelInfo
+		} else {
+			loggerLevel = logLevelFatal
+		}
 	}
 	// init myLogger
 	myLogger = myLogger.newLogger(loggerLevel)
@@ -268,18 +345,6 @@ func init() {
 	if (!v4Flag.Changed) && ipv6Mode {
 		ipv4Mode = false
 	}
-	if dtTimeout < delayMax {
-		timeoutFlag := flag.Lookup("dt-timeout")
-		// reset dtTimeout, when dtTimeout less than delayMax and did not set value of dtTimeout from cmdline
-		if !timeoutFlag.Changed {
-			dtTimeout = delayMax + int(delayMax/2)
-		} else {
-			myLogger.Warning(fmt.Sprintf("\"-t|--dt-timeout\" - %v is less than \"-k|--delay-limit\" - %v. This will led to failure for some test!", dtTimeout, delayMax))
-			if !confirm("Continue?", 3) {
-				os.Exit(0)
-			}
-		}
-	}
 
 	// it's invalid when ipv4Mode and ipv6Mode is both true or false
 	if ipv4Mode == ipv6Mode {
@@ -287,14 +352,21 @@ func init() {
 		os.Exit(1)
 	}
 
+	// check -I|--interval
+	if interval <= 0 {
+		myLogger.Fatalf("\"-I|--interval %v\" should not be smaller than 0!\n", interval)
+	}
+
 	// trim whitespace
 	ipFile = strings.TrimSpace(ipFile)
 	resultFile = strings.TrimSpace(resultFile)
 	suffixLabel = strings.TrimSpace(suffixLabel)
 	hostName = strings.TrimSpace(hostName)
-	urlStr = strings.TrimSpace(urlStr)
+	dtUrl = strings.TrimSpace(dtUrl)
+	dltUrl = strings.TrimSpace(dltUrl)
 	dbFile = strings.TrimSpace(dbFile)
 
+	var srcIPS []*string
 	if len(ipStr) != 0 {
 		for i := 0; i < len(ipStr); i++ {
 			srcIPS = append(srcIPS, &ipStr[i])
@@ -303,7 +375,7 @@ func init() {
 	if len(ipFile) != 0 {
 		file, err := os.Open(ipFile)
 		if err != nil {
-			myLogger.Fatalf("Sqlite3 db file is not accessible! \"%s\"\n", ipFile)
+			myLogger.Fatalf("file \"%s\" is not accessible! \n", ipFile)
 		}
 		scanner := bufio.NewScanner(file)
 		scanner.Split(bufio.ScanLines)
@@ -312,21 +384,19 @@ func init() {
 			if len(tIp) == 0 {
 				continue
 			}
-			if isValidIPs(tIp) {
-				srcIPS = append(srcIPS, &tIp)
-			} else {
-				myLogger.Fatalf("\"%s\" is not a valid IP or CIDR.\n", tIp)
-			}
+			srcIPS = append(srcIPS, &tIp)
 		}
 	}
-	if len(ipStr) == 0 && len(ipFile) == 0 {
+
+	// no source IPs provided
+	if len(ipStr) == 0 && len(ipFile) == 0 || len(srcIPS) == 0 {
 		if !ipv6Mode {
 			t_cf_ipv4 := CFIPV4FULL
 			if fastMode {
 				t_cf_ipv4 = CFIPV4
 			}
 			for i := 0; i < len(t_cf_ipv4); i++ {
-				srcIPS = append(srcIPS, &CFIPV4[i])
+				srcIPS = append(srcIPS, &t_cf_ipv4[i])
 			}
 		} else {
 			t_cf_ipv6 := CFIPV6FULL
@@ -334,103 +404,139 @@ func init() {
 				t_cf_ipv6 = CFIPV6
 			}
 			for i := 0; i < len(t_cf_ipv6); i++ {
-				srcIPS = append(srcIPS, &CFIPV6[i])
+				srcIPS = append(srcIPS, &t_cf_ipv6[i])
 			}
 		}
 	}
-	// check parameters
-	if dtWorkerThread <= 0 {
-		myLogger.Fatalf("\"-m|--dt-thread %v\" should not be smaller than 0!\n", dtWorkerThread)
+
+	// shuffle srcIPR and srcIPRsCache when do not testAll
+	// and fix resultMin
+	t_qty := big.NewInt(0)
+	for i := 0; i < len(srcIPS); i++ {
+		ips := strings.TrimSpace(*srcIPS[i])
+		if isValidIPs(ips) {
+			ipr := NewIPRangeFromCIDR(&ips)
+			if ipr == nil {
+				myLogger.Fatalf("\"%v\" is invalid!\n", ips)
+			}
+			// when it do not testAll and ipr is not bigger than maxHostLenBig, extract to to cache
+			t_qty = t_qty.Add(t_qty, ipr.Len)
+			if ipr.Len.Cmp(maxHostLenBig) < 1 {
+				srcIPRsExtracted = append(srcIPRsExtracted, ipr.ExtractAll()...)
+			} else {
+				// when it do not perform tealAll or not bigger than maxHostLenBig, just put it to srcIPRs
+				srcIPRsRaw = append(srcIPRsRaw, ipr)
+			}
+		} else if isValidHost(ips) {
+			srcHosts = append(srcHosts, &ips)
+			t_qty = t_qty.Add(t_qty, big.NewInt(1))
+		} else {
+			myLogger.Fatalf("\"%v\" is neither valid IP/CIDR nor host!\n", ips)
+		}
 	}
+	// shuffle srcIPRsRaw, srcIPRsExtracted, and srcHosts
+	myRand.Shuffle(len(srcIPRsRaw), func(m, n int) {
+		srcIPRsRaw[m], srcIPRsRaw[n] = srcIPRsRaw[n], srcIPRsRaw[m]
+	})
+	myRand.Shuffle(len(srcIPRsExtracted), func(m, n int) {
+		srcIPRsExtracted[m], srcIPRsExtracted[n] = srcIPRsExtracted[n], srcIPRsExtracted[m]
+	})
+	myRand.Shuffle(len(srcHosts), func(m, n int) {
+		srcHosts[m], srcHosts[n] = srcHosts[n], srcHosts[m]
+	})
+	// check resultMin
 	if resultMin <= 0 {
 		myLogger.Fatalf("\"-r|--result %v\" should not be smaller than 0!\n", resultMin)
 	}
-	dtThreadsAmount = len(strconv.Itoa(dtWorkerThread))
-	if dtCount <= 0 {
-		myLogger.Fatalf("\"-c|--dt-count %v\" should not be smaller than 0!\n", dtCount)
-	}
-	if dltWorkerThread <= 0 {
-		myLogger.Fatalf("\"-n|--dlt-thread %v\" should not be smaller than 0!\n", dltWorkerThread)
-	}
-	dltThreadsAmount = len(strconv.Itoa(dltWorkerThread))
-	if dltCount <= 0 {
-		myLogger.Fatalf("\"-b|--dlt-count %v\" should not be smaller than 0!\n", dltCount)
-	}
-
-	if dltDurMax <= 0 {
-		myLogger.Fatalf("\"-d|--dl-period %v\" should not be smaller than 0!\n", dltDurMax)
-	}
-
-	if delayMax <= 0 {
-		myLogger.Fatalf("\"-k|--delay-limit %v\" should not be smaller than 0!\n", delayMax)
-	}
-	if interval <= 0 {
-		myLogger.Fatalf("\"-I|--interval %v\" should not be smaller than 0!\n", interval)
-	}
-	if speedMinimal <= 0 {
-		myLogger.Fatalf("\"-l|--speed %v\" should not be smaller than 0!\n", speedMinimal)
-	}
-
-	// init srcIPR and srcIPRsCache
-	t_qty := big.NewInt(0)
-	for i := 0; i < len(srcIPS); i++ {
-		ipr := NewIPRangeFromCIDR(srcIPS[i])
-		if ipr == nil {
-			myLogger.Fatalf("\"%v\" is invalid!\n", *srcIPS[i])
-		}
-		// when it do not testAll and ipr is not bigger than maxHostLenBig, extract to to cache
-		t_qty = t_qty.Add(t_qty, ipr.Len)
-		if !testAll && ipr.Len.Cmp(maxHostLenBig) < 1 {
-			srcIPRsCache = append(srcIPRsCache, ipr.ExtractAll()...)
-		} else {
-			// when it do not perform tealAll or not bigger than maxHostLenBig, just put it to srcIPRs
-			srcIPRs = append(srcIPRs, ipr)
-		}
-	}
-	// shuffle srcIPR and srcIPRsCache when do not testAll
-	// and fix resultMin
+	// re-caculate resultMin based on the source IPs
 	t_result_min := big.NewInt(int64(resultMin))
-	if !testAll {
-		myRand.Shuffle(len(srcIPRs), func(m, n int) {
-			srcIPRs[m], srcIPRs[n] = srcIPRs[n], srcIPRs[m]
-		})
-		myRand.Shuffle(len(srcIPRsCache), func(m, n int) {
-			srcIPRsCache[m], srcIPRsCache[n] = srcIPRsCache[n], srcIPRsCache[m]
-		})
+	if testAll {
+		resultMin = -1
+	} else {
 		if t_qty.Cmp(t_result_min) == -1 {
 			resultMin = int(t_qty.Int64())
 		}
-	} else {
-		resultMin = -1
 	}
-
-	dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
-	// if we ping via ssl negotiation and don't perform download test, we need check hostname and port
-	if !dtHttps && dtOnly {
-		//ping via ssl negotiation
-		if len(hostName) == 0 {
-			myLogger.Fatal("\"--hostname\" should not be empty. \n")
-		}
+	// validate ports
+	for _, port := range ports {
 		if port < 1 || port > 65535 {
-			port = 443
+			myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", port)
 		}
-	} else {
-		// we perform download test or just ping via https request
-		hostName, port = ParseUrl(urlStr)
 	}
-	// we set HttpRspTimeoutDuration to 2 times of dtTimeoutDuration if we don't perform ping via https
-	if !dtHttps {
-		dtSource = dtsSSL
-		HttpRspTimeoutDuration = dtTimeoutDuration * 2
-	} else {
-		dtSource = dtsHTTPS
-		HttpRspTimeoutDuration = dtTimeoutDuration
-	}
-	downloadTimeMaxDuration = time.Duration(dltDurMax) * time.Second
-	//
+	// set suffixLabel
 	if len(suffixLabel) == 0 {
 		suffixLabel = hostName
 	}
+	// set DT parameters when we perform DT
+	if !dltOnly {
+		// check parameters
+		if dtWorkerThread <= 0 {
+			myLogger.Fatalf("\"-m|--dt-thread %v\" should not be smaller than 0!\n", dtWorkerThread)
+		}
+		if dtCount <= 0 {
+			myLogger.Fatalf("\"-c|--dt-count %v\" should not be smaller than 0!\n", dtCount)
+		}
+		if dtTimeout <= 0 {
+			myLogger.Fatalf("\"-t|--dt-timeout %v\" should not be smaller than 0!\n", dtTimeout)
+		}
+		if enableDTEvaluation {
+			if dtEvaluationDelay <= 0 {
+				myLogger.Fatalf("\"-k|--evaluate-dt-delay %v\" should not be smaller than 0!\n", dtEvaluationDelay)
+			}
+			if dtTimeout < dtEvaluationDelay {
+				timeoutFlag := flag.Lookup("dt-timeout")
+				// reset dtTimeout, when dtTimeout less than delayMax and did not set value of dtTimeout from cmdline
+				if !timeoutFlag.Changed {
+					dtTimeout = dtEvaluationDelay + int(dtEvaluationDelay/2)
+				} else {
+					myLogger.Warning(fmt.Sprintf("\"-t|--dt-timeout\" - %v is less than \"-k|--evaluate-dt-delay\" - %v. This will led to failure for some test!", dtTimeout, dtEvaluationDelay))
+					if !confirm("Continue?", 3) {
+						os.Exit(0)
+					}
+				}
+			}
+		}
+		dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
+		// if we ping via ssl negotiation and don't perform download test, we need check hostname and port
+		if !dtHttps {
+			//ping via ssl negotiation
+			if len(hostName) == 0 {
+				myLogger.Fatal("\"--hostname\" should not be empty. \n")
+			}
+			dtSource = dtsSSL
+		} else {
+			// check dtUrl is valid or not by ParseUrl() and set suffixLabel
+			suffixLabel, _ = ParseUrl(dtUrl)
+			dtSource = dtsHTTPS
+		}
+		dtThreadsNumLen = len(strconv.Itoa(dtWorkerThread))
+	}
+	// set downloadTimeMaxDuration only when we need do DLT
+	if !dtOnly {
+		// dltThreadsAmount = len(strconv.Itoa(dltWorkerThread))
+		if dltWorkerThread <= 0 {
+			myLogger.Fatalf("\"-n|--dlt-thread %v\" should not be smaller than 0!\n", dltWorkerThread)
+		}
+		if dltCount <= 0 {
+			myLogger.Fatalf("\"-b|--dlt-count %v\" should not be smaller than 0!\n", dltCount)
+		}
+
+		if dltDurMax <= 0 {
+			myLogger.Fatalf("\"-d|--dlt-period %v\" should not be smaller than 0!\n", dltDurMax)
+		}
+		if dltEvaluationSpeed <= 0 {
+			myLogger.Fatalf("\"-l|--speed %v\" should not be smaller than 0!\n", dltEvaluationSpeed)
+		}
+		if dltTimeout > dltDurMax*1000 {
+			myLogger.Fatalf("\"<--dlt-timeout> %v\" should not be bigger than <-d|--dlt-period> %v!\n", dltTimeout, dltDurMax)
+		}
+		// check dltUrl is valid or not by ParseUrl() and set suffixLabel
+		suffixLabel, _ = ParseUrl(dltUrl)
+		httpRspTimeoutDuration = time.Duration(dltTimeout) * time.Millisecond
+		dltTimeDurationMax = time.Duration(dltDurMax) * time.Second
+		dltThreadsNumLen = len(strconv.Itoa(dltWorkerThread))
+	}
+
 	// if we write result file
 	if len(resultFile) > 0 {
 		storeToFile = true
@@ -490,6 +596,8 @@ func init() {
 	}
 }
 
+// :param: dtTaskChan, dltTaskChan, every item in them should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
+// :param: dtResultChan, dltResultChan, should have port in every single item
 func controllerWorker(dtTaskChan chan *string, dtResultChan chan singleVerifyResult, dltTaskChan chan *string,
 	dltResultChan chan singleVerifyResult, wg *sync.WaitGroup, dtOnGoingChan chan int, dltOnGoingChan chan int) {
 	defer func() {
@@ -500,9 +608,12 @@ func controllerWorker(dtTaskChan chan *string, dtResultChan chan singleVerifyRes
 	dtTasks := 0
 	dltTasks := 0
 	dtDoneTasks := 0
+	// the item in dtTaskCache is a ip string.
 	dtTaskCache := make([]*string, 0)
 	dltDoneTasks := 0
+	// the item in dltTaskCache is a ip string.
 	dltTaskCache := make([]*string, 0)
+	// the key of cacheResultMap should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
 	cacheResultMap := make(map[string]VerifyResults)
 	haveEnoughResult := false
 	noMoreSourcesDT := false
@@ -548,7 +659,7 @@ LOOP:
 					// if ip not test then put it into dltTaskChan
 					dtDoneTasks += 1
 					var tVerifyResult = singleResultStatistic(dtResult, false)
-					if tVerifyResult.da > 0.0 && tVerifyResult.da <= float64(delayMax) && tVerifyResult.dtpr*100.0 >= float64(dtPassedRateMin) {
+					if tVerifyResult.da > 0.0 && tVerifyResult.da <= float64(dtEvaluationDelay) && tVerifyResult.dtpr*100.0 >= float64(dtEvaluationDTPR) {
 						if !dtOnly { // there are download test ongoing
 							// put ping test result to cacheResultMap for later
 							cacheResultMap[*tVerifyResult.ip] = tVerifyResult
@@ -592,23 +703,33 @@ LOOP:
 				if len(dtTaskChan) < cap(dtTaskChan) { // this condition is not apply for #line 587
 					// get more Hosts while we don't have enough hosts in dtTaskCache
 					if len(dtTaskCache) == 0 {
-						dtTaskCache = retrieveCIDRHosts(2 * dtThreadsAmount)
+						t_dtTaskCache := retrieveIPsFromIPR(2 * dtWorkerThread)
+						for _, ipStr := range t_dtTaskCache {
+							for _, port := range ports {
+								host := genHostFromIPStrPort(*ipStr, port)
+								dtTaskCache = append(dtTaskCache, &host)
+							}
+						}
+						t_dtTaskCache_2 := retrieveHosts(2 * dtWorkerThread)
+						dtTaskCache = append(dtTaskCache, t_dtTaskCache_2...)
 						// if no more hosts, but just in dt-only mode, we set noMoSources to true
-						if len(dtTaskCache) == 0 {
+						if len(t_dtTaskCache) == 0 && len(t_dtTaskCache_2) == 0 {
 							noMoreSourcesDT = true
 						}
+						t_dtTaskCache = nil
+						t_dtTaskCache_2 = nil
 					}
 					// when it's dt-only mode or, download task pool has less ip than 2*cap(dltTaskChan)
 					// we put ping task into dtTaskCache
 					// simplify algorithm
 					if dtOnly || len(dltTaskCache) < 2*cap(dltTaskChan) {
 						for len(dtTaskCache) > 0 &&
-							len(dtTaskChan) < cap(dtTaskChan) &&
+							len(dtTaskChan) < cap(dtTaskChan) && // dtTaskChan has enough room
 							len(dtTaskChan)+len(dtOnGoingChan)+len(dtResultChan) < cap(dtResultChan) {
 							// to prevent overflow of dtResultChan
 							// the total IP and task in dtTaskChan, dtOnGoingChan and dtResultChan is less than the capacity of dtResultChan
-							dtTasks += 1
 							dtTaskChan <- dtTaskCache[0]
+							dtTasks += 1
 							if len(dtTaskCache) > 1 {
 								dtTaskCache = dtTaskCache[1:]
 							} else {
@@ -661,7 +782,7 @@ LOOP:
 					}
 					tVerifyResult = v
 					// check speed and data size downloaded
-					if v.dls >= speedMinimal && v.dlds > downloadSizeMin {
+					if v.dls >= dltEvaluationSpeed && v.dlds > downloadSizeMin {
 						// put v into verifyResultsMap
 						verifyResultsMap[tVerifyResult.ip] = tVerifyResult
 						// we have expected result
@@ -694,10 +815,21 @@ LOOP:
 			if !cancelSigFromTerm && !haveEnoughResult && ((!dltOnly && len(dltTaskCache) > 0) || (dltOnly && !noMoreSourcesDLT)) {
 				// get more hosts while it's on download-only mode
 				if dltOnly && len(dltTaskCache) == 0 {
-					dltTaskCache = retrieveCIDRHosts(2 * dtThreadsAmount)
-					if len(dltTaskCache) == 0 {
+					t_dltTaskCache := retrieveIPsFromIPR(2 * dltWorkerThread)
+					for _, ips := range t_dltTaskCache {
+						for _, port := range ports {
+							host := genHostFromIPStrPort(*ips, port)
+							dltTaskCache = append(dltTaskCache, &host)
+						}
+					}
+					t_dltTaskCache_2 := retrieveHosts(2 * dltWorkerThread)
+					dltTaskCache = append(dltTaskCache, t_dltTaskCache_2...)
+					// if no more hosts, but just in dlt-only mode, we set noMoSources to true
+					if len(t_dltTaskCache) == 0 && len(t_dltTaskCache_2) == 0 {
 						noMoreSourcesDLT = true
 					}
+					t_dltTaskCache = nil
+					t_dltTaskCache_2 = nil
 				}
 				// put task to download chan when we have IPs from delay test and the task chan have empty slot
 				for len(dltTaskCache) > 0 && // it has IP in dltTaskCache
@@ -820,11 +952,11 @@ func confirmQuit() bool {
 
 func main() {
 	var wg sync.WaitGroup
-	var dtTaskChan = make(chan *string, dtWorkerThread)
-	var dtResultChan = make(chan singleVerifyResult, dtWorkerThread*4)
+	var dtTaskChan = make(chan *string, dtWorkerThread*len(ports))
+	var dtResultChan = make(chan singleVerifyResult, cap(dtTaskChan)*2)
 	var dtOnGoingChan = make(chan int, dtWorkerThread)
-	var dltTaskChan = make(chan *string, dltWorkerThread)
-	var dltResultChan = make(chan singleVerifyResult, dltWorkerThread*4)
+	var dltTaskChan = make(chan *string, dltWorkerThread*len(ports))
+	var dltResultChan = make(chan singleVerifyResult, cap(dltTaskChan)*2)
 	var dltOnGoingChan = make(chan int, dltWorkerThread)
 
 	if debug && tcellMode {
@@ -840,11 +972,10 @@ func main() {
 	if !dltOnly {
 		for i := 0; i < dtWorkerThread; i++ {
 			if dtHttps {
-				go downloadWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &urlStr, port,
-					dtTimeoutDuration, downloadTimeMaxDuration, dtCount, interval, true)
+				go downloadWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &dtUrl,
+					dtTimeoutDuration, -1, dtCount, true, enableDTEvaluation)
 			} else {
-				go sslDTWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &hostName, port,
-					dtTimeoutDuration, dtCount, interval)
+				go sslDTWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, enableDTEvaluation)
 			}
 			wg.Add(1)
 		}
@@ -853,8 +984,8 @@ func main() {
 	// start download worker if don't do ping only
 	if !dtOnly {
 		for i := 0; i < dltWorkerThread; i++ {
-			go downloadWorker(dltTaskChan, dltResultChan, dltOnGoingChan, &wg, &urlStr, port,
-				HttpRspTimeoutDuration, downloadTimeMaxDuration, dltCount, interval, false)
+			go downloadWorker(dltTaskChan, dltResultChan, dltOnGoingChan, &wg, &dltUrl,
+				httpRspTimeoutDuration, dltTimeDurationMax, dltCount, false, false)
 			wg.Add(1)
 		}
 	}
@@ -866,27 +997,33 @@ func main() {
 	close(dltTaskChan)
 	close(dltResultChan)
 	close(dltOnGoingChan)
-	if debug && len(verifyResultsMap) > 0 {
+	if len(verifyResultsMap) > 0 {
 		verifyResultsSlice := make([]VerifyResults, 0)
 		for _, v := range verifyResultsMap {
 			verifyResultsSlice = append(verifyResultsSlice, v)
 		}
-		// write to csv file
-		if storeToFile {
-			myLogger.Print("Write to csv " + resultFile)
-			WriteResult(verifyResultsSlice, resultFile)
-			myLogger.Println("  Done!")
+		if !silenceMode {
+			// write to csv file
+			if storeToFile {
+				myLogger.Print("Write to csv " + resultFile)
+				WriteResult(verifyResultsSlice, resultFile)
+				myLogger.Println("  Done!")
+			}
+			// write to db
+			if storeToDB {
+				myLogger.Print("Write to sqlite3 db file " + dbFile)
+				InsertIntoDb(verifyResultsSlice, dbFile)
+				myLogger.Println("  Done!")
+			}
+			// sort by speed
+			sort.Sort(sort.Reverse(resultSpeedSorter(verifyResultsSlice)))
+			myLogger.Println()
+			myLogger.Println("All Results:")
+			PrintFinalStat(verifyResultsSlice, dtOnly)
+		} else {
+			for _, v := range verifyResultsSlice {
+				myLogger.Println(*(v.ip))
+			}
 		}
-		// write to db
-		if storeToDB {
-			myLogger.Print("Write to sqlite3 db file " + dbFile)
-			InsertIntoDb(verifyResultsSlice, dbFile)
-			myLogger.Println("  Done!")
-		}
-		// sort by speed
-		sort.Sort(sort.Reverse(resultSpeedSorter(verifyResultsSlice)))
-		myLogger.Println()
-		myLogger.Println("All Results:\n")
-		PrintFinalStat(verifyResultsSlice, dtOnly)
 	}
 }

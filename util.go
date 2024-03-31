@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"text/tabwriter"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
 )
@@ -99,7 +101,8 @@ var (
 		"103.21.244.0/22",
 		"103.22.200.0/22",
 		"103.31.4.0/22",
-		"104.16.0.0/12",
+		"104.16.0.0/13",
+		"104.24.0.0/14",
 		"108.162.192.0/18",
 		"131.0.72.0/22",
 		"141.101.64.0/18",
@@ -216,13 +219,13 @@ type singleResult struct {
 
 type singleVerifyResult struct {
 	testTime    time.Time
-	ip          net.IP
+	host        string
 	resultSlice []singleResult
 }
 
 type VerifyResults struct {
 	testTime time.Time // test time
-	ip       *string   // ip address in string
+	ip       *string   // should be <ipv4:port> or <[ipv6]:port>, not just a ip string.
 	dtc      int       // Delay Test(DT) tried count
 	dtpc     int       // DT passed count
 	dtpr     float64   // DT passed rate, in decimal
@@ -638,13 +641,11 @@ func WriteResult(data []VerifyResults, filePath string) {
 func ParseUrl(urlStr string) (tHostName string, tPort int) {
 	urlStr = strings.TrimSpace(urlStr)
 	if len(urlStr) == 0 {
-		urlStr = defaultTestUrl
+		urlStr = defaultDLTUrl
 	}
 	u, err := url.ParseRequestURI(urlStr)
 	if err != nil || u == nil || len(u.Host) == 0 {
 		myLogger.Fatal(fmt.Sprintf("url is not valid: %s\n", urlStr))
-		// it will never get here, just fool IDE
-		panic(u)
 	}
 	tHost := strings.Split(u.Host, ":")
 	tHostName = tHost[0]
@@ -661,6 +662,29 @@ func ParseUrl(urlStr string) (tHostName string, tPort int) {
 		}
 	}
 	return
+}
+
+func NewUrl(urlStr, port string) string {
+	urlStr = strings.TrimSpace(urlStr)
+	if len(urlStr) == 0 {
+		urlStr = defaultDLTUrl
+	}
+	u, err := url.ParseRequestURI(urlStr)
+	if err != nil || u == nil || len(u.Host) == 0 {
+		myLogger.Fatal(fmt.Sprintf("url is not valid: %s\n", urlStr))
+	}
+	host, old_port, err := net.SplitHostPort(u.Host)
+	newHost := ""
+	if err != nil {
+		newHost = net.JoinHostPort(u.Host, port)
+	} else {
+		if old_port == port {
+			return urlStr
+		}
+		newHost = net.JoinHostPort(host, port)
+	}
+	u.Host = newHost
+	return u.String()
 }
 
 func initRandSeed() {
@@ -683,10 +707,10 @@ func getASNAndCityWithIP(ipStr *string) (ASN int, city string) {
 			Transport:     nil,
 			CheckRedirect: nil,
 			Jar:           nil,
-			Timeout:       HttpRspTimeoutDuration + 1*time.Second,
+			Timeout:       httpRspTimeoutDuration + 1*time.Second,
 		}
 		if len(*ipStr) > 0 && isValidIPs(*ipStr) {
-			fullAddress := getConnPeerAddressFromStr(*ipStr, 443)
+			fullAddress := genHostFromIPStrPort(*ipStr, 443)
 			client.Transport = &http.Transport{
 				DialContext: GetDialContextByAddr(fullAddress),
 				//ResponseHeaderTimeout: HttpRspTimeoutDuration,
@@ -730,43 +754,23 @@ func PrintFinalStat(v []VerifyResults, disableDownload bool) {
 	if len(v) == 0 {
 		return
 	}
-	var ipv6 = false
-	for i := 0; i < len(v); i++ {
-		tIP := net.ParseIP(*v[i].ip)
-		if tIP.To4() == nil {
-			ipv6 = true
-			break
-		}
-	}
-	fmt.Printf("%-8v%s", "TestTime", myLogger.indent)
-	if !ipv6 {
-		fmt.Printf("%-15v%s", "IP", myLogger.indent)
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight|tabwriter.Debug)
+	if !dtOnly {
+		fmt.Fprintln(w, "Time\tIP\tSpeed(KB/s)\tDelayAvg(ms)\tStability(%)")
 	} else {
-		fmt.Printf("%-39v%s", "IP", myLogger.indent)
+		fmt.Fprintln(w, "Time\tIP\tDelayAvg(ms)\tStability(%)")
 	}
-	if !disableDownload {
-		fmt.Printf("%-11v%s", "Speed(KB/s)", myLogger.indent)
-	}
-	fmt.Printf("%-12v%s", "DelayAvg(ms)", myLogger.indent)
-	fmt.Printf("%-12v%s", "Stability(%)", myLogger.indent)
 	// close line, LatestLogLength should be 0
 	fmt.Println()
 	for i := 0; i < len(v); i++ {
-		fmt.Printf("%-8v%s", v[i].testTime.Format("15:04:05"), myLogger.indent)
-		if !ipv6 {
-			fmt.Printf("%-15v%s", *v[i].ip, myLogger.indent)
+		if !dtOnly {
+			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), *v[i].ip, v[i].dls, v[i].da, v[i].dtpr*100)
 		} else {
-			fmt.Printf("%-39v%s", *v[i].ip, myLogger.indent)
+			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), *v[i].ip, v[i].da, v[i].dtpr*100)
 		}
-		if !disableDownload {
-			fmt.Printf("%-11.2f%s", v[i].dls, myLogger.indent)
-		}
-		fmt.Printf("%-12.0f%s", v[i].da, myLogger.indent)
-		fmt.Printf("%-12.2f%s", v[i].dtpr*100, myLogger.indent)
-		// close line, LatestLogLength should be 0
-		fmt.Println()
 	}
 	fmt.Println()
+	w.Flush()
 }
 
 func InsertIntoDb(verifyResultsSlice []VerifyResults, dbFile string) {
@@ -817,7 +821,7 @@ func GetDialContextByAddr(addrPort string) func(ctx context.Context, network, ad
 func singleResultStatistic(out singleVerifyResult, statisticDownload bool) VerifyResults {
 	var tVerifyResult = VerifyResults{}
 	tVerifyResult.testTime = out.testTime
-	tIP := out.ip.String()
+	tIP := out.host
 	tVerifyResult.ip = &tIP
 	if len(out.resultSlice) == 0 {
 		return tVerifyResult
@@ -1420,19 +1424,19 @@ func initTitleStr() {
 	// }
 	if dtOnly {
 		titlePre[0][2] = "Max Delay:"
-		titlePre[0][3] = fmt.Sprintf(" %vms", delayMax)
+		titlePre[0][3] = fmt.Sprintf(" %vms", dtEvaluationDelay)
 		titlePre[1][0] = "Min Stab.:"
-		titlePre[1][1] = fmt.Sprintf(" %v", dtPassedRateMin) + "%"
+		titlePre[1][1] = fmt.Sprintf(" %v", dtEvaluationDTPR) + "%"
 	} else if dltOnly {
 		titlePre[0][2] = "Min Speed:"
-		titlePre[0][3] = fmt.Sprintf(" %vKB/s", speedMinimal)
+		titlePre[0][3] = fmt.Sprintf(" %vKB/s", dltEvaluationSpeed)
 	} else {
 		titlePre[0][2] = "Min Speed:"
-		titlePre[0][3] = fmt.Sprintf(" %vKB/s", speedMinimal)
+		titlePre[0][3] = fmt.Sprintf(" %vKB/s", dltEvaluationSpeed)
 		titlePre[1][0] = "Max Delay:"
-		titlePre[1][1] = fmt.Sprintf(" %vms", delayMax)
+		titlePre[1][1] = fmt.Sprintf(" %vms", dtEvaluationDelay)
 		titlePre[1][2] = "Min Stab.:"
-		titlePre[1][3] = fmt.Sprintf(" %v", dtPassedRateMin) + "%"
+		titlePre[1][3] = fmt.Sprintf(" %v", dtEvaluationDTPR) + "%"
 	}
 	detailTitleSlice = append(detailTitleSlice, "IP")
 	if !dtOnly {
@@ -1457,7 +1461,13 @@ func updateTaskStatStr(ov overAllStat) {
 	t_dltCachedSNumLen := len(strconv.Itoa(t_dltCachedS))
 	t_dtDoneNumLen := len(strconv.Itoa(ov.dtTasksDone))
 	t_dltDoneNumLen := len(strconv.Itoa(ov.dltTasksDone))
-	t_indent := MaxInt(dtThreadsAmount, dltThreadsAmount, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
+	var t_indent = 0
+	if !dltOnly {
+		t_indent = MaxInt(dtThreadsNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
+	}
+	if !dtOnly {
+		t_indent = MaxInt(t_indent, dltThreadsNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
+	}
 	if !dltOnly {
 		if dtOnly {
 			t.WriteString(fmt.Sprintf("DT - Tested:%-*d%s", t_indent, ov.dtTasksDone, myIndent))
@@ -1556,13 +1566,14 @@ func updateTcellDetails(isResult bool, v []VerifyResults) {
 
 // test detail
 // loglvl should be logLevelDebug or logLevelInfo
-// when: 1. in non-debug mode, just print pure qualified IPs.
+// when: 1. in non-debug mode, just print stats instead of pure qualified IPs.
 //  2. in debug mode, we show more as tcell or non-tcell form.
 //
 // isResult: used for tcell mode, indicate show in result area or debug area.
 func displayDetails(isResult bool, v []VerifyResults) {
 	if !debug {
-		myLogger.PrintClearIPs(v)
+		// myLogger.PrintClearIPs(v)
+		myLogger.PrintDetails(LogLevel(logLevelInfo), v)
 	} else {
 		if !tcellMode { // no-tcell
 			myLogger.PrintDetails(LogLevel(logLevelDebug), v)
@@ -1582,7 +1593,7 @@ func displayStat(ov overAllStat) {
 }
 
 func HaveIPv6() bool {
-	for _, ipr := range srcIPRs {
+	for _, ipr := range srcIPRsRaw {
 		if ipr.IsV6() {
 			return true
 		}
@@ -1617,26 +1628,26 @@ func MinInt(a, b int, num ...int) (t int) {
 }
 
 // we get target IPs based on <amount>. We will get amount of <amount> from every IPR in srcIPR and  from srcIPRsCache
-func retrieveCIDRHosts(amount int) (targetIPs []*string) {
+func retrieveIPsFromIPR(amount int) (targetIPs []*string) {
 	if amount < 0 || amount < retrieveCount {
 		amount = retrieveCount
 	}
 
 	t_ips := []net.IP{}
-	for _, ipr := range srcIPRs {
+	for _, ipr := range srcIPRsRaw {
 		if !testAll {
 			t_ips = append(t_ips, ipr.GetRandomX(amount)...)
 		} else {
 			t_ips = append(t_ips, ipr.Extract(amount)...)
 		}
 	}
-	if len(srcIPRsCache) > 0 {
-		if len(srcIPRsCache) <= amount {
-			t_ips = append(t_ips, srcIPRsCache...)
-			srcIPRsCache = []net.IP{}
+	if len(srcIPRsExtracted) > 0 {
+		if len(srcIPRsExtracted) <= amount {
+			t_ips = append(t_ips, srcIPRsExtracted...)
+			srcIPRsExtracted = []net.IP{}
 		} else {
-			t_ips = append(t_ips, srcIPRsCache[0:amount]...)
-			srcIPRsCache = srcIPRsCache[amount:]
+			t_ips = append(t_ips, srcIPRsExtracted[0:amount]...)
+			srcIPRsExtracted = srcIPRsExtracted[amount:]
 		}
 	}
 	for _, t_ip := range t_ips {
@@ -1644,30 +1655,83 @@ func retrieveCIDRHosts(amount int) (targetIPs []*string) {
 		targetIPs = append(targetIPs, &tIP)
 	}
 	// randomize
-	if !testAll {
-		myRand.Shuffle(len(targetIPs), func(m, n int) {
-			targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
-		})
+	myRand.Shuffle(len(targetIPs), func(m, n int) {
+		targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
+	})
+	return
+}
+
+func retrieveHosts(amount int) (targetHosts []*string) {
+	if amount <= 0 || len(srcHosts) == 0 {
+		return
+	}
+	t_amount := amount
+	if len(srcHosts) < amount {
+		t_amount = len(srcHosts)
+	}
+	targetHosts = append(targetHosts, srcHosts[:t_amount]...)
+	if len(srcHosts) <= amount {
+		srcHosts = []*string{}
+	} else {
+		srcHosts = srcHosts[t_amount:]
 	}
 	return
+}
+
+func isValidCIDR(ips string) bool {
+	_, _, err := net.ParseCIDR(ips)
+	return err == nil
+}
+
+func isValidIP(ip string) bool {
+	tIP := net.ParseIP(ip)
+	return tIP != nil
 }
 
 func isValidIPs(ips string) bool {
-	_, _, err := net.ParseCIDR(ips)
-	if err != nil {
-		tIP := net.ParseIP(ips)
-		return tIP != nil
+	ips = strings.TrimSpace(ips)
+	if isValidCIDR(ips) {
+		return true
+	} else {
+		return isValidIP(ips)
 	}
-	// valid CIDR
-	return true
 }
 
-func getConnPeerAddress(ip net.IP, port int) (connStr string) {
-	connStr = getConnPeerAddressFromStr(ip.String(), port)
-	return
+func isValidHost(host string) bool {
+	ok, _, _ := splitHost(host)
+	return ok
 }
 
-func getConnPeerAddressFromStr(ipStr string, port int) (connStr string) {
+func splitHost(host string) (bool, string, int) {
+	host = strings.TrimSpace(host)
+	if len(host) == 0 {
+		return false, "", -1
+	}
+	ip, port, err := net.SplitHostPort(host)
+	if err != nil {
+		return false, "", -1
+	}
+	// invalid ip in host
+	if !isValidIPs(ip) {
+		return false, "", -1
+	}
+	// invalid port
+	t_port, err := strconv.Atoi(port)
+	if err != nil {
+		return false, "", -1
+	}
+	if t_port <= 0 || t_port > 65535 {
+		return false, "", -1
+	}
+	return true, ip, t_port
+}
+
+// func genHostFromIPPort(ip net.IP, port int) (connStr string) {
+// 	connStr = genHostFromIPStrPort(ip.String(), port)
+// 	return
+// }
+
+func genHostFromIPStrPort(ipStr string, port int) (connStr string) {
 	if !isValidIPs(ipStr) {
 		return
 	}
