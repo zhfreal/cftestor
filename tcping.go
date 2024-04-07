@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log"
 	"net"
@@ -85,13 +86,18 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 		// tReq = tReq.WithContext(tCtx)
 		// set user agent
 		tReq.Header.Set("User-Agent", userAgent)
-		client, tr := newHttpClient(tlsClientID, *host, httpRspTimeoutDuration)
+		client, tr := newHttpClient(tlsClientID, *host)
+		t_timeout := httpRspTimeoutDuration
 		if !dtOnly && dltTimeDurationMax > httpRspTimeoutDuration {
-			client.Timeout = dltTimeDurationMax
+			t_timeout = dltTimeDurationMax
 		}
+		client.Timeout = t_timeout
+		ctx, cancel := context.WithTimeout(context.Background(), t_timeout)
+		tReq = tReq.WithContext(ctx)
 		var currentResult = singleResult{false, 0, 0, false, false, 0, 0}
 		response, err := client.Do(tReq)
 		defer func() {
+			cancel()
 			if response != nil && response.Body != nil {
 				response.Body.Close()
 			}

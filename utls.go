@@ -12,13 +12,13 @@ import (
 	"golang.org/x/net/http2"
 )
 
-func NewUTLSTransport(helloID utls.ClientHelloID, hostWithPort string, timeout time.Duration) *UTLSTransport {
-	return &UTLSTransport{clientHello: helloID, hostWithPort: hostWithPort, timeout: timeout}
+func NewUTLSTransport(helloID utls.ClientHelloID, hostWithPort string) *UTLSTransport {
+	return &UTLSTransport{clientHello: helloID, hostWithPort: hostWithPort}
 }
 
 type UTLSTransport struct {
-	tr1 http.Transport
-	tr2 http2.Transport
+	tr1 *http.Transport
+	tr2 *http2.Transport
 
 	mu           sync.RWMutex
 	clientHello  utls.ClientHelloID
@@ -26,7 +26,6 @@ type UTLSTransport struct {
 	startAt      time.Time
 	tlsShakedAt  time.Time
 	responseAt   time.Time
-	timeout      time.Duration
 	conn         net.Conn
 	h2Conn       *http2.ClientConn
 	tlsConn      *utls.UConn
@@ -54,7 +53,7 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 
 	b.startAt = time.Now()
 	var err error
-	b.conn, err = net.DialTimeout("tcp", b.hostWithPort, 600*time.Millisecond)
+	b.conn, err = net.Dial("tcp", b.hostWithPort)
 	if err != nil {
 		return nil, fmt.Errorf("tcp net dial fail: %w", err)
 	}
@@ -140,10 +139,9 @@ func (b *UTLSTransport) CloseIdleConnections() {
 	b.tr1.CloseIdleConnections()
 }
 
-func newHttpClient(helloID utls.ClientHelloID, hostWithPort string, timeout time.Duration) (*http.Client, *UTLSTransport) {
-	tr := NewUTLSTransport(helloID, hostWithPort, timeout)
+func newHttpClient(helloID utls.ClientHelloID, hostWithPort string) (*http.Client, *UTLSTransport) {
+	tr := NewUTLSTransport(helloID, hostWithPort)
 	var client = &http.Client{
-		Timeout:   timeout,
 		Transport: tr,
 	}
 	return client, tr
