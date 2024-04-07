@@ -91,6 +91,12 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 		}
 		var currentResult = singleResult{false, 0, 0, false, false, 0, 0}
 		response, err := client.Do(tReq)
+		defer func() {
+			if response != nil && response.Body != nil {
+				response.Body.Close()
+			}
+			tr.CloseIdleConnections()
+		}()
 		// connection is failed(network error), won't continue
 		if err != nil {
 			allResult = append(allResult, currentResult)
@@ -131,8 +137,6 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 		var downloadSuccess = false
 		// just read  the length of content which indicated in response and read before time expire
 		var tTimer = 0
-		defer response.Body.Close()
-		defer tr.CloseIdleConnections()
 		for contentRead < contentLength && time.Now().Before(timeEndExpected) {
 			bufferRead, tErr := response.Body.Read(buffer)
 			contentRead += int64(bufferRead)

@@ -28,6 +28,7 @@ type UTLSTransport struct {
 	responseAt   time.Time
 	timeout      time.Duration
 	conn         net.Conn
+	h2Conn       *http2.ClientConn
 	tlsConn      *utls.UConn
 }
 
@@ -71,6 +72,7 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 	case "h2":
 		var h2_conn *http2.ClientConn
 		h2_conn, err = b.tr2.NewClientConn(b.tlsConn)
+		b.h2Conn = h2_conn
 		if err != nil {
 			resp, err = nil, fmt.Errorf("create http2 client with connection fail: %w", err)
 		} else {
@@ -126,8 +128,15 @@ func (b *UTLSTransport) SetClientHello(hello utls.ClientHelloID) {
 func (b *UTLSTransport) CloseIdleConnections() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.conn.Close()
-	b.tlsConn.Close()
+	if b.conn != nil {
+		b.conn.Close()
+	}
+	if b.tlsConn != nil {
+		b.tlsConn.Close()
+	}
+	if b.h2Conn != nil {
+		b.h2Conn.Close()
+	}
 	b.tr1.CloseIdleConnections()
 }
 
