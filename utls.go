@@ -28,6 +28,7 @@ type UTLSTransport struct {
 	responseAt   time.Time
 	timeout      time.Duration
 	conn         net.Conn
+	tlsConn      *utls.UConn
 }
 
 func (b *UTLSTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -58,18 +59,18 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 	}
 	// defer conn.Close() // nolint
 
-	tlsConn, err := b.tlsConnect(b.conn, req)
+	b.tlsConn, err = b.tlsConnect(b.conn, req)
 	b.tlsShakedAt = time.Now()
 	if err != nil {
 		return nil, fmt.Errorf("tls connect fail: %w", err)
 	}
 	b.tlsShakedAt = time.Now()
-	httpVersion := tlsConn.ConnectionState().NegotiatedProtocol
+	httpVersion := b.tlsConn.ConnectionState().NegotiatedProtocol
 	resp := &http.Response{}
 	switch httpVersion {
 	case "h2":
 		var h2_conn *http2.ClientConn
-		h2_conn, err = b.tr2.NewClientConn(tlsConn)
+		h2_conn, err = b.tr2.NewClientConn(b.tlsConn)
 		if err != nil {
 			resp, err = nil, fmt.Errorf("create http2 client with connection fail: %w", err)
 		} else {
@@ -77,11 +78,11 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 			resp, err = h2_conn.RoundTrip(req)
 		}
 	case "http/1.1", "":
-		err = req.Write(tlsConn)
+		err = req.Write(b.tlsConn)
 		if err != nil {
 			resp, err = nil, fmt.Errorf("write http1 tls connection fail: %w", err)
 		} else {
-			resp, err = http.ReadResponse(bufio.NewReader(tlsConn), req)
+			resp, err = http.ReadResponse(bufio.NewReader(b.tlsConn), req)
 		}
 	default:
 		resp, err = nil, fmt.Errorf("unsuported http version: %s", httpVersion)
@@ -126,6 +127,7 @@ func (b *UTLSTransport) CloseIdleConnections() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.conn.Close()
+	b.tlsConn.Close()
 	b.tr1.CloseIdleConnections()
 }
 
