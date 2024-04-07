@@ -12,8 +12,8 @@ import (
 	"golang.org/x/net/http2"
 )
 
-func NewUTLSTransport(helloID utls.ClientHelloID, hostWithPort string) *UTLSTransport {
-	return &UTLSTransport{clientHello: helloID, hostWithPort: hostWithPort}
+func NewUTLSTransport(helloID utls.ClientHelloID, hostWithPort string, timeout time.Duration) *UTLSTransport {
+	return &UTLSTransport{clientHello: helloID, hostWithPort: hostWithPort, timeout: timeout}
 }
 
 type UTLSTransport struct {
@@ -24,6 +24,7 @@ type UTLSTransport struct {
 	clientHello  utls.ClientHelloID
 	hostWithPort string
 	startAt      time.Time
+	timeout      time.Duration
 	tlsShakedAt  time.Time
 	responseAt   time.Time
 	conn         net.Conn
@@ -34,8 +35,10 @@ type UTLSTransport struct {
 func (b *UTLSTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch req.URL.Scheme {
 	case "https":
+		b.tr2 = &http2.Transport{}
 		return b.httpsRoundTrip(req)
 	case "http":
+		b.tr1 = &http.Transport{}
 		return b.tr1.RoundTrip(req)
 	default:
 		return nil, fmt.Errorf("unsupported scheme: %s", req.URL.Scheme)
@@ -53,7 +56,7 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 
 	b.startAt = time.Now()
 	var err error
-	b.conn, err = net.Dial("tcp", b.hostWithPort)
+	b.conn, err = net.DialTimeout("tcp", b.hostWithPort, b.timeout)
 	if err != nil {
 		return nil, fmt.Errorf("tcp net dial fail: %w", err)
 	}
@@ -108,7 +111,7 @@ func (b *UTLSTransport) tlsConnect(conn net.Conn, req *http.Request) (*utls.UCon
 	tlsConn := utls.UClient(conn, b.getTLSConfig(req), b.clientHello)
 	b.mu.RUnlock()
 
-	if err := tlsConn.Handshake(); err != nil {
+	if err := tlsConn.HandshakeContext(req.Context()); err != nil {
 		return nil, fmt.Errorf("tls handshake fail: %w", err)
 	}
 	return tlsConn, nil
@@ -136,12 +139,15 @@ func (b *UTLSTransport) CloseIdleConnections() {
 	if b.h2Conn != nil {
 		b.h2Conn.Close()
 	}
-	b.tr1.CloseIdleConnections()
+	if b.tr1 != nil {
+		b.tr1.CloseIdleConnections()
+	}
 }
 
-func newHttpClient(helloID utls.ClientHelloID, hostWithPort string) (*http.Client, *UTLSTransport) {
-	tr := NewUTLSTransport(helloID, hostWithPort)
+func newHttpClient(helloID utls.ClientHelloID, hostWithPort string, timeout time.Duration) (*http.Client, *UTLSTransport) {
+	tr := NewUTLSTransport(helloID, hostWithPort, timeout)
 	var client = &http.Client{
+		Timeout:   timeout,
 		Transport: tr,
 	}
 	return client, tr

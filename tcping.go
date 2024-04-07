@@ -86,8 +86,8 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 		// tReq = tReq.WithContext(tCtx)
 		// set user agent
 		tReq.Header.Set("User-Agent", userAgent)
-		client, tr := newHttpClient(tlsClientID, *host)
 		t_timeout := httpRspTimeoutDuration
+		client, tr := newHttpClient(tlsClientID, *host, t_timeout)
 		if !dtOnly && dltTimeDurationMax > httpRspTimeoutDuration {
 			t_timeout = dltTimeDurationMax
 		}
