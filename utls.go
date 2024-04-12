@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -163,7 +164,10 @@ func performUtlsDial(host string, hostName string, timeout time.Duration, hellID
 		ServerName: hostName,
 	}
 	tlsConn := utls.UClient(dialConn, conf, hellID)
-	err = tlsConn.Handshake()
-	_ = dialConn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	err = tlsConn.HandshakeContext(ctx)
+	tlsConn.Close()
+	dialConn.Close()
 	return err == nil
 }
