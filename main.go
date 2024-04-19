@@ -204,9 +204,9 @@ func print_version() {
   https://github.com/zhfreal/cftestor`)
 	fmt.Println()
 	fmt.Printf("Version:\t%v\n", version)
-	fmt.Printf("BuildOn:\t%v\n", buildDate)
+	fmt.Printf("BuildDate:\t%v\n", buildDate)
 	fmt.Printf("BuildTag:\t%v\n", buildTag)
-	fmt.Printf("BuildFrom:\t%v\n", buildHash)
+	fmt.Printf("BuildHash:\t%v\n", buildHash)
 	fmt.Println()
 }
 
