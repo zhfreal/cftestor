@@ -26,12 +26,18 @@ jobs:
             goarch: 386
           - goos: linux
             goarch: riscv64
-        # exclude:
-          # exclude darwin on 386
-          # - goos: darwin
-          #   goarch: 386
-          # - goos: windows
-          #   goarch: 386
+          - goos: windows
+            goarch: amd64
+            goamd64: v3
+          - goos: linux
+            goarch: amd64
+            goamd64: v3
+          - goos: darwin
+            goarch: amd64
+            goamd64: v3
+          - goos: freebsd
+            goarch: amd64
+            goamd64: v3
       fail-fast: false
 
     runs-on: ubuntu-latest
@@ -40,18 +46,25 @@ jobs:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
       GOARM: ${{ matrix.goarm }}
+      GOAMD64: ${{ matrix.goamd64 }}
       CGO_ENABLED: 0
+      BUILDHASH: ${{ github.sha }}
 
     steps:
+      - name: Set BUILDDATE and BUILDTAG
+        run: |
+          echo "BUILDDATE=$(date -u +'%Y-%m-%d %H:%M:%S +0000')" >> $GITHUB_ENV
+          echo "BUILDTAG=release, by zhfreal" >> $GITHUB_ENV
+
       - name: Checkout codebase
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
-          go-version: ^1.19
+          go-version: '1.22'
 
       - name: Get project dependencies
         run: go mod download
@@ -60,20 +73,27 @@ jobs:
         run: |
           echo "BINARY=cftestor-${GOOS}-${GOARCH}${GOARM}" >> $GITHUB_ENV
 
-      - name: Prepare for Build windows
-        if: ${{ matrix.goos == 'windows' }}
-        run: |
-          echo "BINARY=${BINARY}.exe" >> $GITHUB_ENV
-
       - name: Prepare for x86
         if: ${{ matrix.goarch == '386' }}
         run: |
           echo "BINARY=$(echo ${BINARY} | sed 's/386/x86/')" >> $GITHUB_ENV
 
+      - name: Prepare for amd64 v3
+        if: ${{ matrix.goamd64 == 'v3' }}
+        run: |
+          echo "BINARY=${BINARY}v3" >> $GITHUB_ENV
+
+      - name: Prepare for Build windows
+        if: ${{ matrix.goos == 'windows' }}
+        run: |
+          echo "BINARY=${BINARY}.exe" >> $GITHUB_ENV
+
       - name: Show workflow information
         run: |
           if [ -n "${GOARM}" ]; then
             echo "GOOS: ${GOOS}, GOARCH: ${GOARCH}, GOARM: ${GOARM}, RELEASE_VERSION: ${RELEASE_VERSION}, RELEASE_NAME: ${BINARY}"
+          elif [ -n "${GOAMD64}" ]; then
+            echo "GOOS: ${GOOS}, GOARCH: ${GOARCH}, GOAMD64: ${GOAMD64}, RELEASE_VERSION: ${RELEASE_VERSION}, RELEASE_NAME: ${BINARY}"
           else
             echo "GOOS: ${GOOS}, GOARCH: ${GOARCH}, RELEASE_VERSION: ${RELEASE_VERSION}, RELEASE_NAME: ${BINARY}"
           fi
@@ -81,7 +101,12 @@ jobs:
       - name: Build
         run: |
           mkdir -p dist
-          go build -v -o dist/${BINARY} -trimpath -ldflags "-s -w -buildid= -X main.version=${RELEASE_VERSION}" .
+          LDFLAGS="-s -w -buildid= \
+                   -X 'main.version=${RELEASE_VERSION}' \
+                   -X 'main.buildDate=${BUILDDATE}' \
+                   -X 'main.buildTag=${BUILDTAG}' \
+                   -X 'main.buildHash=${BUILDHASH}'"
+          go build -o dist/${BINARY} -v -trimpath -ldflags "${LDFLAGS}" .
 
       - name: Create ZIP archive
         run: |
@@ -98,7 +123,6 @@ jobs:
 
       - name: Upload files to GitHub release
         uses: svenstaro/upload-release-action@v2
-        if: github.event_name == 'release'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true

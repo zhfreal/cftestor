@@ -203,10 +203,10 @@ func print_version() {
 	fmt.Println(`  CF CDN IP scanner, find best IPs for your Cloudflare CDN applications.
   https://github.com/zhfreal/cftestor`)
 	fmt.Println()
-	fmt.Printf("Version: %v\n", version)
-	fmt.Printf("BuildOn: %v\n", buildDate)
-	fmt.Printf("BuildTag: %v\n", buildTag)
-	fmt.Printf("BuildFrom: %v\n", buildHash)
+	fmt.Printf("Version:\t%v\n", version)
+	fmt.Printf("BuildDate:\t%v\n", buildDate)
+	fmt.Printf("BuildTag:\t%v\n", buildTag)
+	fmt.Printf("BuildHash:\t%v\n", buildHash)
 	fmt.Println()
 }
 
