@@ -76,9 +76,10 @@ jobs:
           echo "BINARY=$(echo ${BINARY} | sed 's/386/x86/')" >> $GITHUB_ENV
 
       - name: Prepare for amd64 v3
-        if: ${{ matrix.goarch == 'amd64' }} && ${{ matrix.goamd64 == 'v3' }}
         run: |
-          echo "BINARY=${BINARY}v3" >> $GITHUB_ENV
+          if [ "${GOARCH}" == "amd64" ] && [ "${GOAMD64}" == 'v3' ]; then
+            echo "BINARY=${BINARY}v3" >> $GITHUB_ENV
+          fi
 
       - name: Prepare for Build windows
         if: ${{ matrix.goos == 'windows' }}
