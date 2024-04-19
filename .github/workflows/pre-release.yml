@@ -73,15 +73,20 @@ jobs:
         run: |
           echo "BINARY=cftestor-${GOOS}-${GOARCH}${GOARM}" >> $GITHUB_ENV
 
-      - name: Prepare for Build windows
-        if: ${{ matrix.goos == 'windows' }}
-        run: |
-          echo "BINARY=${BINARY}.exe" >> $GITHUB_ENV
-
       - name: Prepare for x86
         if: ${{ matrix.goarch == '386' }}
         run: |
           echo "BINARY=$(echo ${BINARY} | sed 's/386/x86/')" >> $GITHUB_ENV
+
+      - name: Prepare for amd64 v3
+        if: ${{ matrix.goamd64 == 'v3' }}
+        run: |
+          echo "BINARY=${BINARY}v3" >> $GITHUB_ENV
+
+      - name: Prepare for Build windows
+        if: ${{ matrix.goos == 'windows' }}
+        run: |
+          echo "BINARY=${BINARY}.exe" >> $GITHUB_ENV
 
       - name: Show workflow information
         run: |
