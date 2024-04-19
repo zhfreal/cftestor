@@ -57,14 +57,14 @@ jobs:
           echo "BUILDTAG=release, by zhfreal" >> $GITHUB_ENV
 
       - name: Checkout codebase
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
-          go-version: ^1.19
+          go-version: '1.22'
 
       - name: Get project dependencies
         run: go mod download
@@ -118,7 +118,6 @@ jobs:
 
       - name: Upload files to GitHub release
         uses: svenstaro/upload-release-action@v2
-        if: github.event_name == 'release'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
