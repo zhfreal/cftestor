@@ -1570,10 +1570,16 @@ func updateTcellDetails(isResult bool, v []VerifyResults) {
 //  2. in debug mode, we show more as tcell or non-tcell form.
 //
 // isResult: used for tcell mode, indicate show in result area or debug area.
-func displayDetails(isResult bool, v []VerifyResults) {
+func displayDetails(isResult, isSilence bool, v []VerifyResults) {
 	if !debug {
 		// myLogger.PrintClearIPs(v)
-		myLogger.PrintDetails(LogLevel(logLevelInfo), v)
+		if isSilence {
+			for _, t_v := range v {
+				myLogger.Println(*t_v.ip)
+			}
+		} else {
+			myLogger.PrintDetails(LogLevel(logLevelInfo), v)
+		}
 	} else {
 		if !tcellMode { // no-tcell
 			myLogger.PrintDetails(LogLevel(logLevelDebug), v)
