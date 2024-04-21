@@ -666,11 +666,11 @@ LOOP:
 							dltTaskCache = append(dltTaskCache, tVerifyResult.ip)
 							// debug msg, show only in debug mode
 							if debug {
-								displayDetails(false, []VerifyResults{tVerifyResult})
+								displayDetails(false, silenceMode, []VerifyResults{tVerifyResult})
 							}
 						} else { // Download test disabled
 							// non-debug msg
-							displayDetails(true, []VerifyResults{tVerifyResult})
+							displayDetails(true, silenceMode, []VerifyResults{tVerifyResult})
 							verifyResultsMap[tVerifyResult.ip] = tVerifyResult
 							// we have expected result, break LOOP
 							if !testAll && len(verifyResultsMap) >= resultMin {
@@ -679,7 +679,7 @@ LOOP:
 						}
 					} else if debug {
 						// debug msg
-						displayDetails(false, []VerifyResults{tVerifyResult})
+						displayDetails(false, silenceMode, []VerifyResults{tVerifyResult})
 					}
 				default:
 				}
@@ -790,10 +790,10 @@ LOOP:
 							haveEnoughResult = true
 						}
 						// non-debug msg
-						displayDetails(true, []VerifyResults{tVerifyResult})
+						displayDetails(true, silenceMode, []VerifyResults{tVerifyResult})
 					} else if debug {
 						// debug msg
-						displayDetails(false, []VerifyResults{tVerifyResult})
+						displayDetails(false, silenceMode, []VerifyResults{tVerifyResult})
 					}
 				default:
 				}
@@ -1020,10 +1020,10 @@ func main() {
 			myLogger.Println()
 			myLogger.Println("All Results:")
 			PrintFinalStat(verifyResultsSlice, dtOnly)
-		} else {
-			for _, v := range verifyResultsSlice {
-				myLogger.Println(*(v.ip))
-			}
+			// } else { // we display results in controler when in silence mode
+			// 	for _, v := range verifyResultsSlice {
+			// 		myLogger.Println(*(v.ip))
+			// 	}
 		}
 	}
 }

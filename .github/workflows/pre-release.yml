@@ -10,7 +10,8 @@ jobs:
       matrix:
         # enbale windows linux darwin freebsd on amd64, arm64
         goos: [windows, linux, darwin, freebsd]
-        goarch: [amd64, arm64]
+        goarch: [amd64]
+        goamd64: [v1, v3]
         include:
           # include linux on arm5, arm6, arm7, 386, riscv64
           - goos: linux
@@ -27,17 +28,13 @@ jobs:
           - goos: linux
             goarch: riscv64
           - goos: windows
-            goarch: amd64
-            goamd64: v3
+            goarch: arm64
           - goos: linux
-            goarch: amd64
-            goamd64: v3
+            goarch: arm64
           - goos: darwin
-            goarch: amd64
-            goamd64: v3
+            goarch: arm64
           - goos: freebsd
-            goarch: amd64
-            goamd64: v3
+            goarch: arm64
       fail-fast: false
 
     runs-on: ubuntu-latest
@@ -79,9 +76,10 @@ jobs:
           echo "BINARY=$(echo ${BINARY} | sed 's/386/x86/')" >> $GITHUB_ENV
 
       - name: Prepare for amd64 v3
-        if: ${{ matrix.goamd64 == 'v3' }}
         run: |
-          echo "BINARY=${BINARY}v3" >> $GITHUB_ENV
+          if [ "${GOARCH}" == "amd64" ] && [ "${GOAMD64}" == 'v3' ]; then
+            echo "BINARY=${BINARY}v3" >> $GITHUB_ENV
+          fi
 
       - name: Prepare for Build windows
         if: ${{ matrix.goos == 'windows' }}
@@ -92,7 +90,7 @@ jobs:
         run: |
           if [ -n "${GOARM}" ]; then
             echo "GOOS: ${GOOS}, GOARCH: ${GOARCH}, GOARM: ${GOARM}, RELEASE_VERSION: ${RELEASE_VERSION}, RELEASE_NAME: ${BINARY}"
-          elif [ -n "${GOAMD64}" ]; then
+          elif [ -n "${GOAMD64}" ] && [ "${GOARCH}" == "amd64" ]; then
             echo "GOOS: ${GOOS}, GOARCH: ${GOARCH}, GOAMD64: ${GOAMD64}, RELEASE_VERSION: ${RELEASE_VERSION}, RELEASE_NAME: ${BINARY}"
           else
             echo "GOOS: ${GOOS}, GOARCH: ${GOARCH}, RELEASE_VERSION: ${RELEASE_VERSION}, RELEASE_NAME: ${BINARY}"
