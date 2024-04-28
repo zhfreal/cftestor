@@ -126,8 +126,9 @@ options:
                                "-s 1.0.0.1/24", "-s 1.1.1.1:2053".
     -i, --in           string  Specify file for test, which contains multiple lines. Each line
                                represent one IP, CIDR, host.
-    -p, --port         int     Port to test, could be specific one or more ports at same time,
-                               The port should be working via SSL/TLS/HTTPS protocol,  default 443.
+    -p, --port         int     Port to test, could be specific one or more ports at same time. Can be
+                               specific like "-p 443-800,1000:1300;8443|8444 -p 10000-12000|13333".
+                               These ports should be working via SSL/TLS/HTTPS protocol,  default 443.
     -m, --dt-thread    int     Number of concurrent threads for Delay Test(DT). How many IPs can
                                be perform DT at the same time. Default 20 threads.
     -t, --dt-timeout   int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS
@@ -213,6 +214,7 @@ func print_version() {
 func init() {
 	var printVersion bool
 	var tlsHelloFirefox, tlsHelloChrome, tlsHelloEdge, tlsHelloSafari bool = false, false, false, false
+	var portStrSlice []string
 
 	// version = "dev"
 	flag.BoolVar(&fastMode, "fast", false, "Fast mode")
@@ -223,7 +225,7 @@ func init() {
 	flag.IntVarP(&dtTimeout, "dt-timeout", "t", 2000, "Timeout for single DT(ms).")
 	flag.IntVarP(&dtCount, "dt-count", "c", 2, "Tries of DT for a IP.")
 	// flag.IntVarP(&port, "port", "p", 443, "Port to test")
-	flag.IntSliceVarP(&ports, "port", "p", []int{443}, "Port to test, could be specific one or more ports at same time.")
+	flag.StringSliceVarP(&portStrSlice, "port", "p", []string{}, "Port to test, could be specific one or more ports at same time.")
 	flag.StringVar(&hostName, "hostname", DefaultTestHost, "Hostname for DT test.")
 	flag.StringVar(&dtVia, "dt-via", "https", "DT via https rather than SSL/TLS shaking hands.")
 	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https rather than SSL/TLS shaking hands.")
@@ -457,11 +459,54 @@ func init() {
 			resultMin = int(t_qty.Int64())
 		}
 	}
-	// validate ports
-	for _, port := range ports {
-		if port < 1 || port > 65535 {
-			myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", port)
+	port_regex := regexp.MustCompile(`[,;|]+`)
+	port_range_regex := regexp.MustCompile(`\d+[-:]\d+`)
+	port_range_split_regex := regexp.MustCompile(`[-:]`)
+	// set ports
+	if len(portStrSlice) > 0 {
+		for _, portStr := range portStrSlice {
+			portStr_slice := port_regex.Split(portStr, -1)
+			for _, t_port_str := range portStr_slice {
+				t_port_str = strings.TrimSpace(t_port_str)
+				if len(t_port_str) == 0 {
+					continue
+				}
+				// it's a range
+				if port_range_regex.MatchString(t_port_str) {
+					t_port_list := port_range_split_regex.Split(t_port_str, -1)
+					if len(t_port_list) != 2 {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+					}
+					t_start_port := t_port_list[0]
+					t_end_port := t_port_list[1]
+					start_port, err := strconv.Atoi(t_start_port)
+					if err != nil {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_start_port)
+					}
+					end_port, err := strconv.Atoi(t_end_port)
+					if err != nil {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_end_port)
+					}
+					if start_port > end_port || start_port < 1 || end_port > 65535 {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+					}
+					for i := start_port; i <= end_port; i++ {
+						ports = append(ports, i)
+					}
+				} else { // it's a single port
+					port, err := strconv.Atoi(t_port_str)
+					if err != nil || port < 1 || port > 65535 {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+					}
+					ports = append(ports, port)
+				}
+			}
 		}
+		// clean ports, make them unique
+		ports = uniqueIntSlice(ports)
+	}
+	if len(ports) == 0 {
+		ports = append(ports, 443)
 	}
 	// set suffixLabel
 	if len(suffixLabel) == 0 {
