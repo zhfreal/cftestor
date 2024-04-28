@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"math/big"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -691,61 +693,110 @@ func initRandSeed() {
 	myRand.Seed(time.Now().UnixNano())
 }
 
-func getASNAndCityWithIP(ipStr *string) (ASN int, city string) {
+// func getASNAndCityWithIP(ipStr *string) (ASN int, city string) {
+// 	if defaultASN > 0 || len(defaultCity) > 0 {
+// 		ASN = defaultASN
+// 		city = defaultCity
+// 		return
+// 	}
+// 	// try 3 times
+// 	for i := 0; i < 3; i++ {
+// 		tReq, err := http.NewRequest("GET", cfURL, nil)
+// 		if err != nil {
+// 			log.Fatal(err)
+// 		}
+// 		var client = http.Client{
+// 			Transport:     nil,
+// 			CheckRedirect: nil,
+// 			Jar:           nil,
+// 			Timeout:       httpRspTimeoutDuration + 1*time.Second,
+// 		}
+// 		if len(*ipStr) > 0 && isValidIPs(*ipStr) {
+// 			fullAddress := genHostFromIPStrPort(*ipStr, 443)
+// 			client.Transport = &http.Transport{
+// 				DialContext: GetDialContextByAddr(fullAddress),
+// 				//ResponseHeaderTimeout: HttpRspTimeoutDuration,
+// 			}
+// 		}
+// 		response, err := client.Do(tReq)
+// 		// connection is failed(network error), won't continue
+// 		if err != nil || response == nil {
+// 			myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
+// 			time.Sleep(time.Duration(interval) * time.Millisecond)
+// 			continue
+// 		}
+// 		if values, ok := (*response).Header["Cf-Meta-Asn"]; ok {
+// 			if len(values) > 0 {
+// 				if ASN, err = strconv.Atoi(values[0]); err != nil {
+// 					myLogger.Error(fmt.Sprintf("An error occurred while convert ASN for header: %T, %v", values[0], values[0]))
+// 				}
+// 			}
+// 		}
+// 		if values, ok := (*response).Header["Cf-Meta-City"]; ok {
+// 			if len(values) > 0 {
+// 				city = values[0]
+// 			}
+// 		}
+// 		if len(city) == 0 { // no "Cf-Meta-City" in header, we get "Cf-Meta-Country" instead
+// 			if values, ok := (*response).Header["Cf-Meta-Country"]; ok {
+// 				if len(values) > 0 {
+// 					city = values[0]
+// 				}
+// 			}
+// 		}
+// 		defaultASN = ASN
+// 		defaultCity = city
+// 		break
+// 	}
+// 	return
+// }
+
+// from https://api.incolumitas.com/?q=3.5.140.2
+func getASNAndCityWithIPFromIncolumitas(ipStr *string) (ASN int, city string) {
 	if defaultASN > 0 || len(defaultCity) > 0 {
 		ASN = defaultASN
 		city = defaultCity
 		return
 	}
-	// try 3 times
-	for i := 0; i < 3; i++ {
-		tReq, err := http.NewRequest("GET", cfURL, nil)
-		if err != nil {
-			log.Fatal(err)
-		}
-		var client = http.Client{
-			Transport:     nil,
-			CheckRedirect: nil,
-			Jar:           nil,
-			Timeout:       httpRspTimeoutDuration + 1*time.Second,
-		}
-		if len(*ipStr) > 0 && isValidIPs(*ipStr) {
-			fullAddress := genHostFromIPStrPort(*ipStr, 443)
-			client.Transport = &http.Transport{
-				DialContext: GetDialContextByAddr(fullAddress),
-				//ResponseHeaderTimeout: HttpRspTimeoutDuration,
-			}
-		}
-		response, err := client.Do(tReq)
-		// connection is failed(network error), won't continue
-		if err != nil || response == nil {
-			myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
-			time.Sleep(time.Duration(interval) * time.Millisecond)
-			continue
-		}
-		if values, ok := (*response).Header["Cf-Meta-Asn"]; ok {
-			if len(values) > 0 {
-				if ASN, err = strconv.Atoi(values[0]); err != nil {
-					myLogger.Error(fmt.Sprintf("An error occurred while convert ASN for header: %T, %v", values[0], values[0]))
-				}
-			}
-		}
-		if values, ok := (*response).Header["Cf-Meta-City"]; ok {
-			if len(values) > 0 {
-				city = values[0]
-			}
-		}
-		if len(city) == 0 { // no "Cf-Meta-City" in header, we get "Cf-Meta-Country" instead
-			if values, ok := (*response).Header["Cf-Meta-Country"]; ok {
-				if len(values) > 0 {
-					city = values[0]
-				}
-			}
-		}
-		defaultASN = ASN
-		defaultCity = city
-		break
+	tReq, err := http.NewRequest("GET", "https://api.incolumitas.com/", nil)
+	if err != nil {
+		log.Fatal(err)
 	}
+	var client = http.Client{
+		Transport:     nil,
+		CheckRedirect: nil,
+		Jar:           nil,
+		Timeout:       httpRspTimeoutDuration + 1*time.Second,
+	}
+	if len(*ipStr) > 0 && isValidIPs(*ipStr) {
+		fullAddress := genHostFromIPStrPort(*ipStr, 443)
+		client.Transport = &http.Transport{
+			DialContext: GetDialContextByAddr(fullAddress),
+			//ResponseHeaderTimeout: HttpRspTimeoutDuration,
+		}
+	}
+	response, err := client.Do(tReq)
+	// connection is failed(network error), won't continue
+	if err != nil || response == nil {
+		myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
+		time.Sleep(time.Duration(interval) * time.Millisecond)
+		return
+	}
+	// read response.Body as string
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		myLogger.Error(fmt.Sprintf("An error occurred while read response.Body: %v\n", err))
+		return
+	}
+	// decode body []byte into string
+	bodyStr := string(body)
+	asn := gjson.Get(bodyStr, "asn.asn")
+	if asn.Exists() {
+		if ASN, err = strconv.Atoi(asn.String()); err != nil {
+			myLogger.Error(fmt.Sprintf("An error occurred while convert ASN for header: %T, %v", asn.String(), asn.String()))
+		}
+	}
+	city = gjson.Get(bodyStr, "location.city").String()
 	return
 }
 
@@ -781,7 +832,7 @@ func InsertIntoDb(verifyResultsSlice []VerifyResults, dbFile string) {
 		var ASN int
 		var city string
 		for _, item := range verifyResultsSlice[:tRound] {
-			ASN, city = getASNAndCityWithIP(item.ip)
+			ASN, city = getASNAndCityWithIPFromIncolumitas(item.ip)
 			if ASN > 0 || len(city) > 0 {
 				break
 			}

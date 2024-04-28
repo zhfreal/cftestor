@@ -159,7 +159,7 @@ $
     ASN           int          ASN of your local network
     CITY          text         city of your local network
     IP            text         valid IP with port for CloudFare CDN access
-    LABEL         text         label while stand for your CloudFare CDN resources
+    LABEL         text         label or tag or anything you want
     DTS           text         the method for DT (SSL or HTTPS)
     DTC           int          tries for DT
     DTPC          int          success count of DT
@@ -174,7 +174,7 @@ $
     DLDS          int          total bytes downloaded
     DLTD          float        total times escapted during download (in second)
 ```
-## References:
+## Thanks:
 > 
 > <a href="https://github.com/Spedoske/CloudflareScanner">github.com/Spedoske/CloudflareScanner</a>
 > 
@@ -182,4 +182,4 @@ $
 > 
 > <a href="https://github.com/gdamore/tcell">github.com/gdamore/tcell</a>
 >
->   
+> <a href="https://api.incolumitas.com">incolumitas.com</a>
