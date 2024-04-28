@@ -184,7 +184,7 @@ var (
 		"DLTPassedCount(DLTPC)",
 		"DLTPassedRate(DLPR,%)",
 	}
-	cfURL = "https://speed.cloudflare.com/__down"
+	// cfURL = "https://speed.cloudflare.com/__down"
 )
 
 type arrayFlags []string
