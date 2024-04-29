@@ -28,47 +28,6 @@ import (
 const (
 	DBFile    = "ip.db"
 	TableName = "CFTD"
-	// CreateTableSql = `create table IF NOT EXISTS CFTD (
-	// TestTime    datetime,
-	// ASN         int,
-	// CITY        text,
-	// LOC			text,
-	// IP          text,
-	// LABEL       text,
-	// DS          text,
-	// DTC         int,
-	// DTPC        int,
-	// DTPR        float,
-	// DA          float,
-	// DMI         float,
-	// DMX         float,
-	// DLTC        int,
-	// DLTPC       int,
-	// DLTPR       float,
-	// DLS         float,
-	// DLDS        int,
-	// DLTD        float)`
-	// InsertDataSqlExp = `insert into CFTD (
-	// TestTime    ,
-	// ASN         ,
-	// CITY        ,
-	// LOC			,
-	// IP          ,
-	// LABEL       ,
-	// DS          ,
-	// DTC         ,
-	// DTPC        ,
-	// DTPR        ,
-	// DA          ,
-	// DMI         ,
-	// DMX         ,
-	// DLTC        ,
-	// DLTPC       ,
-	// DLTPR       ,
-	// DLS         ,
-	// DLDS        ,
-	// DLTD        )
-	// values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 )
 
 type dBRecord struct {
