@@ -74,7 +74,7 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 	if err != nil {
 		return allResult
 	}
-	new_url := NewUrl(*tUrl, port)
+	new_url := newUrl(*tUrl, port)
 	// loop for test
 	for i := 0; i < dltCount; i++ {
 		tReq, err := http.NewRequest("GET", new_url, nil)

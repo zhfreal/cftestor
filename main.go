@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"math/rand"
-	"net"
 	"os"
 	"regexp"
 	"sort"
@@ -19,185 +17,6 @@ import (
 	utls "github.com/refraction-networking/utls"
 	flag "github.com/spf13/pflag"
 )
-
-const (
-	workerStopSignal    = "0"
-	workOnGoing         = 1
-	controllerInterval  = 100               // in millisecond
-	statisticIntervalT  = 1000              // in millisecond, valid in tcell mode
-	statisticIntervalNT = 10000             // in millisecond, valid in non-tcell mode
-	quitWaitingTime     = 3                 // in second
-	downloadBufferSize  = 1024 * 64         // in byte
-	fileDefaultSize     = 1024 * 1024 * 300 // in byte
-	downloadSizeMin     = 1024 * 1024       // in byte
-	defaultDLTUrl       = "https://cf.9999876.xyz/500mb.dat"
-	defaultDTUrl        = "https://cf.9999876.xyz/test.dat"
-	userAgentChrome     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-	userAgentFirefox    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
-	userAgentEdge       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-	userAgentSafari     = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15"
-
-	defaultDBFile       = "ip.db"
-	DefaultTestHost     = "cf.9999876.xyz"
-	maxHostLen          = 1 << 12
-	dtsSSL              = "SSL"
-	dtsHTTPS            = "HTTPS"
-	runTime             = "cftestor"
-	retrieveCount   int = 32
-)
-
-var (
-	maxHostLenBig                           = big.NewInt(maxHostLen)
-	ipFile                                  string
-	version, buildTag, buildDate, buildHash string     = "dev", "dev", "dev", "dev"
-	srcIPRsRaw                              []*ipRange // CIDR slice
-	srcIPRsExtracted                        []net.IP   // net.IP slice
-	srcHosts                                []*string  // slice stored host: <ip>:<port>
-	ipStr                                   arrayFlags
-	dtCount, dtWorkerThread                 int
-	ports                                   []int
-	dltDurMax, dltWorkerThread              int
-	dltCount, resultMin                     int
-	interval, dtEvaluationDelay, dtTimeout  int
-	hostName, dltUrl, dtSource, dtUrl       string
-	dltTimeout                              int
-	dtEvaluationDTPR, dltEvaluationSpeed    float64
-	dtHttps, disableDownload                bool
-	dtVia                                   string
-	enableDTEvaluation                      bool
-	ipv4Mode, ipv6Mode, dtOnly, dltOnly     bool
-	tlsClientID                             utls.ClientHelloID = utls.HelloChrome_Auto
-	userAgent                               string             = userAgentChrome
-	storeToFile, storeToDB, testAll, debug  bool
-	resultFile, suffixLabel, dbFile         string
-	myLogger                                MyLogger
-	loggerLevel                             LogLevel
-	httpRspTimeoutDuration                  time.Duration
-	dtTimeoutDuration                       time.Duration
-	dltTimeDurationMax                      time.Duration
-	verifyResultsMap                        = make(map[*string]VerifyResults)
-	defaultASN                              = 0
-	defaultCity                             = ""
-	myRand                                  = rand.New(rand.NewSource(0))
-	titleRuntime                            *string
-	titlePre                                [2][4]string
-	titleTasksStat                          [2]*string
-	detailTitleSlice                        []string
-	resultStrSlice, debugStrSlice           [][]*string
-	termAll                                 *tcell.Screen
-	titleStyle                              = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorWhite)
-	normalStyle                             = tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorWhite)
-	titleStyleCancel                        = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorGray)
-	contentStyle                            = tcell.StyleDefault
-	maxResultsDisplay                       = 10
-	maxDebugDisplay                         = 10
-	titleRuntimeRow                         = 0
-	titlePreRow                             = titleRuntimeRow + 2
-	titleCancelRow                          = titlePreRow + 3
-	titleTasksStatRow                       = titleCancelRow + 2
-	titleResultHintRow                      = titleTasksStatRow + 2
-	titleResultRow                          = titleResultHintRow + 1
-	titleDebugHintRow                       = titleResultRow + maxResultsDisplay + 2
-	titleDebugRow                           = titleDebugHintRow + 1
-	titleCancel                             = "Press ESC to cancel!"
-	titleCancelConfirm                      = "Press ENTER to confirm; Any other key to back!"
-	titleWaitQuit                           = "Waiting for exit..."
-	titleResultHint                         = "Result:"
-	titleDebugHint                          = "Debug Msg:"
-	cancelSigFromTerm                       = false
-	terminateConfirm                        = false
-	resultStatIndent                        = 9
-	dtThreadsNumLen, dltThreadsNumLen       = 0, 0
-	tcellMode                               = false
-	fastMode                                = false
-	silenceMode                             = false
-	statInterval                            = statisticIntervalNT
-	// titleExitHint                          = "Press any key to exit!"
-	appArt string = `
-  ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
-  ░█░░░█▀▀░░█░░█▀▀░▀▀█░░█░░█░█░█▀▄
-  ░▀▀▀░▀░░░░▀░░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀
-`
-)
-
-var help = `Usage: ` + runTime + ` [options]
-options:
-    -s, --ip           string  Specify IP, CIDR, or host for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32",
-                               "-s 1.0.0.1/24", "-s 1.1.1.1:2053".
-    -i, --in           string  Specify file for test, which contains multiple lines. Each line
-                               represent one IP, CIDR, host.
-    -p, --port         int     Port to test, could be specific one or more ports at same time. Can be
-                               specific like "-p 443-800,1000:1300;8443|8444 -p 10000-12000|13333".
-                               These ports should be working via SSL/TLS/HTTPS protocol,  default 443.
-    -m, --dt-thread    int     Number of concurrent threads for Delay Test(DT). How many IPs can
-                               be perform DT at the same time. Default 20 threads.
-    -t, --dt-timeout   int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS
-                               or HTTPS request and response should be finished before timeout.
-                               It should not be less than "-k|--evaluate-dt-delay", It should be
-                               longer when we perform https connections test by "-dt-via-https"
-                               than when we perform SSL/TLS test by default.
-    -c, --dt-count     int     Tries of DT for a IP, default 2.
-        --hostname     string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via https"
-                               is not provided.
-        --dt-via https|tls|ssl DT via https or SSL/TLS shaking hands, "--dt-via <https|tls|ssl>"
-                               default https.
-        --dt-url       string  Specify test URL for DT.
-        --ev-dt                Evaluate DT, we'll try "-c|--dt-count <value>" to evaluate delay;
-                               if we don't turn this on, we'll stop DT after we got the first
-                               successfull DT; if we turn this on, we'll evaluate the test result
-                               through average delay of singe DT and statistic of all successfull
-                               DT by these two thresholds "-k|--evaluate-dt-delay <value>" and
-                               "-S|--evaluate-dt-dtpr <value>", default turn off.
-    -k, --ev-dt-delay  int     single DT's delay should not bigger than this, unit ms, default 600ms.
-    -S, --ev-dt-dtpr   float   The DT pass rate should not lower than this, default 100, means 100%, all
-                               DT must be below "-k|--evaluate-dt-delay <value>".
-    -n, --dlt-thread   int     Number of concurrent Threads for Download Test(DLT), default 1.
-                               How many IPs can be perform DLT at the same time.
-    -d, --dlt-period   int     The total times escaped for single DLT, default 10s.
-    -b, --dlt-count    int     Tries of DLT for a IP, default 1.
-    -u, --dlt-url      string  Specify test URL for DLT.
-        --dlt-timeout  int     Specify the timeout for http response when do DLT. In ms, default as 5000 ms.
-    -I  --interval     int     Interval between two tests, unit ms, default 500ms.
-
-    -l, --speed        float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's
-                               qualified when its speed is not lower than this value.
-    -r, --result       int     The total IPs qualified limitation, default 10. The Process will stop
-                               after it got equal or more than this indicated. It would be invalid if
-                               "--test-all" was set.
-        --dt-only              Do DT only, we do DT & DLT at the same time by default.
-        --dlt-only             Do DLT only, we do DT & DLT at the same time by default.
-        --fast                 Fast mode, use inner IPs for fast detection. Just when neither "-s/--ip"
-                               nor "-i/--in" is provided, and this flag is provided. It will be working
-                               Disabled by default.
-    -4, --ipv4                 Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
-                               then it will do IPv4 test from build-in IPs from CloudFlare by default.
-    -6, --ipv6                 Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
-                               then it will do IPv6 test from build-in IPs from CloudFlare by using
-                               this flag.
-        --hello-firefox        Work as firefox to perform tls/https
-        --hello-chrome         Work as Chrome to perform tls/https
-        --hello-edge           Work as Microsoft Edge to perform tls/https
-        --hello-safari         Work as safari to perform tls/https
-    -a  --test-all             Test all IPs until no more IP left. It's disabled by default.
-    -w, --to-file              Write result to csv file, disabled by default. If it is provided and
-                               "-o|--result-file <value>" is not provided, the result file will be named
-                               as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -o, --outfile      string  File name of result. If it don't provided and "-w|--store-to-file"
-                               is provided, the result file will be named as
-                               "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -e, --to-db                Write result to sqlite3 db file, disabled by default. If it's provided
-                               and "-f|--db-file" is not provided, it will be named "ip.db" and
-                               store in current directory.
-    -f, --dbfile       string  Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
-                               provided, it will be named "ip.db" and store in current directory.
-    -g, --label        string  the label for a part of the result file's name and sqlite3 record. It's
-                               hostname from "--hostname" or "-u|--url" by default.
-        --silence              Silence mode.
-    -V, --debug                Print debug message.
-        --tcell                Use tcell to display the running procedure when in debug mode.
-                               Turn this on will activate "--debug".
-    -v, --version              Show version.
-`
 
 func print_version() {
 	fmt.Println(appArt)
@@ -551,7 +370,7 @@ func init() {
 			dtSource = dtsSSL
 		} else {
 			// check dtUrl is valid or not by ParseUrl() and set suffixLabel
-			suffixLabel, _ = ParseUrl(dtUrl)
+			suffixLabel, _ = parseUrl(dtUrl)
 			dtSource = dtsHTTPS
 		}
 		dtThreadsNumLen = len(strconv.Itoa(dtWorkerThread))
@@ -576,7 +395,7 @@ func init() {
 			myLogger.Fatalf("\"<--dlt-timeout> %v\" should not be bigger than <-d|--dlt-period> %v!\n", dltTimeout, dltDurMax)
 		}
 		// check dltUrl is valid or not by ParseUrl() and set suffixLabel
-		suffixLabel, _ = ParseUrl(dltUrl)
+		suffixLabel, _ = parseUrl(dltUrl)
 		httpRspTimeoutDuration = time.Duration(dltTimeout) * time.Millisecond
 		dltTimeDurationMax = time.Duration(dltDurMax) * time.Second
 		dltThreadsNumLen = len(strconv.Itoa(dltWorkerThread))
@@ -1048,23 +867,26 @@ func main() {
 			verifyResultsSlice = append(verifyResultsSlice, v)
 		}
 		if !silenceMode {
+
+			records := genDBRecords(verifyResultsSlice)
+
 			// write to csv file
 			if storeToFile {
 				myLogger.Print("Write to csv " + resultFile)
-				WriteResult(verifyResultsSlice, resultFile)
+				writeCSVResult(records, resultFile)
 				myLogger.Println("  Done!")
 			}
 			// write to db
 			if storeToDB {
 				myLogger.Print("Write to sqlite3 db file " + dbFile)
-				InsertIntoDb(verifyResultsSlice, dbFile)
+				saveDBRecords(records, dbFile)
 				myLogger.Println("  Done!")
 			}
 			// sort by speed
 			sort.Sort(sort.Reverse(resultSpeedSorter(verifyResultsSlice)))
 			myLogger.Println()
 			myLogger.Println("All Results:")
-			PrintFinalStat(verifyResultsSlice, dtOnly)
+			printFinalStat(verifyResultsSlice, dtOnly)
 			// } else { // we display results in controler when in silence mode
 			// 	for _, v := range verifyResultsSlice {
 			// 		myLogger.Println(*(v.ip))

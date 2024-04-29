@@ -158,6 +158,7 @@ $
     TestTime      datetime     when the test happened
     ASN           int          ASN of your local network
     CITY          text         city of your local network
+    LOC           text         location of IP
     IP            text         valid IP with port for CloudFare CDN access
     LABEL         text         label or tag or anything you want
     DTS           text         the method for DT (SSL or HTTPS)

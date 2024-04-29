@@ -2,9 +2,12 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
+	"time"
 
-	_ "modernc.org/sqlite"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 // TestTime      datetime     when the test happened
@@ -27,10 +30,12 @@ import (
 // DLTD          float        total times escapted during download (in second)
 const (
 	DBFile         = "ip.db"
+	TableName      = "CFTD"
 	CreateTableSql = `create table IF NOT EXISTS CFTD (
     TestTime    datetime, 
     ASN         int, 
-    CITY        text, 
+    CITY        text,
+	LOC			text,
     IP          text, 
     LABEL       text,
     DS          text,
@@ -50,9 +55,10 @@ const (
     TestTime    ,
     ASN         ,
     CITY        ,
+	LOC			,
     IP          ,
     LABEL       ,
-    DS         ,
+    DS          ,
     DTC         ,
     DTPC        ,
     DTPR        ,
@@ -65,14 +71,66 @@ const (
     DLS         ,
     DLDS        ,
     DLTD        )
-    values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 )
+
+type dBRecord struct {
+	testTimeStr string  `gorm:"column:TestTime"`
+	asn         int     `gorm:"column:ASN"`
+	city        string  `gorm:"column:CITY"`
+	loc         string  `gorm:"column:LOC"`
+	ip          string  `gorm:"column:IP"`
+	label       string  `gorm:"column:LABEL"`
+	ds          string  `gorm:"column:DS"`
+	dtc         int     `gorm:"column:DTC"`
+	dtpc        int     `gorm:"column:DTPC"`
+	dtpr        float64 `gorm:"column:DTPR"`
+	da          float64 `gorm:"column:DA"`
+	dmi         float64 `gorm:"column:DMI"`
+	dmx         float64 `gorm:"column:DMX"`
+	dltc        int     `gorm:"column:DLTC"`
+	dltpc       int     `gorm:"column:DLTPC"`
+	dltpr       float64 `gorm:"column:DLTPR"`
+	dls         float64 `gorm:"column:DLS"`
+	dlds        int64   `gorm:"column:DLDS"`
+	dltd        float64 `gorm:"column:DLTD"`
+}
+
+func (a *dBRecord) TableName() string {
+	return TableName
+}
+
+func OpenSqlite(dbfile string) (*gorm.DB, error) {
+	dial := sqlite.Open(dbfile)
+	return gorm.Open(dial, &gorm.Config{
+		NowFunc: func() time.Time {
+			return time.Now()
+		},
+		// NamingStrategy: schema.NamingStrategy{
+		//     TablePrefix: config.Table_Prefix,
+		// },
+	})
+
+}
+
+func AddTableCFDT(db *gorm.DB) error {
+	return db.AutoMigrate(&dBRecord{})
+}
+
+func AddCFDTRecords(db *gorm.DB, records []dBRecord) error {
+	err := AddTableCFDT(db)
+	if err != nil {
+		return err
+	}
+	return db.Save(&records).Error
+}
 
 type cfTestDetail struct {
 	testTimeStr string
 	asn         int
 	city        string
 	label       string
+	loc         string // location
 	VerifyResults
 }
 
@@ -117,6 +175,7 @@ func QueryData(sql string, dbFile string) *[]cfTestDetail {
 		err = rows.Scan(&tmpDetail.testTimeStr,
 			&tmpDetail.asn,
 			&tmpDetail.city,
+			&tmpDetail.loc,
 			&tmpDetail.ip,
 			&tmpDetail.label,
 			&tmpDetail.dtc,
@@ -158,6 +217,7 @@ func insertData(details []cfTestDetail, dbFile string) bool {
 	// TestTime
 	// ASN
 	// CITY
+	// LOC
 	// IP
 	// LABEL
 	// DTS
@@ -175,24 +235,25 @@ func insertData(details []cfTestDetail, dbFile string) bool {
 	// DLTD
 	for _, row := range details {
 		_, err = stmt.Exec(
-			&row.testTimeStr,
-			&row.asn,
-			&row.city,
-			&row.ip,
-			&row.label,
+			row.testTimeStr,
+			fmt.Sprintf("AS%v", &row.asn),
+			row.city,
+			row.loc,
+			*(row.ip),
+			row.label,
 			dtSource,
-			&row.dtc,
-			&row.dtpc,
-			&row.dtpr,
-			&row.da,
-			&row.dmi,
-			&row.dmx,
-			&row.dltc,
-			&row.dltpc,
-			&row.dltpr,
-			&row.dls,
-			&row.dlds,
-			&row.dltd,
+			row.dtc,
+			row.dtpc,
+			row.dtpr,
+			row.da,
+			row.dmi,
+			row.dmx,
+			row.dltc,
+			row.dltpc,
+			row.dltpr,
+			row.dls,
+			row.dlds,
+			row.dltd,
 		)
 		if err != nil {
 			log.Fatal(err)
