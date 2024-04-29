@@ -1,8 +1,6 @@
 package main
 
 import (
-	"database/sql"
-	"log"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -123,76 +121,3 @@ func AddCFDTRecords(db *gorm.DB, records []dBRecord) error {
 	}
 	return db.Save(&records).Error
 }
-
-type cfTestDetail struct {
-	testTimeStr string
-	asn         int
-	city        string
-	label       string
-	loc         string // location
-	VerifyResults
-}
-
-func openDB(dbFile string) *sql.DB {
-	if len(dbFile) == 0 {
-		dbFile = DBFile
-	}
-	db, err := sql.Open("sqlite", dbFile)
-	if err != nil {
-		log.Fatalf("%v\n", err)
-	}
-	return db
-}
-
-func dbExec(db *sql.DB, sql string, closeDB bool) *sql.Result {
-	if closeDB {
-		defer func() { _ = db.Close() }()
-	}
-	r, err := db.Exec(sql)
-	if err != nil {
-		log.Fatalf("%v\n", err)
-	}
-	return &r
-}
-
-func openTable(dbFile string) *sql.DB {
-	db := openDB(dbFile)
-	_ = dbExec(db, CreateTableSql, false)
-	return db
-}
-
-// func QueryData(sql string, dbFile string) *[]cfTestDetail {
-// 	db := openTable(dbFile)
-// 	cfDetails := make([]cfTestDetail, 0)
-// 	rows, err := db.Query(sql)
-// 	if err != nil {
-// 		log.Fatalf("%v\n", err)
-// 	}
-// 	defer func() { _ = rows.Close() }()
-// 	for rows.Next() {
-// 		var tmpDetail cfTestDetail
-// 		err = rows.Scan(&tmpDetail.testTimeStr,
-// 			&tmpDetail.asn,
-// 			&tmpDetail.city,
-// 			&tmpDetail.loc,
-// 			&tmpDetail.ip,
-// 			&tmpDetail.label,
-// 			&tmpDetail.dtc,
-// 			&tmpDetail.dtpc,
-// 			&tmpDetail.dtpr,
-// 			&tmpDetail.da,
-// 			&tmpDetail.dmi,
-// 			&tmpDetail.dmx,
-// 			&tmpDetail.dltc,
-// 			&tmpDetail.dltpc,
-// 			&tmpDetail.dltpr,
-// 			&tmpDetail.dls,
-// 			&tmpDetail.dlds,
-// 			&tmpDetail.dltd)
-// 		if err != nil {
-// 			log.Fatal(err)
-// 		}
-// 		cfDetails = append(cfDetails, tmpDetail)
-// 	}
-// 	return &cfDetails
-// }
