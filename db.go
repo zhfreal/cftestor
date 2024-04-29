@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 	"time"
 
@@ -162,106 +161,38 @@ func openTable(dbFile string) *sql.DB {
 	return db
 }
 
-func QueryData(sql string, dbFile string) *[]cfTestDetail {
-	db := openTable(dbFile)
-	cfDetails := make([]cfTestDetail, 0)
-	rows, err := db.Query(sql)
-	if err != nil {
-		log.Fatalf("%v\n", err)
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var tmpDetail cfTestDetail
-		err = rows.Scan(&tmpDetail.testTimeStr,
-			&tmpDetail.asn,
-			&tmpDetail.city,
-			&tmpDetail.loc,
-			&tmpDetail.ip,
-			&tmpDetail.label,
-			&tmpDetail.dtc,
-			&tmpDetail.dtpc,
-			&tmpDetail.dtpr,
-			&tmpDetail.da,
-			&tmpDetail.dmi,
-			&tmpDetail.dmx,
-			&tmpDetail.dltc,
-			&tmpDetail.dltpc,
-			&tmpDetail.dltpr,
-			&tmpDetail.dls,
-			&tmpDetail.dlds,
-			&tmpDetail.dltd)
-		if err != nil {
-			log.Fatal(err)
-		}
-		cfDetails = append(cfDetails, tmpDetail)
-	}
-	return &cfDetails
-}
-
-func insertData(details []cfTestDetail, dbFile string) bool {
-	if len(details) == 0 {
-		return true
-	}
-	db := openTable(dbFile)
-	tx, err := db.Begin()
-	if err != nil {
-		log.Fatal(err)
-	}
-	stmt, err := tx.Prepare(InsertDataSqlExp)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer func() {
-		_ = stmt.Close()
-	}()
-	// TestTime
-	// ASN
-	// CITY
-	// LOC
-	// IP
-	// LABEL
-	// DTS
-	// DTC
-	// DTPC
-	// DTPR
-	// DA
-	// DMI
-	// DMX
-	// DLTC
-	// DLTPC
-	// DLTPR
-	// DLSA
-	// DLDS
-	// DLTD
-	for _, row := range details {
-		_, err = stmt.Exec(
-			row.testTimeStr,
-			fmt.Sprintf("AS%v", &row.asn),
-			row.city,
-			row.loc,
-			*(row.ip),
-			row.label,
-			dtSource,
-			row.dtc,
-			row.dtpc,
-			row.dtpr,
-			row.da,
-			row.dmi,
-			row.dmx,
-			row.dltc,
-			row.dltpc,
-			row.dltpr,
-			row.dls,
-			row.dlds,
-			row.dltd,
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	err = tx.Commit()
-	if err != nil {
-		log.Fatal(err)
-	}
-	return true
-}
+// func QueryData(sql string, dbFile string) *[]cfTestDetail {
+// 	db := openTable(dbFile)
+// 	cfDetails := make([]cfTestDetail, 0)
+// 	rows, err := db.Query(sql)
+// 	if err != nil {
+// 		log.Fatalf("%v\n", err)
+// 	}
+// 	defer func() { _ = rows.Close() }()
+// 	for rows.Next() {
+// 		var tmpDetail cfTestDetail
+// 		err = rows.Scan(&tmpDetail.testTimeStr,
+// 			&tmpDetail.asn,
+// 			&tmpDetail.city,
+// 			&tmpDetail.loc,
+// 			&tmpDetail.ip,
+// 			&tmpDetail.label,
+// 			&tmpDetail.dtc,
+// 			&tmpDetail.dtpc,
+// 			&tmpDetail.dtpr,
+// 			&tmpDetail.da,
+// 			&tmpDetail.dmi,
+// 			&tmpDetail.dmx,
+// 			&tmpDetail.dltc,
+// 			&tmpDetail.dltpc,
+// 			&tmpDetail.dltpr,
+// 			&tmpDetail.dls,
+// 			&tmpDetail.dlds,
+// 			&tmpDetail.dltd)
+// 		if err != nil {
+// 			log.Fatal(err)
+// 		}
+// 		cfDetails = append(cfDetails, tmpDetail)
+// 	}
+// 	return &cfDetails
+// }
