@@ -218,6 +218,7 @@ var (
 	tlsClientID                             utls.ClientHelloID = utls.HelloChrome_Auto
 	userAgent                               string             = userAgentChrome
 	storeToFile, storeToDB, testAll, debug  bool
+	resolveLocalASNAndCity                  bool
 	resultFile, suffixLabel, dbFile         string
 	myLogger                                MyLogger
 	loggerLevel                             LogLevel
@@ -225,44 +226,41 @@ var (
 	dtTimeoutDuration                       time.Duration
 	dltTimeDurationMax                      time.Duration
 	verifyResultsMap                        = make(map[*string]VerifyResults)
-	// defaultASN                              = 0
-	// defaultCity                             = ""
-	myRand                            = rand.New(rand.NewSource(0))
-	titleRuntime                      *string
-	titlePre                          [2][4]string
-	titleTasksStat                    [2]*string
-	detailTitleSlice                  []string
-	resultStrSlice, debugStrSlice     [][]*string
-	termAll                           *tcell.Screen
-	titleStyle                        = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorWhite)
-	normalStyle                       = tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorWhite)
-	titleStyleCancel                  = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorGray)
-	contentStyle                      = tcell.StyleDefault
-	maxResultsDisplay                 = 10
-	maxDebugDisplay                   = 10
-	titleRuntimeRow                   = 0
-	titlePreRow                       = titleRuntimeRow + 2
-	titleCancelRow                    = titlePreRow + 3
-	titleTasksStatRow                 = titleCancelRow + 2
-	titleResultHintRow                = titleTasksStatRow + 2
-	titleResultRow                    = titleResultHintRow + 1
-	titleDebugHintRow                 = titleResultRow + maxResultsDisplay + 2
-	titleDebugRow                     = titleDebugHintRow + 1
-	titleCancel                       = "Press ESC to cancel!"
-	titleCancelConfirm                = "Press ENTER to confirm; Any other key to back!"
-	titleWaitQuit                     = "Waiting for exit..."
-	titleResultHint                   = "Result:"
-	titleDebugHint                    = "Debug Msg:"
-	cancelSigFromTerm                 = false
-	terminateConfirm                  = false
-	resultStatIndent                  = 9
-	dtThreadsNumLen, dltThreadsNumLen = 0, 0
-	tcellMode                         = false
-	fastMode                          = false
-	silenceMode                       = false
-	statInterval                      = statisticIntervalNT
-	// titleExitHint                          = "Press any key to exit!"
-	appArt string = `
+	myRand                                  = rand.New(rand.NewSource(0))
+	titleRuntime                            *string
+	titlePre                                [2][4]string
+	titleTasksStat                          [2]*string
+	detailTitleSlice                        []string
+	resultStrSlice, debugStrSlice           [][]*string
+	termAll                                 *tcell.Screen
+	titleStyle                                     = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorWhite)
+	normalStyle                                    = tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorWhite)
+	titleStyleCancel                               = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorGray)
+	contentStyle                                   = tcell.StyleDefault
+	maxResultsDisplay                              = 10
+	maxDebugDisplay                                = 10
+	titleRuntimeRow                                = 0
+	titlePreRow                                    = titleRuntimeRow + 2
+	titleCancelRow                                 = titlePreRow + 3
+	titleTasksStatRow                              = titleCancelRow + 2
+	titleResultHintRow                             = titleTasksStatRow + 2
+	titleResultRow                                 = titleResultHintRow + 1
+	titleDebugHintRow                              = titleResultRow + maxResultsDisplay + 2
+	titleDebugRow                                  = titleDebugHintRow + 1
+	titleCancel                                    = "Press ESC to cancel!"
+	titleCancelConfirm                             = "Press ENTER to confirm; Any other key to back!"
+	titleWaitQuit                                  = "Waiting for exit..."
+	titleResultHint                                = "Result:"
+	titleDebugHint                                 = "Debug Msg:"
+	cancelSigFromTerm                              = false
+	terminateConfirm                               = false
+	resultStatIndent                               = 9
+	dtThreadsNumLen, dltThreadsNumLen              = 0, 0
+	tcellMode                                      = false
+	fastMode                                       = false
+	silenceMode                                    = false
+	statInterval                                   = statisticIntervalNT
+	appArt                                  string = `
   ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
   ░█░░░█▀▀░░█░░█▀▀░▀▀█░░█░░█░█░█▀▄
   ░▀▀▀░▀░░░░▀░░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀
@@ -337,6 +335,7 @@ options:
     -e, --to-db                Write result to sqlite3 db file, disabled by default. If it's provided
                                and "-f|--db-file" is not provided, it will be named "ip.db" and
                                store in current directory.
+        --local-asn            get local ASN and city info, default false.  
     -f, --dbfile       string  Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
                                provided, it will be named "ip.db" and store in current directory.
     -g, --label        string  the label for a part of the result file's name and sqlite3 record. It's

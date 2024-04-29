@@ -82,6 +82,11 @@ func writeCSVResult(data []dBRecord, filePath string) {
 	// "ASN(Src)",
 	// "Location(CF)",
 	for _, tD := range data {
+		asn_str, city := "", ""
+		if tD.asn > 0 {
+			asn_str = fmt.Sprintf("AS%v", tD.asn)
+			city = tD.city
+		}
 		err = w.Write([]string{
 			tD.testTimeStr,
 			tD.ip,
@@ -96,8 +101,8 @@ func writeCSVResult(data []dBRecord, filePath string) {
 			fmt.Sprintf("%d", tD.dltc),
 			fmt.Sprintf("%d", tD.dltpc),
 			fmt.Sprintf("%.2f", tD.dltpr*100),
-			tD.city,
-			fmt.Sprintf("AS%v", tD.asn),
+			city,
+			asn_str,
 			tD.loc,
 		})
 		if err != nil {
@@ -370,10 +375,13 @@ func getCFCDNCgiTraceUrl() (baseurl string) {
 	return
 }
 
-func genDBRecords(verifyResultsSlice []VerifyResults) (dbRecords []dBRecord) {
+func genDBRecords(verifyResultsSlice []VerifyResults, getLocalAsnAndCity bool) (dbRecords []dBRecord) {
 	if len(verifyResultsSlice) > 0 {
 		dbRecords = make([]dBRecord, 0)
-		ASN, city, _ := getGeoInfoFromIncolumitas("")
+		ASN, city := 0, ""
+		if getLocalAsnAndCity {
+			ASN, city, _ = getGeoInfoFromIncolumitas("")
+		}
 		for _, v := range verifyResultsSlice {
 			loc := getGeoInfoFromCF(v.ip)
 			record := dBRecord{}

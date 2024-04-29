@@ -77,6 +77,7 @@ func init() {
 	flag.BoolVarP(&storeToFile, "to-file", "w", false, "Write result to csv file, disabled by default.")
 	flag.StringVarP(&resultFile, "outfile", "o", "", "File name of result. ")
 	flag.BoolVarP(&storeToDB, "to-db", "e", false, "Write result to sqlite3 db file.")
+	flag.BoolVar(&resolveLocalASNAndCity, "local-asn", false, "get local asn and city info")
 	flag.StringVarP(&dbFile, "dbfile", "f", "", "Sqlite3 db file name.")
 	flag.StringVarP(&suffixLabel, "label", "g", "", "the label for a part of the result file's name and sqlite3 record.")
 
@@ -868,7 +869,7 @@ func main() {
 		}
 		if !silenceMode {
 
-			records := genDBRecords(verifyResultsSlice)
+			records := genDBRecords(verifyResultsSlice, resolveLocalASNAndCity)
 
 			// write to csv file
 			if storeToFile {
