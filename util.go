@@ -39,7 +39,7 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
-func writeCSVResult(data []dBRecord, filePath string) {
+func writeCSVResult(data []DBRecord, filePath string) {
 	var fp = &os.File{}
 	var err error
 	var w = &csv.Writer{}
@@ -83,27 +83,27 @@ func writeCSVResult(data []dBRecord, filePath string) {
 	// "Location(CF)",
 	for _, tD := range data {
 		asn_str, city := "", ""
-		if tD.asn > 0 {
-			asn_str = fmt.Sprintf("AS%v", tD.asn)
-			city = tD.city
+		if tD.Asn > 0 {
+			asn_str = fmt.Sprintf("AS%v", tD.Asn)
+			city = tD.City
 		}
 		err = w.Write([]string{
-			tD.testTimeStr,
-			tD.ip,
-			fmt.Sprintf("%.2f", tD.dls),
-			fmt.Sprintf("%.0f", tD.da),
-			tD.ds,
-			fmt.Sprintf("%.2f", tD.dtpr*100),
-			fmt.Sprintf("%d", tD.dtc),
-			fmt.Sprintf("%d", tD.dtpc),
-			fmt.Sprintf("%.0f", tD.dmi),
-			fmt.Sprintf("%.0f", tD.dmx),
-			fmt.Sprintf("%d", tD.dltc),
-			fmt.Sprintf("%d", tD.dltpc),
-			fmt.Sprintf("%.2f", tD.dltpr*100),
+			tD.TestTimeStr,
+			tD.IP,
+			fmt.Sprintf("%.2f", tD.DLS),
+			fmt.Sprintf("%.0f", tD.DA),
+			tD.DS,
+			fmt.Sprintf("%.2f", tD.DTPR*100),
+			fmt.Sprintf("%d", tD.DTC),
+			fmt.Sprintf("%d", tD.DTPC),
+			fmt.Sprintf("%.0f", tD.DMI),
+			fmt.Sprintf("%.0f", tD.DMX),
+			fmt.Sprintf("%d", tD.DLTC),
+			fmt.Sprintf("%d", tD.DLTPC),
+			fmt.Sprintf("%.2f", tD.DLTPR*100),
 			city,
 			asn_str,
-			tD.loc,
+			tD.Loc,
 		})
 		if err != nil {
 			log.Fatalf("Write csv File %v failed with: %v", filePath, err)
@@ -375,35 +375,35 @@ func getCFCDNCgiTraceUrl() (baseurl string) {
 	return
 }
 
-func genDBRecords(verifyResultsSlice []VerifyResults, getLocalAsnAndCity bool) (dbRecords []dBRecord) {
+func genDBRecords(verifyResultsSlice []VerifyResults, getLocalAsnAndCity bool) (dbRecords []DBRecord) {
 	if len(verifyResultsSlice) > 0 {
-		dbRecords = make([]dBRecord, 0)
+		dbRecords = make([]DBRecord, 0)
 		ASN, city := 0, ""
 		if getLocalAsnAndCity {
 			ASN, city, _ = getGeoInfoFromIncolumitas("")
 		}
 		for _, v := range verifyResultsSlice {
 			loc := getGeoInfoFromCF(v.ip)
-			record := dBRecord{}
-			record.asn = ASN
-			record.city = city
-			record.loc = loc
-			record.label = suffixLabel
-			record.ds = dtSource
-			record.testTimeStr = v.testTime.Format("2006-01-02 15:04:05")
-			record.ip = *v.ip
-			record.dtc = v.dtc
-			record.dtpc = v.dtpc
-			record.dtpr = v.dtpr
-			record.da = v.da
-			record.dmi = v.dmi
-			record.dmx = v.dmx
-			record.dltc = v.dltc
-			record.dltpc = v.dltpc
-			record.dltpr = v.dltpr
-			record.dls = v.dls
-			record.dlds = v.dlds
-			record.dltd = v.dltd
+			record := DBRecord{}
+			record.Asn = ASN
+			record.City = city
+			record.Loc = loc
+			record.Label = suffixLabel
+			record.DS = dtSource
+			record.TestTimeStr = v.testTime.Format("2006-01-02 15:04:05")
+			record.IP = *v.ip
+			record.DTC = v.dtc
+			record.DTPC = v.dtpc
+			record.DTPR = v.dtpr
+			record.DA = v.da
+			record.DMI = v.dmi
+			record.DMX = v.dmx
+			record.DLTC = v.dltc
+			record.DLTPC = v.dltpc
+			record.DLTPR = v.dltpr
+			record.DLS = v.dls
+			record.DLDS = v.dlds
+			record.DLTD = v.dltd
 			dbRecords = append(dbRecords, record)
 		}
 	}
@@ -434,7 +434,7 @@ func printFinalStat(v []VerifyResults, dtOnly bool) {
 	w.Flush()
 }
 
-func saveDBRecords(dbRecords []dBRecord, dbFile string) {
+func saveDBRecords(dbRecords []DBRecord, dbFile string) {
 	if len(dbRecords) > 0 {
 		db, err := OpenSqlite(dbFile)
 		if err != nil {

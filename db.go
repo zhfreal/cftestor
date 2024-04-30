@@ -30,29 +30,29 @@ const (
 	TableName = "CFTD"
 )
 
-type dBRecord struct {
-	testTimeStr string  `gorm:"column:TestTime"`
-	asn         int     `gorm:"column:ASN"`
-	city        string  `gorm:"column:CITY"`
-	loc         string  `gorm:"column:LOC"`
-	ip          string  `gorm:"column:IP"`
-	label       string  `gorm:"column:LABEL"`
-	ds          string  `gorm:"column:DS"`
-	dtc         int     `gorm:"column:DTC"`
-	dtpc        int     `gorm:"column:DTPC"`
-	dtpr        float64 `gorm:"column:DTPR"`
-	da          float64 `gorm:"column:DA"`
-	dmi         float64 `gorm:"column:DMI"`
-	dmx         float64 `gorm:"column:DMX"`
-	dltc        int     `gorm:"column:DLTC"`
-	dltpc       int     `gorm:"column:DLTPC"`
-	dltpr       float64 `gorm:"column:DLTPR"`
-	dls         float64 `gorm:"column:DLS"`
-	dlds        int64   `gorm:"column:DLDS"`
-	dltd        float64 `gorm:"column:DLTD"`
+type DBRecord struct {
+	TestTimeStr string  `gorm:"column:TestTime"`
+	Asn         int     `gorm:"column:ASN"`
+	City        string  `gorm:"column:CITY"`
+	Loc         string  `gorm:"column:LOC"`
+	IP          string  `gorm:"column:IP"`
+	Label       string  `gorm:"column:LABEL"`
+	DS          string  `gorm:"column:DS"`
+	DTC         int     `gorm:"column:DTC"`
+	DTPC        int     `gorm:"column:DTPC"`
+	DTPR        float64 `gorm:"column:DTPR"`
+	DA          float64 `gorm:"column:DA"`
+	DMI         float64 `gorm:"column:DMI"`
+	DMX         float64 `gorm:"column:DMX"`
+	DLTC        int     `gorm:"column:DLTC"`
+	DLTPC       int     `gorm:"column:DLTPC"`
+	DLTPR       float64 `gorm:"column:DLTPR"`
+	DLS         float64 `gorm:"column:DLS"`
+	DLDS        int64   `gorm:"column:DLDS"`
+	DLTD        float64 `gorm:"column:DLTD"`
 }
 
-func (a *dBRecord) TableName() string {
+func (a *DBRecord) TableName() string {
 	return TableName
 }
 
@@ -70,10 +70,10 @@ func OpenSqlite(dbfile string) (*gorm.DB, error) {
 }
 
 func AddTableCFDT(db *gorm.DB) error {
-	return db.AutoMigrate(&dBRecord{})
+	return db.AutoMigrate(&DBRecord{})
 }
 
-func AddCFDTRecords(db *gorm.DB, records []dBRecord) error {
+func AddCFDTRecords(db *gorm.DB, records []DBRecord) error {
 	err := AddTableCFDT(db)
 	if err != nil {
 		return err
