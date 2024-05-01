@@ -236,6 +236,7 @@ func init() {
 	t_qty := big.NewInt(0)
 	for i := 0; i < len(srcIPS); i++ {
 		ips := strings.TrimSpace(*srcIPS[i])
+		ips = strings.Split(ips, "#")[0]
 		if isValidIPs(ips) {
 			ipr := NewIPRangeFromCIDR(&ips)
 			if ipr == nil {
