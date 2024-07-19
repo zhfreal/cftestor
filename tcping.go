@@ -67,7 +67,7 @@ import (
 
 // download test core
 func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, dltTimeDurationMax time.Duration,
-	dltCount int, interval int, dtOnly, evaluationDT bool) []singleResult {
+	dltCount int, interval int, dtOnly, evaluationDT bool, dtExpect int) []singleResult {
 	var allResult = make([]singleResult, 0)
 	_, port, err := net.SplitHostPort(*host)
 	// invalid host
@@ -109,10 +109,13 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			continue
 		}
-		currentResult.dTPassed = true
-		currentResult.dTDuration, currentResult.httpReqRspDur = tr.Stat()
+
 		// connection test only, won't do download test
 		if dtOnly {
+			if response.StatusCode == dtExpect {
+				currentResult.dTPassed = true
+				currentResult.dTDuration, currentResult.httpReqRspDur = tr.Stat()
+			}
 			allResult = append(allResult, currentResult)
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			// if we need evaluate DT, we'll try DT as many as possible
@@ -131,6 +134,8 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 			time.Sleep(time.Duration(interval) * time.Millisecond)
 			continue
 		}
+		currentResult.dTPassed = true
+		currentResult.dTDuration, currentResult.httpReqRspDur = tr.Stat()
 		// start timing for download test
 		readAt := time.Now()
 		timeEndExpected := readAt.Add(dltTimeDurationMax)
@@ -183,7 +188,7 @@ func downloadHandler(host, tUrl *string, httpRspTimeoutDuration time.Duration, d
 
 func downloadWorker(chanIn chan *string, chanOut chan singleVerifyResult, chanOnGoing chan int, wg *sync.WaitGroup,
 	tUrl *string, httpRspTimeoutDuration time.Duration, dltTimeDurationMax time.Duration,
-	dltCount int, dtOnly, evaluationDT bool) {
+	dltCount int, dtOnly, evaluationDT bool, dtExpect int) {
 	defer (*wg).Done()
 LOOP:
 	for {
@@ -198,7 +203,7 @@ LOOP:
 		// push an element to chanOnGoing, means that there is a test ongoing.
 		// push it immediately once we confirm it's a normal task
 		chanOnGoing <- workOnGoing
-		tResultSlice := downloadHandler(host, tUrl, httpRspTimeoutDuration, dltTimeDurationMax, dltCount, interval, dtOnly, evaluationDT)
+		tResultSlice := downloadHandler(host, tUrl, httpRspTimeoutDuration, dltTimeDurationMax, dltCount, interval, dtOnly, evaluationDT, dtExpect)
 		tVerifyResult := singleVerifyResult{time.Now(), *host, tResultSlice}
 		chanOut <- tVerifyResult
 		// pull out an element from chanOnGoing, means that a test work is finished.

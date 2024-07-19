@@ -47,6 +47,7 @@ func init() {
 	flag.StringSliceVarP(&portStrSlice, "port", "p", []string{}, "Port to test, could be specific one or more ports at same time.")
 	flag.StringVar(&hostName, "hostname", DefaultTestHost, "Hostname for DT test.")
 	flag.StringVar(&dtVia, "dt-via", "https", "DT via https rather than SSL/TLS shaking hands.")
+	flag.IntVar(&dtHttpExpect, "dt-http-expect", 200, "Expect HTTP status code for DT test.")
 	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https rather than SSL/TLS shaking hands.")
 	flag.StringVar(&dtUrl, "dt-url", defaultDTUrl, "Specific the url while DT via https.")
 
@@ -839,7 +840,7 @@ func main() {
 		for i := 0; i < dtWorkerThread; i++ {
 			if dtHttps {
 				go downloadWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &dtUrl,
-					dtTimeoutDuration, -1, dtCount, true, enableDTEvaluation)
+					dtTimeoutDuration, -1, dtCount, true, enableDTEvaluation, dtHttpExpect)
 			} else {
 				go sslDTWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, enableDTEvaluation)
 			}
@@ -851,7 +852,7 @@ func main() {
 	if !dtOnly {
 		for i := 0; i < dltWorkerThread; i++ {
 			go downloadWorker(dltTaskChan, dltResultChan, dltOnGoingChan, &wg, &dltUrl,
-				httpRspTimeoutDuration, dltTimeDurationMax, dltCount, false, false)
+				httpRspTimeoutDuration, dltTimeDurationMax, dltCount, false, false, dtHttpExpect)
 			wg.Add(1)
 		}
 	}
