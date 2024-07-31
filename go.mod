@@ -5,10 +5,10 @@ go 1.22
 require (
 	github.com/gdamore/tcell/v2 v2.7.4
 	github.com/glebarez/sqlite v1.11.0
-	github.com/mattn/go-runewidth v0.0.15
+	github.com/mattn/go-runewidth v0.0.16
 	github.com/refraction-networking/utls v1.6.7
 	github.com/spf13/pflag v1.0.5
-	github.com/tidwall/gjson v1.17.1
+	github.com/tidwall/gjson v1.17.3
 	golang.org/x/net v0.27.0
 	gorm.io/gorm v1.25.11
 )
@@ -34,8 +34,8 @@ require (
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/term v0.22.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
-	modernc.org/libc v1.55.2 // indirect
+	modernc.org/libc v1.55.6 // indirect
 	modernc.org/mathutil v1.6.0 // indirect
 	modernc.org/memory v1.8.0 // indirect
-	modernc.org/sqlite v1.30.2 // indirect
+	modernc.org/sqlite v1.31.1 // indirect
 )
