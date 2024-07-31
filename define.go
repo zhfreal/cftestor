@@ -12,21 +12,21 @@ import (
 )
 
 const (
-	workerStopSignal    = "0"
-	workOnGoing         = 1
-	controllerInterval  = 100               // in millisecond
-	statisticIntervalT  = 1000              // in millisecond, valid in tcell mode
-	statisticIntervalNT = 10000             // in millisecond, valid in non-tcell mode
-	quitWaitingTime     = 3                 // in second
-	downloadBufferSize  = 1024 * 64         // in byte
-	fileDefaultSize     = 1024 * 1024 * 300 // in byte
-	downloadSizeMin     = 1024 * 1024       // in byte
-	defaultDLTUrl       = "https://cf.9999876.xyz/500mb.dat"
-	defaultDTUrl        = "https://cf.9999876.xyz/test.dat"
-	userAgentChrome     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-	userAgentFirefox    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
-	userAgentEdge       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-	userAgentSafari     = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15"
+	workerStopSignal        = "0"
+	workOnGoing         int = 1
+	controllerInterval      = 100               // in millisecond
+	statisticIntervalT      = 1000              // in millisecond, valid in tcell mode
+	statisticIntervalNT     = 10000             // in millisecond, valid in non-tcell mode
+	quitWaitingTime         = 3                 // in second
+	downloadBufferSize      = 1024 * 64         // in byte
+	fileDefaultSize         = 1024 * 1024 * 300 // in byte
+	downloadSizeMin         = 1024 * 1024       // in byte
+	defaultDLTUrl           = "https://cf.9999876.xyz/500mb.dat"
+	defaultDTUrl            = "https://cf.9999876.xyz/test.dat"
+	userAgentChrome         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+	userAgentFirefox        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
+	userAgentEdge           = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+	userAgentSafari         = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15"
 
 	defaultDBFile       = "ip.db"
 	DefaultTestHost     = "cf.9999876.xyz"
@@ -213,7 +213,7 @@ var (
 	dtEvaluationDTPR, dltEvaluationSpeed    float64
 	dtHttps, disableDownload                bool
 	dtVia                                   string
-	dtHttpExpect                            int
+	dtHttpRspReturnCodeExpected             int
 	enableDTEvaluation                      bool
 	ipv4Mode, ipv6Mode, dtOnly, dltOnly     bool
 	tlsClientID                             utls.ClientHelloID = utls.HelloChrome_Auto
@@ -225,7 +225,7 @@ var (
 	loggerLevel                             LogLevel
 	httpRspTimeoutDuration                  time.Duration
 	dtTimeoutDuration                       time.Duration
-	dltTimeDurationMax                      time.Duration
+	dltDurationInTotal                      time.Duration
 	verifyResultsMap                        = make(map[*string]VerifyResults)
 	myRand                                  = rand.New(rand.NewSource(0))
 	titleRuntime                            *string
@@ -279,23 +279,23 @@ options:
                                         These ports should be working via SSL/TLS/HTTPS protocol,  default 443.
     -m, --dt-thread    int              Number of concurrent threads for Delay Test(DT). How many IPs can
                                         be perform DT at the same time. Default 20 threads.
-    -t, --dt-timeout   int              Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS
-                                        or HTTPS request and response should be finished before timeout.
-                                        It should not be less than "-k|--evaluate-dt-delay", It should be
-                                        longer when we perform https connections test by "-dt-via-https"
-                                        than when we perform SSL/TLS test by default.
+    -t, --dt-timeout   int              Timeout for single DT, unit ms, default 2000ms for SSL mode, and 5000ms
+                                        for HTTPS mode. A single SSL/TLS or HTTPS request and response should
+                                        be finished before timeout. It should not be less than
+                                        "-k|--evaluate-dt-delay", It should be bigger --dt-via https than --dt-via
+                                        ssl.
     -c, --dt-count     int              Tries of DT for a IP, default 2.
-        --hostname     string           Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via https"
-                                        is not provided.
+        --hostname     string           Hostname for DT test. It's valid when "--dt-only" is no and
+                                        "--dt-via https" is not provided.
         --dt-via https|tls|ssl          DT via https or SSL/TLS shaking hands, "--dt-via <https|tls|ssl>"
                                         default https.
-        --dt-http-expect <status_code>  Expect HTTP status code for DT test while we do '--dt-via https'.
+        --dt-expect-code <status_code>  HTTP status code expected for DT test while we do '--dt-via https'.
                                         Default 200.
         --dt-url       string           Specify test URL for DT.
         --ev-dt                         Evaluate DT, we'll try "-c|--dt-count <value>" to evaluate delay;
                                         if we don't turn this on, we'll stop DT after we got the first
-                                        successfull DT; if we turn this on, we'll evaluate the test result
-                                        through average delay of singe DT and statistic of all successfull
+                                        successful DT; if we turn this on, we'll evaluate the test result
+                                        through average delay of singe DT and statistic of all successful
                                         DT by these two thresholds "-k|--evaluate-dt-delay <value>" and
                                         "-S|--evaluate-dt-dtpr <value>", default turn off.
     -k, --ev-dt-delay  int              single DT's delay should not bigger than this, unit ms, default 600ms.
@@ -332,14 +332,14 @@ options:
     -w, --to-file                       Write result to csv file, disabled by default. If it is provided and
                                         "-o|--result-file <value>" is not provided, the result file will be named
                                         as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -o, --outfile      string           File name of result. If it don't provided and "-w|--store-to-file"
+    -o, --out-file      string          File name of result. If it don't provided and "-w|--store-to-file"
                                         is provided, the result file will be named as
                                         "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
     -e, --to-db                         Write result to sqlite3 db file, disabled by default. If it's provided
                                         and "-f|--db-file" is not provided, it will be named "ip.db" and
                                         store in current directory.
         --local-asn                     get local ASN and city info, default false.  
-    -f, --dbfile       string           Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
+    -f, --db-file       string          Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
                                         provided, it will be named "ip.db" and store in current directory.
     -g, --label        string           the label for a part of the result file's name and sqlite3 record. It's
                                         hostname from "--hostname" or "-u|--url" by default.

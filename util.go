@@ -694,6 +694,21 @@ func MinInt(a, b int, num ...int) (t int) {
 	return
 }
 
+func retrieveSome(amount int) (targetIPs []*string) {
+	var t_target = []*string{}
+	targetIPs = append(targetIPs, retrieveHosts(amount)...)
+	t_target = append(t_target, retrieveIPsFromIPR(amount)...)
+	for _, ipStr := range t_target {
+		for _, port := range ports {
+			host := genHostFromIPStrPort(*ipStr, port)
+			if len(host) > 0 {
+				targetIPs = append(targetIPs, &host)
+			}
+		}
+	}
+	return
+}
+
 // we get target IPs based on <amount>. We will get amount of <amount> from every IPR in srcIPR and  from srcIPRsCache
 func retrieveIPsFromIPR(amount int) (targetIPs []*string) {
 	if amount < 0 || amount < retrieveCount {
@@ -800,10 +815,10 @@ func splitHost(host string) (bool, string, int) {
 
 func genHostFromIPStrPort(ipStr string, port int) (connStr string) {
 	if !isValidIPs(ipStr) {
-		return ipStr
+		return ""
 	}
 	if port < 1 || port > 65535 {
-		return
+		return ""
 	}
 	connStr = net.JoinHostPort(ipStr, strconv.Itoa(port))
 	return
