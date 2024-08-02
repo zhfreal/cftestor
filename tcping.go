@@ -115,6 +115,7 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 						// Apply the filter function
 						if strings.HasPrefix(line, "loc=") {
 							loc = strings.TrimPrefix(line, "loc=")
+							break
 						}
 					}
 				}
@@ -198,7 +199,7 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 		cancel()
 		// if we need evaluate DT, we'll try DT as many as possible
 		// if we don't, we'll stop after the first successfull try
-		if !dltOnly && t_failure_counter >= max_failure {
+		if doDTOnly && enableDTEvaluation && t_failure_counter >= max_failure {
 			break
 		}
 		time.Sleep(time.Duration(interval) * time.Millisecond)
