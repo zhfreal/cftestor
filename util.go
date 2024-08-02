@@ -883,6 +883,9 @@ func mean(v []float64) float64 {
 }
 
 func variance(v []float64) float64 {
+	if len(v) <= 1 {
+		return 0
+	}
 	var res float64 = 0
 	var m = mean(v)
 	var n int = len(v)
@@ -893,6 +896,9 @@ func variance(v []float64) float64 {
 }
 
 func std(v []float64) float64 {
+	if len(v) <= 1 {
+		return 0
+	}
 	return roundFloat(math.Sqrt(variance(v)), 2)
 }
 
