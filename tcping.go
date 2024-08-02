@@ -102,6 +102,7 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 		response, err := client.Do(tReq)
 		// connection is failed(network error), won't continue
 		if err != nil || response == nil {
+			t_failure_counter += 1
 			allResult = append(allResult, currentResult)
 		} else {
 			// resolve loc
@@ -129,14 +130,6 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 				allResult = append(allResult, currentResult)
 				cancel()
 				tr.CloseIdleConnections()
-				// if we need evaluate DT, we'll try DT as many as possible
-				// if we don't, we'll stop after the first successfull try
-				if enableDTEvaluation && t_failure_counter <= max_failure {
-					time.Sleep(time.Duration(interval) * time.Millisecond)
-					continue
-				} else {
-					break
-				}
 			} else {
 				// if download test permitted, set DownloadPerformed to true
 				currentResult.dLTWasDone = true
@@ -203,6 +196,11 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 			}
 		}
 		cancel()
+		// if we need evaluate DT, we'll try DT as many as possible
+		// if we don't, we'll stop after the first successfull try
+		if !dltOnly && t_failure_counter >= max_failure {
+			break
+		}
 		time.Sleep(time.Duration(interval) * time.Millisecond)
 	}
 	// just get the last record in allResult while enable dtOnly and disable enableDTEvaluation
