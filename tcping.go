@@ -164,7 +164,14 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 						// there is an error shown and it's not io.EOF(read ended)
 						// don't download anymore
 						if tErr != nil {
-							if tErr == io.EOF {
+							// timeout, context deadline exceeded, it should be a successful TEST
+							// because it can't fetch all content in a short time doing DLT.
+							// it most cases, it will end with a timeout error.
+							if err, ok := tErr.(net.Error); ok && err.Timeout() {
+								if contentRead > 0 {
+									downloadSuccess = true
+								}
+							} else if tErr == io.EOF {
 								downloadSuccess = true
 							} else {
 								/*myLogger.Debug(fmt.Sprintf("FullAddress: %s, Round %d, error: %v!, %5.2f", fullAddress, i, err,

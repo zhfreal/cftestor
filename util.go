@@ -481,7 +481,7 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 			tDuration := float64(v.dTDuration) / float64(time.Millisecond)
 			// if pingViaHttps, it should add the http duration
 			if dtHttps {
-				tDuration = +float64(v.httpReqRspDur) / float64(time.Millisecond)
+				tDuration += float64(v.httpReqRspDur) / float64(time.Millisecond)
 			}
 			tDurationsAll += tDuration
 			t_delays_slice = append(t_delays_slice, tDuration)
