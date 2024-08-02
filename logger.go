@@ -282,8 +282,10 @@ func (myLogger *MyLogger) PrintDetails(logLvl LogLevel, v []VerifyResults) {
 		myLogger.Printf("Delay(ms):%.0f", lc[i].da)
 		if !dltOnly {
 			myLogger.Printf("%sStab.(%%):%.2f", myLogger.indent, lc[i].dtpr*100)
-			myLogger.Printf("%sVar.:%.2f", myLogger.indent, lc[i].daVar)
-			myLogger.Printf("%sStd.:%.2f", myLogger.indent, lc[i].daStd)
+			if enableStdEv {
+				myLogger.Printf("%sVar.:%.2f", myLogger.indent, lc[i].daVar)
+				myLogger.Printf("%sStd.:%.2f", myLogger.indent, lc[i].daStd)
+			}
 		}
 	}
 	myLogger.Println()

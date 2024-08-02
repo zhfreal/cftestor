@@ -235,34 +235,34 @@ var (
 	detailTitleSlice                        []string
 	resultStrSlice, debugStrSlice           [][]*string
 	termAll                                 *tcell.Screen
-	titleStyle                                     = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorWhite)
-	normalStyle                                    = tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorWhite)
-	titleStyleCancel                               = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorGray)
-	contentStyle                                   = tcell.StyleDefault
-	maxResultsDisplay                              = 10
-	maxDebugDisplay                                = 10
-	titleRuntimeRow                                = 0
-	titlePreRow                                    = titleRuntimeRow + 2
-	titleCancelRow                                 = titlePreRow + 3
-	titleTasksStatRow                              = titleCancelRow + 2
-	titleResultHintRow                             = titleTasksStatRow + 2
-	titleResultRow                                 = titleResultHintRow + 1
-	titleDebugHintRow                              = titleResultRow + maxResultsDisplay + 2
-	titleDebugRow                                  = titleDebugHintRow + 1
-	titleCancel                                    = "Press ESC to cancel!"
-	titleCancelConfirm                             = "Press ENTER to confirm; Any other key to back!"
-	titleWaitQuit                                  = "Waiting for exit..."
-	titleResultHint                                = "Result:"
-	titleDebugHint                                 = "Debug Msg:"
-	cancelSigFromTerm                              = false
-	terminateConfirm                               = false
-	resultStatIndent                               = 9
-	dtThreadsNumLen, dltThreadsNumLen              = 0, 0
-	tcellMode                                      = false
-	fastMode                                       = false
-	silenceMode                                    = false
-	statInterval                                   = statisticIntervalNT
-	appArt                                  string = `
+	titleStyle                              = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorWhite)
+	normalStyle                             = tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorWhite)
+	titleStyleCancel                        = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorGray)
+	contentStyle                            = tcell.StyleDefault
+	maxResultsDisplay                       = 10
+	maxDebugDisplay                         = 10
+	titleRuntimeRow                         = 0
+	titlePreRow                             = titleRuntimeRow + 2
+	titleCancelRow                          = titlePreRow + 3
+	titleTasksStatRow                       = titleCancelRow + 2
+	titleResultHintRow                      = titleTasksStatRow + 2
+	titleResultRow                          = titleResultHintRow + 1
+	titleDebugHintRow                       = titleResultRow + maxResultsDisplay + 2
+	titleDebugRow                           = titleDebugHintRow + 1
+	titleCancel                             = "Press ESC to cancel!"
+	titleCancelConfirm                      = "Press ENTER to confirm; Any other key to back!"
+	titleWaitQuit                           = "Waiting for exit..."
+	titleResultHint                         = "Result:"
+	titleDebugHint                          = "Debug Msg:"
+	cancelSigFromTerm                       = false
+	terminateConfirm                        = false
+	resultStatIndent                        = 9
+	dtThreadsNumLen, dltThreadsNumLen       = 0, 0
+	tcellMode                               = false
+	fastMode                                = false
+	silenceMode                             = false
+	// statInterval                                   = statisticIntervalNT
+	appArt string = `
   ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
   ░█░░░█▀▀░░█░░█▀▀░▀▀█░░█░░█░█░█▀▄
   ░▀▀▀░▀░░░░▀░░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀
