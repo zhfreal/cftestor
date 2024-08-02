@@ -446,7 +446,7 @@ func init() {
 		debugStrSlice = make([][]*string, 0)
 		detailTitleSlice = make([]string, 0)
 		// fix interval
-		statInterval = statisticIntervalT
+		// statInterval = statisticIntervalT
 		// fix rows when --dlt-only mode
 		if dltOnly {
 			titleCancelRow -= 1
