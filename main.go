@@ -61,6 +61,7 @@ func init() {
 	flag.BoolVar(&enableDTEvaluation, "ev-dt", false, "Evaluate DT test result. Default as disabled")
 	flag.IntVarP(&dtEvaluationDelay, "ev-dt-delay", "k", 600, "Delay for DT is beyond this one will be cause failure, unit ms, default 600ms.")
 	flag.Float64VarP(&dtEvaluationDTPR, "ev-dt-dtpr", "S", 100, "The DT successful rate below this will be cause failure, default 100%.")
+	flag.Float64Var(&dtStdExp, "ev-dt-std", 0, "expect standard deviation while do DT evaluation.")
 	flag.Float64VarP(&dltEvaluationSpeed, "speed", "l", 6000, "Download speed should not less than this, Unit KB/s, default 6000KB/s.")
 	flag.IntVarP(&resultMin, "result", "r", 10, "The total IPs qualified limitation, default 10")
 
@@ -115,6 +116,11 @@ func init() {
 	if dtOnly && dltOnly {
 		println("\"--dt-only\" and \"--dlt-only\" should not be provided at the same time!")
 		os.Exit(1)
+	}
+	if dtEvaluationDTPR > 100 {
+		dtEvaluationDTPR = 100
+	} else if dtEvaluationDTPR < 0 {
+		dtEvaluationDTPR = 0
 	}
 	dtVia = strings.ToLower(dtVia)
 	if dtVia == "https" {
@@ -373,6 +379,10 @@ func init() {
 					os.Exit(0)
 				}
 			}
+			// when --ev-dt is enabled and dtStdExp is greater than 0, we do standard deviation evaluation for delay
+			if dtStdExp > 0 {
+				enableStdEv = true
+			}
 		}
 		dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
 
@@ -514,18 +524,18 @@ LOOP:
 			if t_dt_sources_len == 0 {
 				break LOOP
 			}
-			// print stat
-			if debug {
-				displayStat(overAllStat{
-					dtTasksDone:  dtDoneTasks,
-					dtOnGoing:    0,
-					dtCached:     len(dtTaskCache),
-					dltTasksDone: dltDoneTasks,
-					dltOnGoing:   0,
-					dltCached:    len(dltTaskCache),
-					resultCount:  len(verifyResultsMap),
-				})
-			}
+			// // print stat
+			// if debug {
+			// 	displayStat(overAllStat{
+			// 		dtTasksDone:  dtDoneTasks,
+			// 		dtOnGoing:    0,
+			// 		dtCached:     len(dtTaskCache),
+			// 		dltTasksDone: dltDoneTasks,
+			// 		dltOnGoing:   0,
+			// 		dltCached:    len(dltTaskCache),
+			// 		resultCount:  len(verifyResultsMap),
+			// 	})
+			// }
 			// put task
 			go func() {
 				for i := 0; i < t_dt_sources_len; i++ {
@@ -539,7 +549,10 @@ LOOP:
 				// if ip not test then put it into dltTaskChan
 				dtDoneTasks += 1
 				var tVerifyResult = singleResultStatistic(dtResult, false)
-				if tVerifyResult.da > 0.0 && tVerifyResult.da <= float64(dtEvaluationDelay) && tVerifyResult.dtpr*100.0 >= float64(dtEvaluationDTPR) {
+				if tVerifyResult.da > 0.0 &&
+					tVerifyResult.da <= float64(dtEvaluationDelay) &&
+					tVerifyResult.dtpr*100.0 >= float64(dtEvaluationDTPR) &&
+					(!enableStdEv || (enableStdEv && tVerifyResult.daStd <= dtStdExp)) {
 					if !dtOnly { // there are download test ongoing
 						// put ping test result to cacheResultMap for later
 						cacheResultMap[*tVerifyResult.ip] = tVerifyResult
@@ -591,17 +604,17 @@ LOOP:
 			}
 			t_dlt_sources_len := len(dltTaskCache)
 			// print stat
-			if debug {
-				displayStat(overAllStat{
-					dtTasksDone:  dtDoneTasks,
-					dtOnGoing:    0,
-					dtCached:     len(dtTaskCache),
-					dltTasksDone: dltDoneTasks,
-					dltOnGoing:   0,
-					dltCached:    t_dlt_sources_len,
-					resultCount:  len(verifyResultsMap),
-				})
-			}
+			// if debug {
+			// 	displayStat(overAllStat{
+			// 		dtTasksDone:  dtDoneTasks,
+			// 		dtOnGoing:    0,
+			// 		dtCached:     len(dtTaskCache),
+			// 		dltTasksDone: dltDoneTasks,
+			// 		dltOnGoing:   0,
+			// 		dltCached:    t_dlt_sources_len,
+			// 		resultCount:  len(verifyResultsMap),
+			// 	})
+			// }
 			// put task
 			go func() {
 				for i := 0; i < t_dlt_sources_len; i++ {

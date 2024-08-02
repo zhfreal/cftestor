@@ -275,7 +275,8 @@ func updateDetailList(src [][]*string, v []VerifyResults, limit int) (dst [][]*s
 		t_str_list := make([]*string, 0)
 		// t_v1 := fmt.Sprintf("%v", *tv.ip)
 		// t_str_list = append(t_str_list, &t_v1)
-		t_str_list = append(t_str_list, tv.ip)
+		tStr := fmt.Sprintf("%s#%s", *tv.ip, *tv.loc)
+		t_str_list = append(t_str_list, &tStr)
 		// show speed only when it performed DLT
 		if !dtOnly {
 			t_v2 := fmt.Sprintf("%.2f", tv.dls)

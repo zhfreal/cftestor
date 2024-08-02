@@ -21,16 +21,16 @@ type UTLSTransport struct {
 	tr1 *http.Transport
 	tr2 *http2.Transport
 
-	mu           sync.RWMutex
-	clientHello  utls.ClientHelloID
-	hostWithPort string
-	startAt      time.Time
-	timeout      time.Duration
-	tlsShakedAt  time.Time
-	responseAt   time.Time
-	conn         net.Conn
-	h2Conn       *http2.ClientConn
-	tlsConn      *utls.UConn
+	mu             sync.RWMutex
+	clientHello    utls.ClientHelloID
+	hostWithPort   string
+	startAt        time.Time
+	timeout        time.Duration
+	tlsHandShookAt time.Time
+	responseAt     time.Time
+	conn           net.Conn
+	h2Conn         *http2.ClientConn
+	tlsConn        *utls.UConn
 }
 
 func (b *UTLSTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -64,11 +64,11 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 	// defer conn.Close() // nolint
 
 	b.tlsConn, err = b.tlsConnect(b.conn, req)
-	b.tlsShakedAt = time.Now()
+	b.tlsHandShookAt = time.Now()
 	if err != nil {
 		return nil, fmt.Errorf("tls connect fail: %w", err)
 	}
-	b.tlsShakedAt = time.Now()
+	b.tlsHandShookAt = time.Now()
 	httpVersion := b.tlsConn.ConnectionState().NegotiatedProtocol
 	resp := &http.Response{}
 	switch httpVersion {
@@ -119,7 +119,7 @@ func (b *UTLSTransport) tlsConnect(conn net.Conn, req *http.Request) (*utls.UCon
 }
 
 func (b *UTLSTransport) Stat() (time.Duration, time.Duration) {
-	return b.tlsShakedAt.Sub(b.startAt), b.responseAt.Sub(b.tlsShakedAt)
+	return b.tlsHandShookAt.Sub(b.startAt), b.responseAt.Sub(b.tlsHandShookAt)
 }
 
 func (b *UTLSTransport) SetClientHello(hello utls.ClientHelloID) {

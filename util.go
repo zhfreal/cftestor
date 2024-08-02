@@ -383,15 +383,16 @@ func genDBRecords(verifyResultsSlice []VerifyResults, getLocalAsnAndCity bool) (
 			ASN, city, _ = getGeoInfoFromIncolumitas("")
 		}
 		for _, v := range verifyResultsSlice {
-			loc := getGeoInfoFromCF(v.ip)
 			record := DBRecord{}
 			record.Asn = ASN
 			record.City = city
-			record.Loc = loc
 			record.Label = suffixLabel
 			record.DS = dtSource
 			record.TestTimeStr = v.testTime.Format("2006-01-02 15:04:05")
 			record.IP = *v.ip
+			if len(*v.loc) == 0 {
+				record.Loc = getGeoInfoFromCF(v.ip)
+			}
 			record.DTC = v.dtc
 			record.DTPC = v.dtpc
 			record.DTPR = v.dtpr
@@ -424,10 +425,14 @@ func printFinalStat(v []VerifyResults, dtOnly bool) {
 	// close line, LatestLogLength should be 0
 	fmt.Println()
 	for i := 0; i < len(v); i++ {
+		t_ip := *v[i].ip
+		if len(*v[i].loc) > 0 {
+			t_ip = fmt.Sprintf("%s#%s", t_ip, *v[i].loc)
+		}
 		if !dtOnly {
-			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), *v[i].ip, v[i].dls, v[i].da, v[i].dtpr*100)
+			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), t_ip, v[i].dls, v[i].da, v[i].dtpr*100)
 		} else {
-			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), *v[i].ip, v[i].da, v[i].dtpr*100)
+			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), t_ip, v[i].da, v[i].dtpr*100)
 		}
 	}
 	fmt.Println()
@@ -460,6 +465,7 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 	tVerifyResult.testTime = out.testTime
 	tIP := out.host
 	tVerifyResult.ip = &tIP
+	tVerifyResult.loc = &out.loc
 	if len(out.resultSlice) == 0 {
 		return tVerifyResult
 	}
@@ -467,6 +473,7 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 	var tDurationsAll = 0.0
 	var tDownloadDurations float64
 	var tDownloadSizes int64
+	var t_delays_slice = []float64{}
 	for _, v := range out.resultSlice {
 		if v.dTPassed {
 			tVerifyResult.dtpc += 1
@@ -477,6 +484,7 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 				tDuration = +float64(v.httpReqRspDur) / float64(time.Millisecond)
 			}
 			tDurationsAll += tDuration
+			t_delays_slice = append(t_delays_slice, tDuration)
 			if tDuration > tVerifyResult.dmx {
 				tVerifyResult.dmx = tDuration
 			}
@@ -493,6 +501,11 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 	if tVerifyResult.dtpc > 0 {
 		tVerifyResult.da = tDurationsAll / float64(tVerifyResult.dtpc)
 		tVerifyResult.dtpr = float64(tVerifyResult.dtpc) / float64(tVerifyResult.dtc)
+		// just calculate variance and standard deviation when we ev-dt enabled
+		if enableStdEv {
+			tVerifyResult.daVar = variance(t_delays_slice)
+			tVerifyResult.daStd = std(t_delays_slice)
+		}
 	}
 	// we statistic download speed while the downloaded file size is greater than DownloadSizeMin
 	if statisticDownload && tVerifyResult.dltpc > 0 && tDownloadSizes > downloadSizeMin {
@@ -636,7 +649,11 @@ func displayDetails(isResult, isSilence bool, v []VerifyResults) {
 		// myLogger.PrintClearIPs(v)
 		if isSilence {
 			for _, t_v := range v {
-				myLogger.Println(*t_v.ip)
+				tStr := *t_v.ip
+				if len(*t_v.loc) > 0 {
+					tStr = fmt.Sprintf("%s#%s", tStr, *t_v.loc)
+				}
+				myLogger.Println(tStr)
 			}
 		} else {
 			myLogger.PrintDetails(LogLevel(logLevelInfo), v)
@@ -854,4 +871,31 @@ func uniqueIntSlice(strSlice []int) []int {
 		}
 	}
 	return list
+}
+func mean(v []float64) float64 {
+	var res float64 = 0
+	var n int = len(v)
+	for i := 0; i < n; i++ {
+		res += v[i]
+	}
+	return res / float64(n)
+}
+
+func variance(v []float64) float64 {
+	var res float64 = 0
+	var m = mean(v)
+	var n int = len(v)
+	for i := 0; i < n; i++ {
+		res += (v[i] - m) * (v[i] - m)
+	}
+	return res / float64(n-1)
+}
+
+func std(v []float64) float64 {
+	return roundFloat(math.Sqrt(variance(v)), 2)
+}
+
+func roundFloat(val float64, precision uint) float64 {
+	ratio := math.Pow(10, float64(precision))
+	return math.Round(val*ratio) / ratio
 }

@@ -22,7 +22,7 @@ const (
 	fileDefaultSize         = 1024 * 1024 * 300 // in byte
 	downloadSizeMin         = 1024 * 1024       // in byte
 	defaultDLTUrl           = "https://cf.9999876.xyz/500mb.dat"
-	defaultDTUrl            = "https://cf.9999876.xyz/test.dat"
+	defaultDTUrl            = "https://cf.9999876.xyz/cdn-cgi/trace"
 	userAgentChrome         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 	userAgentFirefox        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
 	userAgentEdge           = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -208,6 +208,7 @@ var (
 	dltDurMax, dltWorkerThread              int
 	dltCount, resultMin                     int
 	interval, dtEvaluationDelay, dtTimeout  int
+	dtStdExp                                float64
 	hostName, dltUrl, dtSource, dtUrl       string
 	dltTimeout                              int
 	dtEvaluationDTPR, dltEvaluationSpeed    float64
@@ -219,7 +220,7 @@ var (
 	tlsClientID                             utls.ClientHelloID = utls.HelloChrome_Auto
 	userAgent                               string             = userAgentChrome
 	storeToFile, storeToDB, testAll, debug  bool
-	resolveLocalASNAndCity                  bool
+	resolveLocalASNAndCity, enableStdEv     bool
 	resultFile, suffixLabel, dbFile         string
 	myLogger                                MyLogger
 	loggerLevel                             LogLevel
@@ -301,6 +302,9 @@ options:
     -k, --ev-dt-delay  int              single DT's delay should not bigger than this, unit ms, default 600ms.
     -S, --ev-dt-dtpr   float            The DT pass rate should not lower than this, default 100, means 100%, all
                                         DT must be below "-k|--evaluate-dt-delay <value>".
+        --ev-dt-std    float            Expect standard deviation while do DT evaluation. while we enable
+                                        "--ev-dt" and set this to a value bigger than 0, standard deviation
+                                        for delays would be calculated and compare to this value.
     -n, --dlt-thread   int              Number of concurrent Threads for Download Test(DLT), default 1.
                                         How many IPs can be perform DLT at the same time.
     -d, --dlt-period   int              The total times escaped for single DLT, default 10s.
@@ -378,24 +382,28 @@ type singleResult struct {
 type singleVerifyResult struct {
 	testTime    time.Time
 	host        string
+	loc         string
 	resultSlice []singleResult
 }
 
 type VerifyResults struct {
 	testTime time.Time // test time
 	ip       *string   // should be <ipv4:port> or <[ipv6]:port>, not just a ip string.
-	dtc      int       // Delay Test(DT) tried count
-	dtpc     int       // DT passed count
-	dtpr     float64   // DT passed rate, in decimal
-	da       float64   // average delay, in ms
-	dmi      float64   // minimal delay, in ms
-	dmx      float64   // max delay, in ms
-	dltc     int       // Download Test(DLT) tried count
-	dltpc    int       // DLT passed count
-	dltpr    float64   // DLT passed rate, in decimal
-	dls      float64   // DLT average speed, in KB/s
-	dlds     int64     // DLT download data size, in byte
-	dltd     float64   // DLT escaped times, in second
+	loc      *string
+	dtc      int     // Delay Test(DT) tried count
+	dtpc     int     // DT passed count
+	dtpr     float64 // DT passed rate, in decimal
+	da       float64 // average delay, in ms
+	daVar    float64 // variance of average delay
+	daStd    float64 // standard deviation of average delay
+	dmi      float64 // minimal delay, in ms
+	dmx      float64 // max delay, in ms
+	dltc     int     // Download Test(DLT) tried count
+	dltpc    int     // DLT passed count
+	dltpr    float64 // DLT passed rate, in decimal
+	dls      float64 // DLT average speed, in KB/s
+	dlds     int64   // DLT download data size, in byte
+	dltd     float64 // DLT escaped times, in second
 }
 
 type resultSpeedSorter []VerifyResults
