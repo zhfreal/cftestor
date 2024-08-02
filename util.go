@@ -643,11 +643,12 @@ func ipShiftReverse(ip net.IP, num []byte) net.IP {
 // when: 1. in non-debug mode, just print stats instead of pure qualified IPs.
 //  2. in debug mode, we show more as tcell or non-tcell form.
 //
-// isResult: used for tcell mode, indicate show in result area or debug area.
-func displayDetails(isResult, isSilence bool, v []VerifyResults) {
+// isResultArea: used for tcell mode, indicate show in result area or debug area.
+// showSpeed: indicate show speed or not
+func displayDetails(isResultArea, showSpeed bool, v []VerifyResults) {
 	if !debug {
 		// myLogger.PrintClearIPs(v)
-		if isSilence {
+		if silenceMode {
 			for _, t_v := range v {
 				tStr := *t_v.ip
 				if len(*t_v.loc) > 0 {
@@ -656,13 +657,13 @@ func displayDetails(isResult, isSilence bool, v []VerifyResults) {
 				myLogger.Println(tStr)
 			}
 		} else {
-			myLogger.PrintDetails(LogLevel(logLevelInfo), v)
+			myLogger.PrintDetails(LogLevel(logLevelInfo), v, showSpeed)
 		}
 	} else {
 		if !tcellMode { // no-tcell
-			myLogger.PrintDetails(LogLevel(logLevelDebug), v)
+			myLogger.PrintDetails(LogLevel(logLevelDebug), v, showSpeed)
 		} else { // tcell
-			updateTcellDetails(isResult, v)
+			updateTcellDetails(isResultArea, showSpeed, v)
 		}
 	}
 }

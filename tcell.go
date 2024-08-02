@@ -269,7 +269,7 @@ func updateTaskStatStr(ov overAllStat) {
 	}
 }
 
-func updateDetailList(src [][]*string, v []VerifyResults, limit int) (dst [][]*string) {
+func updateDetailList(showSpeed bool, src [][]*string, v []VerifyResults, limit int) (dst [][]*string) {
 	dst = src
 	for _, tv := range v {
 		t_str_list := make([]*string, 0)
@@ -279,7 +279,10 @@ func updateDetailList(src [][]*string, v []VerifyResults, limit int) (dst [][]*s
 		t_str_list = append(t_str_list, &tStr)
 		// show speed only when it performed DLT
 		if !dtOnly {
-			t_v2 := fmt.Sprintf("%.2f", tv.dls)
+			t_v2 := " "
+			if showSpeed {
+				t_v2 = fmt.Sprintf("%.2f", tv.dls)
+			}
 			t_str_list = append(t_str_list, &t_v2)
 		}
 		t_v3 := fmt.Sprintf("%.0f", tv.da)
@@ -297,29 +300,29 @@ func updateDetailList(src [][]*string, v []VerifyResults, limit int) (dst [][]*s
 	return
 }
 
-func updateResultStrList(v []VerifyResults) {
-	resultStrSlice = updateDetailList(resultStrSlice, v, maxResultsDisplay)
+func updateResultStrList(showSpeed bool, v []VerifyResults) {
+	resultStrSlice = updateDetailList(showSpeed, resultStrSlice, v, maxResultsDisplay)
 }
 
-func updateDebugStrList(v []VerifyResults) {
+func updateDebugStrList(showSpeed bool, v []VerifyResults) {
 	if !debug {
 		return
 	}
-	debugStrSlice = updateDetailList(debugStrSlice, v, maxDebugDisplay)
+	debugStrSlice = updateDetailList(showSpeed, debugStrSlice, v, maxDebugDisplay)
 }
 
-func updateResult(v []VerifyResults) {
+func updateResult(showSpeed bool, v []VerifyResults) {
 	defer (*termAll).Show()
-	updateResultStrList(v)
+	updateResultStrList(showSpeed, v)
 	printResultListWithoutSync()
 }
 
-func updateDebug(v []VerifyResults) {
+func updateDebug(showSpeed bool, v []VerifyResults) {
 	if !debug {
 		return
 	}
 	defer (*termAll).Show()
-	updateDebugStrList(v)
+	updateDebugStrList(showSpeed, v)
 	printDebugListWithoutSync()
 }
 
@@ -329,14 +332,14 @@ func updateTaskStat(ov overAllStat) {
 	printTaskStatWithoutSync()
 }
 
-func updateTcellDetails(isResult bool, v []VerifyResults) {
+func updateTcellDetails(isResult, showSpeed bool, v []VerifyResults) {
 	// prevent display debug msg when in not-debug mode
 	if !debug {
 		return
 	}
 	if isResult { // result
-		updateResult(v)
+		updateResult(showSpeed, v)
 	} else { // non-debug
-		updateDebug(v)
+		updateDebug(showSpeed, v)
 	}
 }

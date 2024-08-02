@@ -559,11 +559,11 @@ LOOP:
 						dltTaskCache = append(dltTaskCache, tVerifyResult.ip)
 						// debug msg, show only in debug mode
 						if debug {
-							displayDetails(false, silenceMode, []VerifyResults{tVerifyResult})
+							displayDetails(false, false, []VerifyResults{tVerifyResult})
 						}
 					} else { // Download test disabled
 						// non-debug msg
-						displayDetails(true, silenceMode, []VerifyResults{tVerifyResult})
+						displayDetails(true, false, []VerifyResults{tVerifyResult})
 						verifyResultsMap[tVerifyResult.ip] = tVerifyResult
 						// we have expected result, break LOOP
 						if !testAll && len(verifyResultsMap) >= resultMin {
@@ -572,7 +572,7 @@ LOOP:
 					}
 				} else if debug {
 					// debug msg
-					displayDetails(false, silenceMode, []VerifyResults{tVerifyResult})
+					displayDetails(false, false, []VerifyResults{tVerifyResult})
 				}
 			}
 			if debug {
@@ -663,10 +663,10 @@ LOOP:
 						haveEnoughResult = true
 					}
 					// non-debug msg
-					displayDetails(true, silenceMode, []VerifyResults{tVerifyResult})
+					displayDetails(true, true, []VerifyResults{tVerifyResult})
 				} else if debug {
 					// debug msg
-					displayDetails(false, silenceMode, []VerifyResults{tVerifyResult})
+					displayDetails(false, true, []VerifyResults{tVerifyResult})
 				}
 			}
 			if debug {

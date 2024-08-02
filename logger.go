@@ -249,13 +249,13 @@ func (myLogger *MyLogger) Println(info ...any) {
 	myLogger.print(true, info...)
 }
 
-func (myLogger *MyLogger) PrintSingleStat(logLvl LogLevel, v []VerifyResults, ov overAllStat) {
-	myLogger.PrintDetails(logLvl, v)
+func (myLogger *MyLogger) PrintSingleStat(logLvl LogLevel, v []VerifyResults, ov overAllStat, showSpeed bool) {
+	myLogger.PrintDetails(logLvl, v, showSpeed)
 	myLogger.PrintOverAllStat(logLvl, ov)
 }
 
 // log when debug or info
-func (myLogger *MyLogger) PrintDetails(logLvl LogLevel, v []VerifyResults) {
+func (myLogger *MyLogger) PrintDetails(logLvl LogLevel, v []VerifyResults, showSpeed bool) {
 	// no data for print
 	if len(v) == 0 {
 		return
@@ -276,16 +276,14 @@ func (myLogger *MyLogger) PrintDetails(logLvl LogLevel, v []VerifyResults) {
 			t_ip = fmt.Sprintf("%s#%s", t_ip, *lc[i].loc)
 		}
 		myLogger.Logf(logLvl, "IP:%v%s", t_ip, myLogger.indent)
-		if !dtOnly {
+		if showSpeed {
 			myLogger.Printf("Speed(KB/s):%.2f%s", lc[i].dls, myLogger.indent)
 		}
 		myLogger.Printf("Delay(ms):%.0f", lc[i].da)
-		if !dltOnly {
-			myLogger.Printf("%sStab.(%%):%.2f", myLogger.indent, lc[i].dtpr*100)
-			if enableStdEv {
-				myLogger.Printf("%sVar.:%.2f", myLogger.indent, lc[i].daVar)
-				myLogger.Printf("%sStd.:%.2f", myLogger.indent, lc[i].daStd)
-			}
+		myLogger.Printf("%sStab.(%%):%.2f", myLogger.indent, lc[i].dtpr*100)
+		if enableStdEv {
+			myLogger.Printf("%sVar.:%.2f", myLogger.indent, lc[i].daVar)
+			myLogger.Printf("%sStd.:%.2f", myLogger.indent, lc[i].daStd)
 		}
 	}
 	myLogger.Println()
