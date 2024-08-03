@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"io"
 	"log"
 	"math"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
@@ -109,15 +107,7 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 			if response.Body != nil {
 				// retrieve loc
 				if response.Request.URL.Path == "/cdn-cgi/trace" && response.StatusCode == 200 && len(loc) == 0 {
-					scanner := bufio.NewScanner(response.Body)
-					for scanner.Scan() {
-						line := strings.TrimSpace(scanner.Text())
-						// Apply the filter function
-						if strings.HasPrefix(line, "loc=") {
-							loc = strings.TrimPrefix(line, "loc=")
-							break
-						}
-					}
+					loc, _ = read_loc_from_cf_cdn_cgi_trace_body(response.Body)
 				}
 			}
 			// connection test only, won't do download test

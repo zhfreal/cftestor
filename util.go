@@ -326,19 +326,10 @@ func getGeoInfoFromCF(ipStr *string) (loc string) {
 		return
 	}
 	// read response.Body as string
-	body, err := io.ReadAll(response.Body)
+	loc, err = read_loc_from_cf_cdn_cgi_trace_body(response.Body)
 	if err != nil {
 		myLogger.Error(fmt.Sprintf("An error occurred while read response.Body: %v\n", err))
 		return
-	}
-	// decode body []byte into string
-	bodyStr := string(body)
-	t_str_slice := strings.Split(bodyStr, "\n")
-	for _, t_str := range t_str_slice {
-		if strings.HasPrefix(t_str, "loc=") {
-			loc = strings.TrimPrefix(t_str, "loc=")
-			break
-		}
 	}
 	return
 }
@@ -390,9 +381,7 @@ func genDBRecords(verifyResultsSlice []VerifyResults, getLocalAsnAndCity bool) (
 			record.DS = dtSource
 			record.TestTimeStr = v.testTime.Format("2006-01-02 15:04:05")
 			record.IP = *v.ip
-			if len(*v.loc) == 0 {
-				record.Loc = getGeoInfoFromCF(v.ip)
-			}
+			record.Loc = *v.loc
 			record.DTC = v.dtc
 			record.DTPC = v.dtpc
 			record.DTPR = v.dtpr
@@ -905,4 +894,27 @@ func std(v []float64) float64 {
 func roundFloat(val float64, precision uint) float64 {
 	ratio := math.Pow(10, float64(precision))
 	return math.Round(val*ratio) / ratio
+}
+
+func read_loc_from_cf_cdn_cgi_trace_body(body io.ReadCloser) (string, error) {
+	loc := ""
+	scanner := bufio.NewScanner(body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Apply the filter function
+		t_slice := strings.Split(line, "=")
+		if len(t_slice) != 2 {
+			continue
+		}
+		if strings.ToLower(t_slice[0]) == "col" {
+			loc = t_slice[1]
+		} else if strings.ToLower(t_slice[0]) == "loc" && strings.ToUpper(t_slice[1]) != "CN" {
+			loc = t_slice[1]
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return loc, err
+	}
+	return loc, nil
 }

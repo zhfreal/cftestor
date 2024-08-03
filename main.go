@@ -780,12 +780,14 @@ func main() {
 	if len(verifyResultsMap) > 0 {
 		verifyResultsSlice := make([]VerifyResults, 0)
 		for _, v := range verifyResultsMap {
+			if len(*v.loc) == 0 {
+				t_loc := getGeoInfoFromCF(v.ip)
+				v.loc = &t_loc
+			}
 			verifyResultsSlice = append(verifyResultsSlice, v)
 		}
 		if !silenceMode {
-
 			records := genDBRecords(verifyResultsSlice, resolveLocalASNAndCity)
-
 			// write to csv file
 			if storeToFile {
 				myLogger.Print("Write to csv " + resultFile)
