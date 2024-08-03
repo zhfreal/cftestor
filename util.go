@@ -906,9 +906,10 @@ func read_loc_from_cf_cdn_cgi_trace_body(body io.ReadCloser) (string, error) {
 		if len(t_slice) != 2 {
 			continue
 		}
-		if strings.ToLower(t_slice[0]) == "col" {
-			loc = t_slice[1]
-		} else if strings.ToLower(t_slice[0]) == "loc" && strings.ToUpper(t_slice[1]) != "CN" {
+		// if strings.ToLower(t_slice[0]) == "colo" {
+		// 	loc = t_slice[1]
+		// } else if strings.ToLower(t_slice[0]) == "loc" && strings.ToUpper(t_slice[1]) != "CN" {
+		if strings.ToLower(t_slice[0]) == "loc" {
 			loc = t_slice[1]
 			break
 		}
