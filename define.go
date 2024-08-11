@@ -261,6 +261,7 @@ var (
 	tcellMode                               = false
 	fastMode                                = false
 	silenceMode                             = false
+	dontResolveLoc                          = false
 	// statInterval                                   = statisticIntervalNT
 	appArt string = `
   ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
@@ -342,7 +343,8 @@ options:
     -e, --to-db                         Write result to sqlite3 db file, disabled by default. If it's provided
                                         and "-f|--db-file" is not provided, it will be named "ip.db" and
                                         store in current directory.
-        --local-asn                     get local ASN and city info, default false.  
+        --local-asn                     get local ASN and city info, default false. 
+		--do-not--resolve-loc           Do not resolve location. 
     -f, --db-file       string          Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
                                         provided, it will be named "ip.db" and store in current directory.
     -g, --label        string           the label for a part of the result file's name and sqlite3 record. It's
