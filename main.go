@@ -82,7 +82,7 @@ func init() {
 	flag.BoolVar(&resolveLocalASNAndCity, "local-asn", false, "get local asn and city info")
 	flag.StringVarP(&dbFile, "db-file", "f", "", "Sqlite3 db file name.")
 	flag.StringVarP(&suffixLabel, "label", "g", "", "the label for a part of the result file's name and sqlite3 record.")
-	flag.BoolVar(&disableResolveLoc, "disable-resolve-loc", false, "Don't resolve location.")
+	flag.BoolVar(&ResolveLoc, "resolve-loc", false, "try to resolve location.")
 
 	flag.BoolVar(&silenceMode, "silence", false, "silence mode.")
 	flag.BoolVarP(&debug, "debug", "V", false, "Print debug message.")
@@ -783,7 +783,7 @@ func main() {
 	if len(verifyResultsMap) > 0 {
 		verifyResultsSlice := make([]VerifyResults, 0)
 		for _, v := range verifyResultsMap {
-			if !disableResolveLoc && len(*v.loc) == 0 {
+			if ResolveLoc && len(*v.loc) == 0 {
 				t_loc := getGeoInfoFromCF(v.ip)
 				v.loc = &t_loc
 			}
