@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"math/rand"
-	"net"
 	"os"
 	"regexp"
 	"sort"
@@ -20,199 +18,22 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-const (
-	workerStopSignal    = "0"
-	workOnGoing         = 1
-	controllerInterval  = 100               // in millisecond
-	statisticIntervalT  = 1000              // in millisecond, valid in tcell mode
-	statisticIntervalNT = 10000             // in millisecond, valid in non-tcell mode
-	quitWaitingTime     = 3                 // in second
-	downloadBufferSize  = 1024 * 64         // in byte
-	fileDefaultSize     = 1024 * 1024 * 300 // in byte
-	downloadSizeMin     = 1024 * 1024       // in byte
-	defaultDLTUrl       = "https://cf.9999876.xyz/500mb.dat"
-	defaultDTUrl        = "https://cf.9999876.xyz/test.dat"
-	userAgentChrome     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-	userAgentFirefox    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
-	userAgentEdge       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-	userAgentSafari     = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15"
-
-	defaultDBFile       = "ip.db"
-	DefaultTestHost     = "cf.9999876.xyz"
-	maxHostLen          = 1 << 12
-	dtsSSL              = "SSL"
-	dtsHTTPS            = "HTTPS"
-	runTime             = "cftestor"
-	retrieveCount   int = 32
-)
-
-var (
-	maxHostLenBig                           = big.NewInt(maxHostLen)
-	ipFile                                  string
-	version, buildTag, buildDate, buildHash string     = "dev", "dev", "dev", "dev"
-	srcIPRsRaw                              []*ipRange // CIDR slice
-	srcIPRsExtracted                        []net.IP   // net.IP slice
-	srcHosts                                []*string  // slice stored host: <ip>:<port>
-	ipStr                                   arrayFlags
-	dtCount, dtWorkerThread                 int
-	ports                                   []int
-	dltDurMax, dltWorkerThread              int
-	dltCount, resultMin                     int
-	interval, dtEvaluationDelay, dtTimeout  int
-	hostName, dltUrl, dtSource, dtUrl       string
-	dltTimeout                              int
-	dtEvaluationDTPR, dltEvaluationSpeed    float64
-	dtHttps, disableDownload                bool
-	dtVia                                   string
-	enableDTEvaluation                      bool
-	ipv4Mode, ipv6Mode, dtOnly, dltOnly     bool
-	tlsClientID                             utls.ClientHelloID = utls.HelloChrome_Auto
-	userAgent                               string             = userAgentChrome
-	storeToFile, storeToDB, testAll, debug  bool
-	resultFile, suffixLabel, dbFile         string
-	myLogger                                MyLogger
-	loggerLevel                             LogLevel
-	httpRspTimeoutDuration                  time.Duration
-	dtTimeoutDuration                       time.Duration
-	dltTimeDurationMax                      time.Duration
-	verifyResultsMap                        = make(map[*string]VerifyResults)
-	defaultASN                              = 0
-	defaultCity                             = ""
-	myRand                                  = rand.New(rand.NewSource(0))
-	titleRuntime                            *string
-	titlePre                                [2][4]string
-	titleTasksStat                          [2]*string
-	detailTitleSlice                        []string
-	resultStrSlice, debugStrSlice           [][]*string
-	termAll                                 *tcell.Screen
-	titleStyle                              = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorWhite)
-	normalStyle                             = tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorWhite)
-	titleStyleCancel                        = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorGray)
-	contentStyle                            = tcell.StyleDefault
-	maxResultsDisplay                       = 10
-	maxDebugDisplay                         = 10
-	titleRuntimeRow                         = 0
-	titlePreRow                             = titleRuntimeRow + 2
-	titleCancelRow                          = titlePreRow + 3
-	titleTasksStatRow                       = titleCancelRow + 2
-	titleResultHintRow                      = titleTasksStatRow + 2
-	titleResultRow                          = titleResultHintRow + 1
-	titleDebugHintRow                       = titleResultRow + maxResultsDisplay + 2
-	titleDebugRow                           = titleDebugHintRow + 1
-	titleCancel                             = "Press ESC to cancel!"
-	titleCancelConfirm                      = "Press ENTER to confirm; Any other key to back!"
-	titleWaitQuit                           = "Waiting for exit..."
-	titleResultHint                         = "Result:"
-	titleDebugHint                          = "Debug Msg:"
-	cancelSigFromTerm                       = false
-	terminateConfirm                        = false
-	resultStatIndent                        = 9
-	dtThreadsNumLen, dltThreadsNumLen       = 0, 0
-	tcellMode                               = false
-	fastMode                                = false
-	silenceMode                             = false
-	statInterval                            = statisticIntervalNT
-	// titleExitHint                          = "Press any key to exit!"
-	appArt string = `
-  ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
-  ░█░░░█▀▀░░█░░█▀▀░▀▀█░░█░░█░█░█▀▄
-  ░▀▀▀░▀░░░░▀░░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀
-`
-)
-
-var help = `Usage: ` + runTime + ` [options]
-options:
-    -s, --ip           string  Specify IP, CIDR, or host for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32",
-                               "-s 1.0.0.1/24", "-s 1.1.1.1:2053".
-    -i, --in           string  Specify file for test, which contains multiple lines. Each line
-                               represent one IP, CIDR, host.
-    -p, --port         int     Port to test, could be specific one or more ports at same time,
-                               The port should be working via SSL/TLS/HTTPS protocol,  default 443.
-    -m, --dt-thread    int     Number of concurrent threads for Delay Test(DT). How many IPs can
-                               be perform DT at the same time. Default 20 threads.
-    -t, --dt-timeout   int     Timeout for single DT, unit ms, default 1000ms. A single SSL/TLS
-                               or HTTPS request and response should be finished before timeout.
-                               It should not be less than "-k|--evaluate-dt-delay", It should be
-                               longer when we perform https connections test by "-dt-via-https"
-                               than when we perform SSL/TLS test by default.
-    -c, --dt-count     int     Tries of DT for a IP, default 2.
-        --hostname     string  Hostname for DT test. It's valid when "--dt-only" is no and "--dt-via https"
-                               is not provided.
-        --dt-via https|tls|ssl DT via https or SSL/TLS shaking hands, "--dt-via <https|tls|ssl>"
-                               default https.
-        --dt-url       string  Specify test URL for DT.
-        --ev-dt                Evaluate DT, we'll try "-c|--dt-count <value>" to evaluate delay;
-                               if we don't turn this on, we'll stop DT after we got the first
-                               successfull DT; if we turn this on, we'll evaluate the test result
-                               through average delay of singe DT and statistic of all successfull
-                               DT by these two thresholds "-k|--evaluate-dt-delay <value>" and
-                               "-S|--evaluate-dt-dtpr <value>", default turn off.
-    -k, --ev-dt-delay  int     single DT's delay should not bigger than this, unit ms, default 600ms.
-    -S, --ev-dt-dtpr   float   The DT pass rate should not lower than this, default 100, means 100%, all
-                               DT must be below "-k|--evaluate-dt-delay <value>".
-    -n, --dlt-thread   int     Number of concurrent Threads for Download Test(DLT), default 1.
-                               How many IPs can be perform DLT at the same time.
-    -d, --dlt-period   int     The total times escaped for single DLT, default 10s.
-    -b, --dlt-count    int     Tries of DLT for a IP, default 1.
-    -u, --dlt-url      string  Specify test URL for DLT.
-        --dlt-timeout  int     Specify the timeout for http response when do DLT. In ms, default as 5000 ms.
-    -I  --interval     int     Interval between two tests, unit ms, default 500ms.
-
-    -l, --speed        float   Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's
-                               qualified when its speed is not lower than this value.
-    -r, --result       int     The total IPs qualified limitation, default 10. The Process will stop
-                               after it got equal or more than this indicated. It would be invalid if
-                               "--test-all" was set.
-        --dt-only              Do DT only, we do DT & DLT at the same time by default.
-        --dlt-only             Do DLT only, we do DT & DLT at the same time by default.
-        --fast                 Fast mode, use inner IPs for fast detection. Just when neither "-s/--ip"
-                               nor "-i/--in" is provided, and this flag is provided. It will be working
-                               Disabled by default.
-    -4, --ipv4                 Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
-                               then it will do IPv4 test from build-in IPs from CloudFlare by default.
-    -6, --ipv6                 Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
-                               then it will do IPv6 test from build-in IPs from CloudFlare by using
-                               this flag.
-        --hello-firefox        Work as firefox to perform tls/https
-        --hello-chrome         Work as Chrome to perform tls/https
-        --hello-edge           Work as Microsoft Edge to perform tls/https
-        --hello-safari         Work as safari to perform tls/https
-    -a  --test-all             Test all IPs until no more IP left. It's disabled by default.
-    -w, --to-file              Write result to csv file, disabled by default. If it is provided and
-                               "-o|--result-file <value>" is not provided, the result file will be named
-                               as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -o, --outfile      string  File name of result. If it don't provided and "-w|--store-to-file"
-                               is provided, the result file will be named as
-                               "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -e, --to-db                Write result to sqlite3 db file, disabled by default. If it's provided
-                               and "-f|--db-file" is not provided, it will be named "ip.db" and
-                               store in current directory.
-    -f, --dbfile       string  Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
-                               provided, it will be named "ip.db" and store in current directory.
-    -g, --label        string  the label for a part of the result file's name and sqlite3 record. It's
-                               hostname from "--hostname" or "-u|--url" by default.
-        --silence              Silence mode.
-    -V, --debug                Print debug message.
-        --tcell                Use tcell to display the running procedure when in debug mode.
-                               Turn this on will activate "--debug".
-    -v, --version              Show version.
-`
-
 func print_version() {
 	fmt.Println(appArt)
 	fmt.Println(`  CF CDN IP scanner, find best IPs for your Cloudflare CDN applications.
   https://github.com/zhfreal/cftestor`)
 	fmt.Println()
-	fmt.Printf("Version:\t%v\n", version)
-	fmt.Printf("BuildDate:\t%v\n", buildDate)
-	fmt.Printf("BuildTag:\t%v\n", buildTag)
-	fmt.Printf("BuildHash:\t%v\n", buildHash)
+	fmt.Printf("Version:    %v\n", version)
+	fmt.Printf("BuildDate:  %v\n", buildDate)
+	fmt.Printf("BuildTag:   %v\n", buildTag)
+	fmt.Printf("BuildHash:  %v\n", buildHash)
 	fmt.Println()
 }
 
 func init() {
 	var printVersion bool
 	var tlsHelloFirefox, tlsHelloChrome, tlsHelloEdge, tlsHelloSafari bool = false, false, false, false
+	var portStrSlice []string
 
 	// version = "dev"
 	flag.BoolVar(&fastMode, "fast", false, "Fast mode")
@@ -223,9 +44,10 @@ func init() {
 	flag.IntVarP(&dtTimeout, "dt-timeout", "t", 2000, "Timeout for single DT(ms).")
 	flag.IntVarP(&dtCount, "dt-count", "c", 2, "Tries of DT for a IP.")
 	// flag.IntVarP(&port, "port", "p", 443, "Port to test")
-	flag.IntSliceVarP(&ports, "port", "p", []int{443}, "Port to test, could be specific one or more ports at same time.")
+	flag.StringSliceVarP(&portStrSlice, "port", "p", []string{}, "Port to test, could be specific one or more ports at same time.")
 	flag.StringVar(&hostName, "hostname", DefaultTestHost, "Hostname for DT test.")
 	flag.StringVar(&dtVia, "dt-via", "https", "DT via https rather than SSL/TLS shaking hands.")
+	flag.IntVar(&dtHttpRspReturnCodeExpected, "dt-expect-code", 200, "HTTP status code expected for DT test.")
 	flag.BoolVar(&dtHttps, "dt-via-https", false, "DT via https rather than SSL/TLS shaking hands.")
 	flag.StringVar(&dtUrl, "dt-url", defaultDTUrl, "Specific the url while DT via https.")
 
@@ -239,6 +61,7 @@ func init() {
 	flag.BoolVar(&enableDTEvaluation, "ev-dt", false, "Evaluate DT test result. Default as disabled")
 	flag.IntVarP(&dtEvaluationDelay, "ev-dt-delay", "k", 600, "Delay for DT is beyond this one will be cause failure, unit ms, default 600ms.")
 	flag.Float64VarP(&dtEvaluationDTPR, "ev-dt-dtpr", "S", 100, "The DT successful rate below this will be cause failure, default 100%.")
+	flag.Float64Var(&dtStdExp, "ev-dt-std", 0, "expect standard deviation while do DT evaluation.")
 	flag.Float64VarP(&dltEvaluationSpeed, "speed", "l", 6000, "Download speed should not less than this, Unit KB/s, default 6000KB/s.")
 	flag.IntVarP(&resultMin, "result", "r", 10, "The total IPs qualified limitation, default 10")
 
@@ -254,10 +77,12 @@ func init() {
 	flag.BoolVar(&tlsHelloSafari, "hello-safari", false, "work as safari")
 
 	flag.BoolVarP(&storeToFile, "to-file", "w", false, "Write result to csv file, disabled by default.")
-	flag.StringVarP(&resultFile, "outfile", "o", "", "File name of result. ")
+	flag.StringVarP(&resultFile, "out-file", "o", "", "File name of result. ")
 	flag.BoolVarP(&storeToDB, "to-db", "e", false, "Write result to sqlite3 db file.")
-	flag.StringVarP(&dbFile, "dbfile", "f", "", "Sqlite3 db file name.")
+	flag.BoolVar(&resolveLocalASNAndCity, "local-asn", false, "get local asn and city info")
+	flag.StringVarP(&dbFile, "db-file", "f", "", "Sqlite3 db file name.")
 	flag.StringVarP(&suffixLabel, "label", "g", "", "the label for a part of the result file's name and sqlite3 record.")
+	flag.BoolVar(&ResolveLoc, "resolve-loc", false, "try to resolve location.")
 
 	flag.BoolVar(&silenceMode, "silence", false, "silence mode.")
 	flag.BoolVarP(&debug, "debug", "V", false, "Print debug message.")
@@ -292,6 +117,11 @@ func init() {
 	if dtOnly && dltOnly {
 		println("\"--dt-only\" and \"--dlt-only\" should not be provided at the same time!")
 		os.Exit(1)
+	}
+	if dtEvaluationDTPR > 100 {
+		dtEvaluationDTPR = 100
+	} else if dtEvaluationDTPR < 0 {
+		dtEvaluationDTPR = 0
 	}
 	dtVia = strings.ToLower(dtVia)
 	if dtVia == "https" {
@@ -414,6 +244,7 @@ func init() {
 	t_qty := big.NewInt(0)
 	for i := 0; i < len(srcIPS); i++ {
 		ips := strings.TrimSpace(*srcIPS[i])
+		ips = strings.Split(ips, "#")[0]
 		if isValidIPs(ips) {
 			ipr := NewIPRangeFromCIDR(&ips)
 			if ipr == nil {
@@ -457,11 +288,54 @@ func init() {
 			resultMin = int(t_qty.Int64())
 		}
 	}
-	// validate ports
-	for _, port := range ports {
-		if port < 1 || port > 65535 {
-			myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", port)
+	port_regex := regexp.MustCompile(`[,;|]+`)
+	port_range_regex := regexp.MustCompile(`\d+[-:]\d+`)
+	port_range_split_regex := regexp.MustCompile(`[-:]`)
+	// set ports
+	if len(portStrSlice) > 0 {
+		for _, portStr := range portStrSlice {
+			portStr_slice := port_regex.Split(portStr, -1)
+			for _, t_port_str := range portStr_slice {
+				t_port_str = strings.TrimSpace(t_port_str)
+				if len(t_port_str) == 0 {
+					continue
+				}
+				// it's a range
+				if port_range_regex.MatchString(t_port_str) {
+					t_port_list := port_range_split_regex.Split(t_port_str, -1)
+					if len(t_port_list) != 2 {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+					}
+					t_start_port := t_port_list[0]
+					t_end_port := t_port_list[1]
+					start_port, err := strconv.Atoi(t_start_port)
+					if err != nil {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_start_port)
+					}
+					end_port, err := strconv.Atoi(t_end_port)
+					if err != nil {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_end_port)
+					}
+					if start_port > end_port || start_port < 1 || end_port > 65535 {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+					}
+					for i := start_port; i <= end_port; i++ {
+						ports = append(ports, i)
+					}
+				} else { // it's a single port
+					port, err := strconv.Atoi(t_port_str)
+					if err != nil || port < 1 || port > 65535 {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+					}
+					ports = append(ports, port)
+				}
+			}
 		}
+		// clean ports, make them unique
+		ports = uniqueIntSlice(ports)
+	}
+	if len(ports) == 0 {
+		ports = append(ports, 443)
 	}
 	// set suffixLabel
 	if len(suffixLabel) == 0 {
@@ -479,24 +353,6 @@ func init() {
 		if dtTimeout <= 0 {
 			myLogger.Fatalf("\"-t|--dt-timeout %v\" should not be smaller than 0!\n", dtTimeout)
 		}
-		if enableDTEvaluation {
-			if dtEvaluationDelay <= 0 {
-				myLogger.Fatalf("\"-k|--evaluate-dt-delay %v\" should not be smaller than 0!\n", dtEvaluationDelay)
-			}
-			if dtTimeout < dtEvaluationDelay {
-				timeoutFlag := flag.Lookup("dt-timeout")
-				// reset dtTimeout, when dtTimeout less than delayMax and did not set value of dtTimeout from cmdline
-				if !timeoutFlag.Changed {
-					dtTimeout = dtEvaluationDelay + int(dtEvaluationDelay/2)
-				} else {
-					myLogger.Warning(fmt.Sprintf("\"-t|--dt-timeout\" - %v is less than \"-k|--evaluate-dt-delay\" - %v. This will led to failure for some test!", dtTimeout, dtEvaluationDelay))
-					if !confirm("Continue?", 3) {
-						os.Exit(0)
-					}
-				}
-			}
-		}
-		dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
 		// if we ping via ssl negotiation and don't perform download test, we need check hostname and port
 		if !dtHttps {
 			//ping via ssl negotiation
@@ -505,10 +361,32 @@ func init() {
 			}
 			dtSource = dtsSSL
 		} else {
+			// set default value for dtTimeout in dtHttps
+			timeoutFlag := flag.Lookup("dt-timeout")
+			if !timeoutFlag.Changed {
+				dtTimeout = 5000
+			}
 			// check dtUrl is valid or not by ParseUrl() and set suffixLabel
-			suffixLabel, _ = ParseUrl(dtUrl)
+			suffixLabel, _ = parseUrl(dtUrl)
 			dtSource = dtsHTTPS
 		}
+		if enableDTEvaluation {
+			if dtEvaluationDelay <= 0 {
+				myLogger.Fatalf("\"-k|--evaluate-dt-delay %v\" should not be smaller than 0!\n", dtEvaluationDelay)
+			}
+			if dtTimeout < dtEvaluationDelay {
+				myLogger.Warning(fmt.Sprintf("\"-t|--dt-timeout\" - %v is less than \"-k|--evaluate-dt-delay\" - %v. This will led to failure for some test!", dtTimeout, dtEvaluationDelay))
+				if !confirm("Continue?", 3) {
+					os.Exit(0)
+				}
+			}
+			// when --ev-dt is enabled and dtStdExp is greater than 0, we do standard deviation evaluation for delay
+			if dtStdExp > 0 {
+				enableStdEv = true
+			}
+		}
+		dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
+
 		dtThreadsNumLen = len(strconv.Itoa(dtWorkerThread))
 	}
 	// set downloadTimeMaxDuration only when we need do DLT
@@ -531,9 +409,9 @@ func init() {
 			myLogger.Fatalf("\"<--dlt-timeout> %v\" should not be bigger than <-d|--dlt-period> %v!\n", dltTimeout, dltDurMax)
 		}
 		// check dltUrl is valid or not by ParseUrl() and set suffixLabel
-		suffixLabel, _ = ParseUrl(dltUrl)
+		suffixLabel, _ = parseUrl(dltUrl)
 		httpRspTimeoutDuration = time.Duration(dltTimeout) * time.Millisecond
-		dltTimeDurationMax = time.Duration(dltDurMax) * time.Second
+		dltDurationInTotal = time.Duration(dltDurMax) * time.Second
 		dltThreadsNumLen = len(strconv.Itoa(dltWorkerThread))
 	}
 
@@ -569,7 +447,7 @@ func init() {
 		debugStrSlice = make([][]*string, 0)
 		detailTitleSlice = make([]string, 0)
 		// fix interval
-		statInterval = statisticIntervalT
+		// statInterval = statisticIntervalT
 		// fix rows when --dlt-only mode
 		if dltOnly {
 			titleCancelRow -= 1
@@ -596,17 +474,18 @@ func init() {
 	}
 }
 
-// :param: dtTaskChan, dltTaskChan, every item in them should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
-// :param: dtResultChan, dltResultChan, should have port in every single item
-func controllerWorker(dtTaskChan chan *string, dtResultChan chan singleVerifyResult, dltTaskChan chan *string,
-	dltResultChan chan singleVerifyResult, wg *sync.WaitGroup, dtOnGoingChan chan int, dltOnGoingChan chan int) {
-	defer func() {
-		// send terminate signal to
-		terminateConfirm = true
-		(*wg).Done()
-	}()
-	dtTasks := 0
-	dltTasks := 0
+func runWorker() {
+
+	var wg sync.WaitGroup
+	var dtTaskChan = make(chan *string, dtWorkerThread)
+	var dtResultChan = make(chan singleVerifyResult, cap(dtTaskChan))
+	var dltTaskChan = make(chan *string, dltWorkerThread)
+	var dltResultChan = make(chan singleVerifyResult, cap(dltTaskChan))
+
+	if debug && tcellMode {
+		go termControl(&wg)
+		wg.Add(1)
+	}
 	dtDoneTasks := 0
 	// the item in dtTaskCache is a ip string.
 	dtTaskCache := make([]*string, 0)
@@ -616,30 +495,201 @@ func controllerWorker(dtTaskChan chan *string, dtResultChan chan singleVerifyRes
 	// the key of cacheResultMap should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
 	cacheResultMap := make(map[string]VerifyResults)
 	haveEnoughResult := false
-	noMoreSourcesDT := false
-	noMoreSourcesDLT := false
-	OverAllStatTimer := time.Now()
 	showQuitWaiting := false
+
+	if !dltOnly {
+		for i := 0; i < dtWorkerThread; i++ {
+			wg.Add(1)
+			if dtHttps {
+				go downloadWorkerNew(dtTaskChan, dtResultChan, &wg, &dtUrl, dtTimeoutDuration, dtCount, true)
+			} else {
+				go sslDTWorkerNew(dtTaskChan, dtResultChan, &wg)
+			}
+		}
+	}
+	if !dtOnly {
+		for i := 0; i < dltWorkerThread; i++ {
+			wg.Add(1)
+			go downloadWorkerNew(dltTaskChan, dltResultChan, &wg, &dltUrl, httpRspTimeoutDuration, dltCount, false)
+		}
+	}
 
 LOOP:
 	for {
+		// DT
+		if !dltOnly {
+			if len(dtTaskCache) < dtWorkerThread {
+				dtTaskCache = append(dtTaskCache, retrieveSome(dtWorkerThread)...)
+			}
+			// no more sources for testing
+			t_dt_sources_len := len(dtTaskCache)
+			if t_dt_sources_len == 0 {
+				break LOOP
+			}
+			// // print stat
+			// if debug {
+			// 	displayStat(overAllStat{
+			// 		dtTasksDone:  dtDoneTasks,
+			// 		dtOnGoing:    0,
+			// 		dtCached:     len(dtTaskCache),
+			// 		dltTasksDone: dltDoneTasks,
+			// 		dltOnGoing:   0,
+			// 		dltCached:    len(dltTaskCache),
+			// 		resultCount:  len(verifyResultsMap),
+			// 	})
+			// }
+			// put task
+			go func() {
+				for i := 0; i < t_dt_sources_len; i++ {
+					dtTaskChan <- dtTaskCache[i]
+				}
+				dtTaskCache = make([]*string, 0)
+			}()
+			// retrieve from dtResultChan
+			for i := 0; i < t_dt_sources_len; i++ {
+				dtResult := <-dtResultChan
+				// if ip not test then put it into dltTaskChan
+				dtDoneTasks += 1
+				var tVerifyResult = singleResultStatistic(dtResult, false)
+				if tVerifyResult.da > 0.0 &&
+					tVerifyResult.da <= float64(dtEvaluationDelay) &&
+					tVerifyResult.dtpr*100.0 >= float64(dtEvaluationDTPR) &&
+					(!enableStdEv || (enableStdEv && tVerifyResult.daStd <= dtStdExp)) {
+					if !dtOnly { // there are download test ongoing
+						// put ping test result to cacheResultMap for later
+						cacheResultMap[*tVerifyResult.ip] = tVerifyResult
+						dltTaskCache = append(dltTaskCache, tVerifyResult.ip)
+						// debug msg, show only in debug mode
+						if debug {
+							displayDetails(false, false, []VerifyResults{tVerifyResult})
+						}
+					} else { // Download test disabled
+						// non-debug msg
+						displayDetails(true, false, []VerifyResults{tVerifyResult})
+						verifyResultsMap[tVerifyResult.ip] = tVerifyResult
+						// we have expected result, break LOOP
+						if !testAll && len(verifyResultsMap) >= resultMin {
+							haveEnoughResult = true
+						}
+					}
+				} else if debug {
+					// debug msg
+					displayDetails(false, false, []VerifyResults{tVerifyResult})
+				}
+			}
+			if debug {
+				cachedCount := len(dtTaskCache) + len(dltTaskCache) + len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
+				displayStat(overAllStat{
+					dtTasksDone:  dtDoneTasks,
+					dtOnGoing:    0,
+					dtCached:     cachedCount,
+					dltTasksDone: dltDoneTasks,
+					dltOnGoing:   0,
+					dltCached:    cachedCount,
+					resultCount:  len(verifyResultsMap),
+				})
+			}
+		}
+		//DLT
+		if !dtOnly {
+			// no source to do DLT
+			if len(dltTaskCache) <= 0 {
+				// DT enabled, just continue to do DT
+				if !dltOnly {
+					continue
+				} else {
+					// retrieve source IP
+					dltTaskCache = append(dltTaskCache, retrieveSome(dltWorkerThread)...)
+					// no source IP, break LOOP
+					if len(dltTaskCache) == 0 {
+						break LOOP
+					}
+				}
+			}
+			t_dlt_sources_len := len(dltTaskCache)
+			// print stat
+			// if debug {
+			// 	displayStat(overAllStat{
+			// 		dtTasksDone:  dtDoneTasks,
+			// 		dtOnGoing:    0,
+			// 		dtCached:     len(dtTaskCache),
+			// 		dltTasksDone: dltDoneTasks,
+			// 		dltOnGoing:   0,
+			// 		dltCached:    t_dlt_sources_len,
+			// 		resultCount:  len(verifyResultsMap),
+			// 	})
+			// }
+			// put task
+			go func() {
+				for i := 0; i < t_dlt_sources_len; i++ {
+					dltTaskChan <- dltTaskCache[i]
+				}
+				dltTaskCache = make([]*string, 0)
+			}()
+			// retrieve result
+			for i := 0; i < t_dlt_sources_len; i++ {
+				out := <-dltResultChan
+				dltDoneTasks += 1
+				var tVerifyResult = singleResultStatistic(out, true)
+				var v = VerifyResults{}
+				if dltOnly {
+					v = tVerifyResult
+				} else {
+					v = cacheResultMap[*tVerifyResult.ip]
+					// reset TestTime according download test result
+					v.testTime = tVerifyResult.testTime
+					v.dltc = tVerifyResult.dltc
+					v.dls = tVerifyResult.dls
+					v.dltpc = tVerifyResult.dltpc
+					v.dltpr = tVerifyResult.dltpr
+					v.dlds = tVerifyResult.dlds
+					v.dltd = tVerifyResult.dltd
+					// update ping static
+					tDelayTotal := float64(v.dtpc) * v.da
+					v.dtc += tVerifyResult.dtc
+					v.dtpc += tVerifyResult.dtpc
+					if v.dtc > 0 {
+						v.dtpr = float64(v.dtpc) / float64(v.dtc)
+					}
+					if tVerifyResult.dtpc > 0 {
+						v.dmx = math.Max(v.dmx, tVerifyResult.dmx)
+						v.dmi = math.Min(v.dmi, tVerifyResult.dmi)
+						v.da = (tDelayTotal + float64(tVerifyResult.dtpc)*tVerifyResult.da) / float64(v.dtpc)
+					}
+				}
+				tVerifyResult = v
+				// check speed and data size downloaded
+				if v.dls >= dltEvaluationSpeed && v.dlds > downloadSizeMin {
+					// put v into verifyResultsMap
+					verifyResultsMap[tVerifyResult.ip] = tVerifyResult
+					// we have expected result
+					if !testAll && len(verifyResultsMap) >= resultMin {
+						haveEnoughResult = true
+					}
+					// non-debug msg
+					displayDetails(true, true, []VerifyResults{tVerifyResult})
+				} else if debug {
+					// debug msg
+					displayDetails(false, true, []VerifyResults{tVerifyResult})
+				}
+			}
+			if debug {
+				cachedCount := len(dtTaskCache) + len(dltTaskCache) + len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
+				displayStat(overAllStat{
+					dtTasksDone:  dtDoneTasks,
+					dtOnGoing:    0,
+					dtCached:     cachedCount,
+					dltTasksDone: dltDoneTasks,
+					dltOnGoing:   0,
+					dltCached:    cachedCount,
+					resultCount:  len(verifyResultsMap),
+				})
+			}
+		}
 		// cancel from terminal, or have enough results
 		// flush ping and download task chan
-		if cancelSigFromTerm || haveEnoughResult {
-			if !dltOnly {
-				for len(dtTaskChan) > 0 {
-					<-(dtTaskChan)
-					dtTasks--
-				}
-				dtTaskCache = []*string{}
-			}
-			if !dtOnly {
-				for len(dltTaskChan) > 0 {
-					<-(dltTaskChan)
-					dltTasks--
-				}
-				dltTaskCache = []*string{}
-			}
+		// MARK as REMOVE
+		if cancelSigFromTerm {
 			// show waiting msg, only when debug
 			if debug && !showQuitWaiting {
 				if tcellMode {
@@ -649,252 +699,31 @@ LOOP:
 				}
 				showQuitWaiting = true
 			}
+			break LOOP
 		}
-		// DT
-		if !dltOnly {
-			// check ping test result
-			for len(dtResultChan) > 0 {
-				select {
-				case dtResult := <-dtResultChan:
-					// if ip not test then put it into dltTaskChan
-					dtDoneTasks += 1
-					var tVerifyResult = singleResultStatistic(dtResult, false)
-					if tVerifyResult.da > 0.0 && tVerifyResult.da <= float64(dtEvaluationDelay) && tVerifyResult.dtpr*100.0 >= float64(dtEvaluationDTPR) {
-						if !dtOnly { // there are download test ongoing
-							// put ping test result to cacheResultMap for later
-							cacheResultMap[*tVerifyResult.ip] = tVerifyResult
-							dltTaskCache = append(dltTaskCache, tVerifyResult.ip)
-							// debug msg, show only in debug mode
-							if debug {
-								displayDetails(false, silenceMode, []VerifyResults{tVerifyResult})
-							}
-						} else { // Download test disabled
-							// non-debug msg
-							displayDetails(true, silenceMode, []VerifyResults{tVerifyResult})
-							verifyResultsMap[tVerifyResult.ip] = tVerifyResult
-							// we have expected result, break LOOP
-							if !testAll && len(verifyResultsMap) >= resultMin {
-								haveEnoughResult = true
-							}
-						}
-					} else if debug {
-						// debug msg
-						displayDetails(false, silenceMode, []VerifyResults{tVerifyResult})
-					}
-				default:
-				}
-				// Print overall stat during waiting time and reset OverAllStatTimer
-				if time.Since(OverAllStatTimer) > time.Duration(statInterval)*time.Millisecond {
-					displayStat(overAllStat{
-						dtTasksDone:  dtDoneTasks,
-						dtOnGoing:    len(dtOnGoingChan),
-						dtCached:     len(dtTaskCache) + len(dtTaskChan),
-						dltTasksDone: dltDoneTasks,
-						dltOnGoing:   len(dltOnGoingChan),
-						dltCached:    len(dltTaskCache) + len(dltTaskChan),
-						resultCount:  len(verifyResultsMap),
-					})
-					OverAllStatTimer = time.Now()
-				}
-			}
-			// DT task control, when it have enough source ip, don't get cancel signal from term,
-			// don't result as expected, and the task chan is not full
-			if !noMoreSourcesDT && !cancelSigFromTerm && !haveEnoughResult {
-				if len(dtTaskChan) < cap(dtTaskChan) { // this condition is not apply for #line 587
-					// get more Hosts while we don't have enough hosts in dtTaskCache
-					if len(dtTaskCache) == 0 {
-						t_dtTaskCache := retrieveIPsFromIPR(2 * dtWorkerThread)
-						for _, ipStr := range t_dtTaskCache {
-							for _, port := range ports {
-								host := genHostFromIPStrPort(*ipStr, port)
-								dtTaskCache = append(dtTaskCache, &host)
-							}
-						}
-						t_dtTaskCache_2 := retrieveHosts(2 * dtWorkerThread)
-						dtTaskCache = append(dtTaskCache, t_dtTaskCache_2...)
-						// if no more hosts, but just in dt-only mode, we set noMoSources to true
-						if len(t_dtTaskCache) == 0 && len(t_dtTaskCache_2) == 0 {
-							noMoreSourcesDT = true
-						}
-						t_dtTaskCache = nil
-						t_dtTaskCache_2 = nil
-					}
-					// when it's dt-only mode or, download task pool has less ip than 2*cap(dltTaskChan)
-					// we put ping task into dtTaskCache
-					// simplify algorithm
-					if dtOnly || len(dltTaskCache) < 2*cap(dltTaskChan) {
-						for len(dtTaskCache) > 0 &&
-							len(dtTaskChan) < cap(dtTaskChan) && // dtTaskChan has enough room
-							len(dtTaskChan)+len(dtOnGoingChan)+len(dtResultChan) < cap(dtResultChan) {
-							// to prevent overflow of dtResultChan
-							// the total IP and task in dtTaskChan, dtOnGoingChan and dtResultChan is less than the capacity of dtResultChan
-							dtTaskChan <- dtTaskCache[0]
-							dtTasks += 1
-							if len(dtTaskCache) > 1 {
-								dtTaskCache = dtTaskCache[1:]
-							} else {
-								dtTaskCache = []*string{}
-							}
-						}
-					}
-				}
-			} else if dtOnly && // mission control
-				len(dtOnGoingChan) == 0 &&
-				len(dtTaskCache) == 0 &&
-				len(dtTaskChan) == 0 &&
-				dtDoneTasks >= dtTasks { // we did all ping works in dt-only mode, "dtDoneTasks >= dtTasks", make sure all DT tasks did done.
-				break LOOP
-			}
+		if haveEnoughResult {
+			break LOOP
 		}
-		// DLT
-		if !dtOnly {
-			for len(dltResultChan) > 0 {
-				select {
-				// check download result
-				case out := <-dltResultChan:
-					dltDoneTasks += 1
-					var tVerifyResult = singleResultStatistic(out, true)
-					var v = VerifyResults{}
-					if dltOnly {
-						v = tVerifyResult
-					} else {
-						v = cacheResultMap[*tVerifyResult.ip]
-						// reset TestTime according download test result
-						v.testTime = tVerifyResult.testTime
-						v.dltc = tVerifyResult.dltc
-						v.dls = tVerifyResult.dls
-						v.dltpc = tVerifyResult.dltpc
-						v.dltpr = tVerifyResult.dltpr
-						v.dlds = tVerifyResult.dlds
-						v.dltd = tVerifyResult.dltd
-						// update ping static
-						tDelayTotal := float64(v.dtpc) * v.da
-						v.dtc += tVerifyResult.dtc
-						v.dtpc += tVerifyResult.dtpc
-						if v.dtc > 0 {
-							v.dtpr = float64(v.dtpc) / float64(v.dtc)
-						}
-						if tVerifyResult.dtpc > 0 {
-							v.dmx = math.Max(v.dmx, tVerifyResult.dmx)
-							v.dmi = math.Min(v.dmi, tVerifyResult.dmi)
-							v.da = (tDelayTotal + float64(tVerifyResult.dtpc)*tVerifyResult.da) / float64(v.dtpc)
-						}
-					}
-					tVerifyResult = v
-					// check speed and data size downloaded
-					if v.dls >= dltEvaluationSpeed && v.dlds > downloadSizeMin {
-						// put v into verifyResultsMap
-						verifyResultsMap[tVerifyResult.ip] = tVerifyResult
-						// we have expected result
-						if !testAll && len(verifyResultsMap) >= resultMin {
-							haveEnoughResult = true
-						}
-						// non-debug msg
-						displayDetails(true, silenceMode, []VerifyResults{tVerifyResult})
-					} else if debug {
-						// debug msg
-						displayDetails(false, silenceMode, []VerifyResults{tVerifyResult})
-					}
-				default:
-				}
-				// Print overall stat during waiting time and reset OverAllStatTimer
-				if time.Since(OverAllStatTimer) > time.Duration(statInterval)*time.Millisecond {
-					displayStat(overAllStat{
-						dtTasksDone:  dtDoneTasks,
-						dtOnGoing:    len(dtOnGoingChan),
-						dtCached:     len(dtTaskCache) + len(dtTaskChan),
-						dltTasksDone: dltDoneTasks,
-						dltOnGoing:   len(dltOnGoingChan),
-						dltCached:    len(dltTaskCache) + len(dltTaskChan),
-						resultCount:  len(verifyResultsMap),
-					})
-					OverAllStatTimer = time.Now()
-				}
-			}
-			// DLT task control, when it don't get cancel signal from term, don't result as expected
-			if !cancelSigFromTerm && !haveEnoughResult && ((!dltOnly && len(dltTaskCache) > 0) || (dltOnly && !noMoreSourcesDLT)) {
-				// get more hosts while it's on download-only mode
-				if dltOnly && len(dltTaskCache) == 0 {
-					t_dltTaskCache := retrieveIPsFromIPR(2 * dltWorkerThread)
-					for _, ips := range t_dltTaskCache {
-						for _, port := range ports {
-							host := genHostFromIPStrPort(*ips, port)
-							dltTaskCache = append(dltTaskCache, &host)
-						}
-					}
-					t_dltTaskCache_2 := retrieveHosts(2 * dltWorkerThread)
-					dltTaskCache = append(dltTaskCache, t_dltTaskCache_2...)
-					// if no more hosts, but just in dlt-only mode, we set noMoSources to true
-					if len(t_dltTaskCache) == 0 && len(t_dltTaskCache_2) == 0 {
-						noMoreSourcesDLT = true
-					}
-					t_dltTaskCache = nil
-					t_dltTaskCache_2 = nil
-				}
-				// put task to download chan when we have IPs from delay test and the task chan have empty slot
-				for len(dltTaskCache) > 0 && // it has IP in dltTaskCache
-					len(dltTaskChan) < cap(dltTaskChan) && // dltTaskChan is not full
-					len(dltTaskChan)+len(dltOnGoingChan)+len(dltResultChan) < cap(dltResultChan) {
-					// to prevent overflow of dltResultChan
-					// the total IP and task in dltTaskChan, dltOnGoingChan and dltResultChan is less than the capacity of dltResultChan
-					dltTaskChan <- dltTaskCache[0]
-					dltTasks += 1
-					if len(dltTaskCache) > 1 {
-						dltTaskCache = dltTaskCache[1:]
-					} else {
-						dltTaskCache = []*string{}
-					}
-				}
-			} else if len(dltOnGoingChan) == 0 && // mission control
-				len(dltTaskChan) == 0 &&
-				len(dltTaskCache) == 0 &&
-				dltDoneTasks >= dltTasks && // "dltDoneTasks >= dltTasks", make sure all DLT tasks did done.
-				(dltOnly ||
-					(len(dtOnGoingChan) == 0 &&
-						len(dtTaskChan) == 0 &&
-						len(dtTaskCache) == 0) &&
-						dtDoneTasks >= dtTasks) { // "dtDoneTasks >= dtTasks", make sure all DT tasks did done.
-				break LOOP
-			}
-		}
-		// Print overall stat during waiting time and reset OverAllStatTimer
-		if time.Since(OverAllStatTimer) > time.Duration(statInterval)*time.Millisecond {
-			displayStat(overAllStat{
-				dtTasksDone:  dtDoneTasks,
-				dtOnGoing:    len(dtOnGoingChan),
-				dtCached:     len(dtTaskCache) + len(dtTaskChan),
-				dltTasksDone: dltDoneTasks,
-				dltOnGoing:   len(dltOnGoingChan),
-				dltCached:    len(dltTaskCache) + len(dltTaskChan),
-				resultCount:  len(verifyResultsMap),
-			})
-			OverAllStatTimer = time.Now()
-		}
-		time.Sleep(time.Duration(controllerInterval) * time.Millisecond)
 	}
+	// for tcell only, send terminate signal to termControl
+	terminateConfirm = true
 	// update statistic just before quit controller
+	cachedCount := len(dtTaskCache) + len(dltTaskCache) + len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
 	displayStat(overAllStat{
 		dtTasksDone:  dtDoneTasks,
-		dtOnGoing:    len(dtOnGoingChan),
-		dtCached:     len(dtTaskCache) + len(dtTaskChan),
+		dtOnGoing:    0,
+		dtCached:     cachedCount,
 		dltTasksDone: dltDoneTasks,
-		dltOnGoing:   len(dltOnGoingChan),
-		dltCached:    len(dltTaskCache) + len(dltTaskChan),
+		dltOnGoing:   0,
+		dltCached:    cachedCount,
 		resultCount:  len(verifyResultsMap),
 	})
-	// put stop signal to all delay test workers and download worker
-	if !dltOnly {
-		for i := 0; i < dtWorkerThread; i++ {
-			tStop := workerStopSignal
-			dtTaskChan <- &tStop
-		}
-	}
-	if !dtOnly {
-		for i := 0; i < dltWorkerThread; i++ {
-			tStop := workerStopSignal
-			dltTaskChan <- &tStop
-		}
-	}
+	// close all chan
+	close(dtTaskChan)
+	close(dtResultChan)
+	close(dltTaskChan)
+	close(dltResultChan)
+	wg.Wait()
 }
 
 func termControl(wg *sync.WaitGroup) {
@@ -951,75 +780,37 @@ func confirmQuit() bool {
 }
 
 func main() {
-	var wg sync.WaitGroup
-	var dtTaskChan = make(chan *string, dtWorkerThread*len(ports))
-	var dtResultChan = make(chan singleVerifyResult, cap(dtTaskChan)*2)
-	var dtOnGoingChan = make(chan int, dtWorkerThread)
-	var dltTaskChan = make(chan *string, dltWorkerThread*len(ports))
-	var dltResultChan = make(chan singleVerifyResult, cap(dltTaskChan)*2)
-	var dltOnGoingChan = make(chan int, dltWorkerThread)
-
-	if debug && tcellMode {
-		go termControl(&wg)
-		wg.Add(1)
-	}
 
 	// start controller worker
-	go controllerWorker(dtTaskChan, dtResultChan, dltTaskChan, dltResultChan, &wg, dtOnGoingChan, dltOnGoingChan)
-
-	wg.Add(1)
-	// start ping worker
-	if !dltOnly {
-		for i := 0; i < dtWorkerThread; i++ {
-			if dtHttps {
-				go downloadWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, &dtUrl,
-					dtTimeoutDuration, -1, dtCount, true, enableDTEvaluation)
-			} else {
-				go sslDTWorker(dtTaskChan, dtResultChan, dtOnGoingChan, &wg, enableDTEvaluation)
-			}
-			wg.Add(1)
-		}
-	}
-
-	// start download worker if don't do ping only
-	if !dtOnly {
-		for i := 0; i < dltWorkerThread; i++ {
-			go downloadWorker(dltTaskChan, dltResultChan, dltOnGoingChan, &wg, &dltUrl,
-				httpRspTimeoutDuration, dltTimeDurationMax, dltCount, false, false)
-			wg.Add(1)
-		}
-	}
-	wg.Wait()
-	// close all chan
-	close(dtTaskChan)
-	close(dtResultChan)
-	close(dtOnGoingChan)
-	close(dltTaskChan)
-	close(dltResultChan)
-	close(dltOnGoingChan)
+	runWorker()
 	if len(verifyResultsMap) > 0 {
 		verifyResultsSlice := make([]VerifyResults, 0)
 		for _, v := range verifyResultsMap {
+			if ResolveLoc && len(*v.loc) == 0 {
+				t_loc := getGeoInfoFromCF(v.ip)
+				v.loc = &t_loc
+			}
 			verifyResultsSlice = append(verifyResultsSlice, v)
 		}
 		if !silenceMode {
+			records := genDBRecords(verifyResultsSlice, resolveLocalASNAndCity)
 			// write to csv file
 			if storeToFile {
 				myLogger.Print("Write to csv " + resultFile)
-				WriteResult(verifyResultsSlice, resultFile)
+				writeCSVResult(records, resultFile)
 				myLogger.Println("  Done!")
 			}
 			// write to db
 			if storeToDB {
 				myLogger.Print("Write to sqlite3 db file " + dbFile)
-				InsertIntoDb(verifyResultsSlice, dbFile)
+				saveDBRecords(records, dbFile)
 				myLogger.Println("  Done!")
 			}
 			// sort by speed
 			sort.Sort(sort.Reverse(resultSpeedSorter(verifyResultsSlice)))
 			myLogger.Println()
 			myLogger.Println("All Results:")
-			PrintFinalStat(verifyResultsSlice, dtOnly)
+			printFinalStat(verifyResultsSlice, dtOnly)
 			// } else { // we display results in controler when in silence mode
 			// 	for _, v := range verifyResultsSlice {
 			// 		myLogger.Println(*(v.ip))

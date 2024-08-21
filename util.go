@@ -5,9 +5,9 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"log"
 	"math"
-	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,273 +18,8 @@ import (
 
 	"text/tabwriter"
 
-	"github.com/gdamore/tcell/v2"
-	"github.com/mattn/go-runewidth"
+	"github.com/tidwall/gjson"
 )
-
-const (
-	logLevelDebug   = 1<<5 - 1
-	logLevelInfo    = 1<<4 - 1
-	logLevelWarning = 1<<3 - 1
-	logLevelError   = 1<<2 - 1
-	logLevelFatal   = 1<<1 - 1
-	myIndent        = " "
-)
-
-var (
-	CFIPV4 = []string{
-		"103.21.244.0/24",
-		"104.16.0.0/16",
-		"104.17.0.0/16",
-		"104.18.0.0/16",
-		"104.19.0.0/16",
-		"104.20.0.0/16",
-		"104.21.0.0/17",
-		"104.21.192.0/19",
-		"104.21.224.0/20",
-		"104.22.0.0/18",
-		"104.22.64.0/20",
-		"104.23.128.0/20",
-		"104.23.96.0/19",
-		"104.24.0.0/18",
-		"104.24.128.0/17",
-		"104.24.64.0/19",
-		"104.25.0.0/16",
-		"104.26.0.0/20",
-		"104.27.0.0/17",
-		"104.27.192.0/20",
-		"108.162.220.0/24",
-		"141.101.103.0/24",
-		"141.101.104.0/23",
-		"141.101.106.0/24",
-		"141.101.120.0/22",
-		"141.101.90.0/24",
-		"162.158.253.0/24",
-		"162.159.128.0/21",
-		"162.159.136.0/23",
-		"162.159.138.0/24",
-		"162.159.152.0/23",
-		"162.159.160.0/24",
-		"162.159.192.0/22",
-		"162.159.196.0/24",
-		"162.159.200.0/24",
-		"162.159.204.0/24",
-		"162.159.240.0/20",
-		"162.159.36.0/24",
-		"162.159.46.0/24",
-		"172.64.128.0/19",
-		"172.64.160.0/20",
-		"172.64.192.0/20",
-		"172.64.228.0/20",
-		"172.64.68.0/24",
-		"172.64.69.0/24",
-		"172.64.80.0/20",
-		"172.64.96.0/20",
-		"172.65.0.0/18",
-		"172.65.128.0/20",
-		"172.65.160.0/19",
-		"172.65.192.0/18",
-		"172.65.96.0/19",
-		"172.66.40.0/21",
-		"172.67.0.0/16",
-		"173.245.49.0/24",
-		"188.114.96.0/22",
-		"190.93.244.0/22",
-		"198.41.192.0/20",
-		"198.41.208.0/23",
-		"198.41.211.0/24",
-		"198.41.212.0/24",
-		"198.41.214.0/23",
-		"198.41.216.0/21",
-	}
-	CFIPV4FULL = []string{
-		"103.21.244.0/22",
-		"103.22.200.0/22",
-		"103.31.4.0/22",
-		"104.16.0.0/13",
-		"104.24.0.0/14",
-		"108.162.192.0/18",
-		"131.0.72.0/22",
-		"141.101.64.0/18",
-		"162.158.0.0/15",
-		"172.64.0.0/13",
-		"173.245.48.0/20",
-		"188.114.96.0/20",
-		"190.93.240.0/20",
-		"197.234.240.0/22",
-		"198.41.128.0/17",
-	}
-	CFIPV6 = []string{
-		"2606:4700:f1::/48",
-		"2606:4700:f4::/48",
-		"2606:4700:130::/44",
-		"2606:4700:3000::/44",
-		"2606:4700:3010::/44",
-		"2606:4700:3020::/44",
-		"2606:4700:3030::/44",
-		"2606:4700:4400::/44",
-		"2606:4700:4700::/48",
-		"2606:4700:7000::/48",
-		"2606:4700:8040::/44",
-		"2606:4700:80c0::/44",
-		"2606:4700:80f0::/44",
-		"2606:4700:81c0::/44",
-		"2606:4700:8390::/44",
-		"2606:4700:83b0::/44",
-		"2606:4700:85c0::/44",
-		"2606:4700:85d0::/44",
-		"2606:4700:8ca0::/44",
-		"2606:4700:8d70::/44",
-		"2606:4700:8d90::/44",
-		"2606:4700:8dd0::/44",
-		"2606:4700:8de0::/44",
-		"2606:4700:90c0::/44",
-		"2606:4700:90d0::/44",
-		"2606:4700:91b0::/44",
-		"2606:4700:9640::/44",
-		"2606:4700:9760::/44",
-		"2606:4700:99e0::/44",
-		"2606:4700:9ae0::/44",
-		"2606:4700:9c60::/44",
-		"2a06:98c1:3100::/44",
-		"2a06:98c1:3120::/48",
-		"2a06:98c1:3121::/48",
-		"2a06:98c1:3122::/48",
-		"2a06:98c1:3123::/48",
-		"2606:4700::6810:0/111",
-		"2606:4700::6812:0/111",
-		"2606:4700:10::6814:0/112",
-		"2606:4700:10::6816:0/112",
-		"2606:4700:10::6817:0/112",
-	}
-	CFIPV6FULL = []string{
-		"2400:cb00::/32",
-		"2606:4700::/32",
-		"2803:f800::/32",
-		"2405:b500::/32",
-		"2405:8100::/32",
-		"2a06:98c0::/29",
-		"2c0f:f248::/32",
-	}
-	utf8BomBytes    = []byte{0xEF, 0xBB, 0xBF}
-	resultCsvHeader = []string{
-		"TestTime",
-		"IP",
-		"DLSpeed(DLS,KB/s)",
-		"DelayAvg(DA,ms)",
-		"DelaySource(DS)",
-		"DTPassedRate(DTPR,%)",
-		"DTCount(DTC)",
-		"DTPassedCount(DTPC)",
-		"DelayMin(DMI,ms)",
-		"DelayMax(DMX,ms)",
-		"DLTCount(DLTC)",
-		"DLTPassedCount(DLTPC)",
-		"DLTPassedRate(DLPR,%)",
-	}
-	cfURL = "https://speed.cloudflare.com/__down"
-)
-
-type arrayFlags []string
-
-func (i *arrayFlags) String() string {
-	return fmt.Sprintf("%v", *i)
-}
-
-func (i *arrayFlags) Set(value string) error {
-	*i = append(*i, value)
-	return nil
-}
-
-func (i *arrayFlags) Type() string {
-	return "[]string"
-}
-
-type LogLevel int
-
-type MyLogger struct {
-	loggerLevel LogLevel
-	indent      string
-}
-
-type singleResult struct {
-	dTPassed      bool          // Delay Test (DT) passed (yes) or not (no)
-	dTDuration    time.Duration // DT time escaped
-	httpReqRspDur time.Duration // pure time escaped between http request send and response after tls negotiation
-	dLTWasDone    bool          // Download Test (DLT) was done or not
-	dLTPassed     bool          // DLT passed or not
-	dLTDuration   time.Duration // DLT escaped times
-	dLTDataSize   int64         // DLT download data size, in byte
-}
-
-type singleVerifyResult struct {
-	testTime    time.Time
-	host        string
-	resultSlice []singleResult
-}
-
-type VerifyResults struct {
-	testTime time.Time // test time
-	ip       *string   // should be <ipv4:port> or <[ipv6]:port>, not just a ip string.
-	dtc      int       // Delay Test(DT) tried count
-	dtpc     int       // DT passed count
-	dtpr     float64   // DT passed rate, in decimal
-	da       float64   // average delay, in ms
-	dmi      float64   // minimal delay, in ms
-	dmx      float64   // max delay, in ms
-	dltc     int       // Download Test(DLT) tried count
-	dltpc    int       // DLT passed count
-	dltpr    float64   // DLT passed rate, in decimal
-	dls      float64   // DLT average speed, in KB/s
-	dlds     int64     // DLT download data size, in byte
-	dltd     float64   // DLT escaped times, in second
-}
-
-type resultSpeedSorter []VerifyResults
-
-func (a resultSpeedSorter) Len() int           { return len(a) }
-func (a resultSpeedSorter) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a resultSpeedSorter) Less(i, j int) bool { return a[i].dls < a[j].dls }
-
-type overAllStat struct {
-	dtTasksDone  int
-	dtOnGoing    int
-	dtCached     int
-	dltTasksDone int
-	dltOnGoing   int
-	dltCached    int
-	resultCount  int
-}
-
-func (myLogger *MyLogger) getLogLevelString(lv LogLevel) string {
-	switch lv {
-	case logLevelDebug:
-		return "DEBUG"
-	case logLevelInfo:
-		return "INFO"
-	case logLevelWarning:
-		return "WARNING"
-	case logLevelError:
-		return "ERROR"
-	case logLevelFatal:
-		return "FATAL"
-	default:
-	}
-	switch myLogger.loggerLevel {
-	case logLevelDebug:
-		return "DEBUG"
-	case logLevelInfo:
-		return "INFO"
-	case logLevelWarning:
-		return "WARNING"
-	case logLevelError:
-		return "ERROR"
-	case logLevelFatal:
-		return "FATAL"
-	default:
-	}
-	return "INFO"
-}
 
 func getTimeNowStr() string {
 	return time.Now().Format("15:04:05")
@@ -296,278 +31,6 @@ func getTimeNowStrSuffix() string {
 	return strings.ReplaceAll(s, ".", "")
 }
 
-func (myLogger *MyLogger) newLogger(lv LogLevel) MyLogger {
-	return MyLogger{lv, myIndent}
-}
-
-func (myLogger *MyLogger) log_newline(lv LogLevel, newline bool, info ...any) {
-	fmt.Print(getTimeNowStr())
-	fmt.Print(myLogger.indent)
-	t_log_type_str := myLogger.getLogLevelString(lv)
-	fmt.Printf("%v", t_log_type_str)
-	fmt.Print(myLogger.indent)
-	myLogger.print(newline, info...)
-}
-
-func (myLogger *MyLogger) log_newlinef(lv LogLevel, format string, info ...any) {
-	fmt.Print(getTimeNowStr())
-	fmt.Print(myLogger.indent)
-	t_log_type_str := myLogger.getLogLevelString(lv)
-	fmt.Printf("%v", t_log_type_str)
-	fmt.Print(myLogger.indent)
-	myLogger.printf(format, info...)
-}
-
-func (myLogger *MyLogger) print(newline bool, info ...any) {
-	if len(info) >= 1 {
-		fmt.Printf("%v", info[0])
-		if len(info) > 1 {
-			for _, t := range info[1:] {
-				fmt.Printf("%s%v", myLogger.indent, t)
-			}
-		}
-	}
-	if newline {
-		fmt.Println()
-	}
-}
-
-func (myLogger *MyLogger) printf(format string, info ...any) {
-	fmt.Printf(format, info...)
-}
-
-func (myLogger *MyLogger) debug(newline bool, info ...any) {
-	myLogger.log_newline(logLevelDebug, newline, info...)
-}
-
-func (myLogger *MyLogger) debugf(format string, info ...any) {
-	myLogger.log_newlinef(logLevelDebug, format, info...)
-}
-
-func (myLogger *MyLogger) info(newline bool, info ...any) {
-	myLogger.log_newline(logLevelInfo, newline, info...)
-}
-
-func (myLogger *MyLogger) infof(format string, info ...any) {
-	myLogger.log_newlinef(logLevelInfo, format, info...)
-}
-
-func (myLogger *MyLogger) warning(newline bool, info ...any) {
-	myLogger.log_newline(logLevelWarning, newline, info...)
-}
-
-func (myLogger *MyLogger) warningf(format string, info ...any) {
-	myLogger.log_newlinef(logLevelWarning, format, info...)
-}
-
-func (myLogger *MyLogger) error(newline bool, info ...any) {
-	myLogger.log_newline(logLevelError, newline, info...)
-}
-
-func (myLogger *MyLogger) errorf(format string, info ...any) {
-	myLogger.log_newlinef(logLevelError, format, info...)
-}
-
-func (myLogger *MyLogger) fatal(newline bool, info ...any) {
-	myLogger.log_newline(logLevelFatal, newline, info...)
-	os.Exit(1)
-}
-
-func (myLogger *MyLogger) fatalf(format string, info ...any) {
-	myLogger.log_newlinef(logLevelFatal, format, info...)
-	os.Exit(1)
-}
-
-func (myLogger *MyLogger) log(loglvl LogLevel, newline bool, info ...any) {
-	switch loglvl {
-	case logLevelDebug:
-		myLogger.debug(newline, info...)
-	case logLevelInfo:
-		myLogger.info(newline, info...)
-	case logLevelWarning:
-		myLogger.warning(newline, info...)
-	case logLevelError:
-		myLogger.error(newline, info...)
-	case logLevelFatal:
-		myLogger.fatal(newline, info...)
-	default:
-	}
-}
-
-func (myLogger *MyLogger) logf(loglvl LogLevel, format string, info ...any) {
-	switch loglvl {
-	case logLevelDebug:
-		myLogger.debugf(format, info...)
-	case logLevelInfo:
-		myLogger.infof(format, info...)
-	case logLevelWarning:
-		myLogger.warningf(format, info...)
-	case logLevelError:
-		myLogger.errorf(format, info...)
-	case logLevelFatal:
-		myLogger.fatalf(format, info...)
-	default:
-	}
-}
-
-func (myLogger *MyLogger) Debug(info ...any) {
-	myLogger.debug(false, info...)
-}
-
-func (myLogger *MyLogger) Debugf(format string, info ...any) {
-	myLogger.debugf(format, info...)
-}
-
-func (myLogger *MyLogger) Debugln(info ...any) {
-	myLogger.debug(true, info...)
-}
-
-func (myLogger *MyLogger) Info(info ...any) {
-	myLogger.info(false, info...)
-}
-
-func (myLogger *MyLogger) Infof(format string, info ...any) {
-	myLogger.infof(format, info...)
-}
-
-func (myLogger *MyLogger) Infoln(info ...any) {
-	myLogger.info(true, info...)
-}
-
-func (myLogger *MyLogger) Warning(info ...any) {
-	myLogger.warning(false, info...)
-}
-
-func (myLogger *MyLogger) Warningf(format string, info ...any) {
-	myLogger.warningf(format, info...)
-}
-
-func (myLogger *MyLogger) Warningln(info ...any) {
-	myLogger.warning(true, info...)
-}
-
-func (myLogger *MyLogger) Error(info ...any) {
-	myLogger.error(false, info...)
-}
-
-func (myLogger *MyLogger) Errorf(format string, info ...any) {
-	myLogger.errorf(format, info...)
-}
-
-func (myLogger *MyLogger) Errorln(info ...any) {
-	myLogger.error(true, info...)
-}
-
-func (myLogger *MyLogger) Fatal(info ...any) {
-	myLogger.fatal(false, info...)
-}
-
-func (myLogger *MyLogger) Fatalf(format string, info ...any) {
-	myLogger.fatalf(format, info...)
-}
-
-func (myLogger *MyLogger) Fatalln(info ...any) {
-	myLogger.fatal(true, info...)
-}
-
-func (myLogger *MyLogger) Log(loglvl LogLevel, a ...any) {
-	myLogger.log(loglvl, false, a...)
-}
-
-func (myLogger *MyLogger) Logf(loglvl LogLevel, format string, a ...any) {
-	myLogger.logf(loglvl, format, a...)
-}
-
-func (myLogger *MyLogger) Logln(loglvl LogLevel, a ...any) {
-	myLogger.log(loglvl, true, a...)
-}
-
-func (myLogger *MyLogger) Print(info ...any) {
-	myLogger.print(false, info...)
-}
-
-func (myLogger *MyLogger) Printf(format string, info ...any) {
-	myLogger.printf(format, info...)
-}
-
-func (myLogger *MyLogger) Println(info ...any) {
-	myLogger.print(true, info...)
-}
-
-func (myLogger *MyLogger) PrintSingleStat(logLvl LogLevel, v []VerifyResults, ov overAllStat) {
-	myLogger.PrintDetails(logLvl, v)
-	myLogger.PrintOverAllStat(logLvl, ov)
-}
-
-// log when debug or info
-func (myLogger *MyLogger) PrintDetails(logLvl LogLevel, v []VerifyResults) {
-	// no data for print
-	if len(v) == 0 {
-		return
-	}
-
-	// print only when logLvl is permitted in myLogger
-	if myLogger.loggerLevel&logLvl != logLvl {
-		return
-	}
-	// fix indent
-	if len(myLogger.indent) == 0 {
-		myLogger.indent = myIndent
-	}
-	lc := v
-	for i := 0; i < len(lc); i++ {
-		myLogger.Logf(logLvl, "IP:%v%s", *lc[i].ip, myLogger.indent)
-		if !dtOnly {
-			myLogger.Printf("Speed(KB/s):%.2f%s", lc[i].dls, myLogger.indent)
-		}
-		myLogger.Printf("Delay(ms):%.0f", lc[i].da)
-		if !dltOnly {
-			myLogger.Printf("%sStab.(%%):%.2f", myLogger.indent, lc[i].dtpr*100)
-		}
-	}
-	myLogger.Println()
-}
-
-// print just IPs
-func (myLogger *MyLogger) PrintClearIPs(v []VerifyResults) {
-	// no data for print
-	if len(v) == 0 {
-		return
-	}
-	lc := v
-	for i := 0; i < len(lc); i++ {
-		myLogger.Println(*lc[i].ip)
-	}
-}
-
-// print OverAll statistic
-func (myLogger *MyLogger) PrintOverAllStat(logLvl LogLevel, ov overAllStat) {
-	// print only when logLvl is permitted in myLogger
-	if myLogger.loggerLevel&logLvl != logLvl {
-		return
-	}
-	// fix space
-	if len(myLogger.indent) == 0 {
-		myLogger.indent = myIndent
-	}
-	myLogger.Logf(logLvl, "Result:%d%s ", ov.resultCount, myLogger.indent)
-	if !dltOnly {
-		myLogger.Printf("DT - Tested:%d%s", ov.dtTasksDone, myLogger.indent)
-		myLogger.Printf("OnGoing:%d%s", ov.dtOnGoing, myLogger.indent)
-		myLogger.Printf("Cached:%d", ov.dtCached)
-		// add more intent, while it's in both DT & DLT mode
-		if !dtOnly {
-			myLogger.Print("  ")
-		}
-	}
-	if !dtOnly {
-		myLogger.Printf("DLT - Tested:%d%s", ov.dltTasksDone, myLogger.indent)
-		myLogger.Printf("OnGoing:%d%s", ov.dltOnGoing, myLogger.indent)
-		myLogger.Printf("Cached:%d", ov.dltCached)
-	}
-	myLogger.Println()
-}
-
 func fileExists(filename string) bool {
 	info, err := os.Stat(filename)
 	if os.IsNotExist(err) {
@@ -576,7 +39,7 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
-func WriteResult(data []VerifyResults, filePath string) {
+func writeCSVResult(data []DBRecord, filePath string) {
 	var fp = &os.File{}
 	var err error
 	var w = &csv.Writer{}
@@ -604,32 +67,43 @@ func WriteResult(data []VerifyResults, filePath string) {
 	defer func() { _ = fp.Close() }()
 	// "TestTime",
 	// "IP",
-	// "DLSpeed(DLS, KB/s)",
-	// "DelayAvg(DA, ms)",
+	// "DLSpeed(DLS,KB/s)",
+	// "DelayAvg(DA,ms)",
 	// "DelaySource(DS)",
-	// "DTPassedRate(DTPR, %)",
+	// "DTPassedRate(DTPR,%)",
 	// "DTCount(DTC)",
 	// "DTPassedCount(DTPC)",
-	// "DelayMin(DMI, ms)",
-	// "DelayMax(DMX, ms)",
+	// "DelayMin(DMI,ms)",
+	// "DelayMax(DMX,ms)",
 	// "DLTCount(DLTC)",
 	// "DLTPassedCount(DLTPC)",
-	// "DLTPassedRate(DLTPR, %)"
+	// "DLTPassedRate(DLPR,%)",
+	// "City(Src)",
+	// "ASN(Src)",
+	// "Location(CF)",
 	for _, tD := range data {
+		asn_str, city := "", ""
+		if tD.Asn > 0 {
+			asn_str = fmt.Sprintf("AS%v", tD.Asn)
+			city = tD.City
+		}
 		err = w.Write([]string{
-			tD.testTime.Format("2006-01-02 15:04:05"),
-			*tD.ip,
-			fmt.Sprintf("%.2f", tD.dls),
-			fmt.Sprintf("%.0f", tD.da),
-			dtSource,
-			fmt.Sprintf("%.2f", tD.dtpr*100),
-			fmt.Sprintf("%d", tD.dtc),
-			fmt.Sprintf("%d", tD.dtpc),
-			fmt.Sprintf("%.0f", tD.dmi),
-			fmt.Sprintf("%.0f", tD.dmx),
-			fmt.Sprintf("%d", tD.dltc),
-			fmt.Sprintf("%d", tD.dltpc),
-			fmt.Sprintf("%.2f", tD.dltpr*100),
+			tD.TestTimeStr,
+			tD.IP,
+			fmt.Sprintf("%.2f", tD.DLS),
+			fmt.Sprintf("%.0f", tD.DA),
+			tD.DS,
+			fmt.Sprintf("%.2f", tD.DTPR*100),
+			fmt.Sprintf("%d", tD.DTC),
+			fmt.Sprintf("%d", tD.DTPC),
+			fmt.Sprintf("%.0f", tD.DMI),
+			fmt.Sprintf("%.0f", tD.DMX),
+			fmt.Sprintf("%d", tD.DLTC),
+			fmt.Sprintf("%d", tD.DLTPC),
+			fmt.Sprintf("%.2f", tD.DLTPR*100),
+			city,
+			asn_str,
+			tD.Loc,
 		})
 		if err != nil {
 			log.Fatalf("Write csv File %v failed with: %v", filePath, err)
@@ -638,7 +112,7 @@ func WriteResult(data []VerifyResults, filePath string) {
 	w.Flush()
 }
 
-func ParseUrl(urlStr string) (tHostName string, tPort int) {
+func parseUrl(urlStr string) (tHostName string, tPort int) {
 	urlStr = strings.TrimSpace(urlStr)
 	if len(urlStr) == 0 {
 		urlStr = defaultDLTUrl
@@ -664,7 +138,7 @@ func ParseUrl(urlStr string) (tHostName string, tPort int) {
 	return
 }
 
-func NewUrl(urlStr, port string) string {
+func newUrl(urlStr, port string) string {
 	urlStr = strings.TrimSpace(urlStr)
 	if len(urlStr) == 0 {
 		urlStr = defaultDLTUrl
@@ -691,65 +165,242 @@ func initRandSeed() {
 	myRand.Seed(time.Now().UnixNano())
 }
 
-func getASNAndCityWithIP(ipStr *string) (ASN int, city string) {
-	if defaultASN > 0 || len(defaultCity) > 0 {
-		ASN = defaultASN
-		city = defaultCity
+// func getASNAndCityWithIP(ipStr *string) (ASN int, city string) {
+// 	if defaultASN > 0 || len(defaultCity) > 0 {
+// 		ASN = defaultASN
+// 		city = defaultCity
+// 		return
+// 	}
+// 	// try 3 times
+// 	for i := 0; i < 3; i++ {
+// 		tReq, err := http.NewRequest("GET", cfURL, nil)
+// 		if err != nil {
+// 			log.Fatal(err)
+// 		}
+// 		var client = http.Client{
+// 			Transport:     nil,
+// 			CheckRedirect: nil,
+// 			Jar:           nil,
+// 			Timeout:       httpRspTimeoutDuration + 1*time.Second,
+// 		}
+// 		if len(*ipStr) > 0 && isValidIPs(*ipStr) {
+// 			fullAddress := genHostFromIPStrPort(*ipStr, 443)
+// 			client.Transport = &http.Transport{
+// 				DialContext: GetDialContextByAddr(fullAddress),
+// 				//ResponseHeaderTimeout: HttpRspTimeoutDuration,
+// 			}
+// 		}
+// 		response, err := client.Do(tReq)
+// 		// connection is failed(network error), won't continue
+// 		if err != nil || response == nil {
+// 			myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
+// 			time.Sleep(time.Duration(interval) * time.Millisecond)
+// 			continue
+// 		}
+// 		if values, ok := (*response).Header["Cf-Meta-Asn"]; ok {
+// 			if len(values) > 0 {
+// 				if ASN, err = strconv.Atoi(values[0]); err != nil {
+// 					myLogger.Error(fmt.Sprintf("An error occurred while convert ASN for header: %T, %v", values[0], values[0]))
+// 				}
+// 			}
+// 		}
+// 		if values, ok := (*response).Header["Cf-Meta-City"]; ok {
+// 			if len(values) > 0 {
+// 				city = values[0]
+// 			}
+// 		}
+// 		if len(city) == 0 { // no "Cf-Meta-City" in header, we get "Cf-Meta-Country" instead
+// 			if values, ok := (*response).Header["Cf-Meta-Country"]; ok {
+// 				if len(values) > 0 {
+// 					city = values[0]
+// 				}
+// 			}
+// 		}
+// 		defaultASN = ASN
+// 		defaultCity = city
+// 		break
+// 	}
+// 	return
+// }
+
+// from https://api.incolumitas.com/?q=3.5.140.2
+func getGeoInfoFromIncolumitas(querIP string) (ASN int, city, country string) {
+	// if defaultASN > 0 || len(defaultCity) > 0 {
+	// 	ASN = defaultASN
+	// 	city = defaultCity
+	// 	return
+	// }
+	t_url, _ := url.Parse("https://api.incolumitas.com/")
+	params := url.Values{}
+	if len(querIP) > 0 && isValidIPs(querIP) {
+		params.Add("q", querIP)
+	}
+	t_url.RawQuery = params.Encode()
+	tReq, err := http.NewRequest("GET", t_url.String(), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var client = http.Client{
+		Transport:     nil,
+		CheckRedirect: nil,
+		Jar:           nil,
+		Timeout:       5 * time.Second,
+	}
+
+	response, err := client.Do(tReq)
+	// connection is failed(network error), won't continue
+	if err != nil || response == nil {
+		myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
+		time.Sleep(time.Duration(interval) * time.Millisecond)
 		return
 	}
-	// try 3 times
-	for i := 0; i < 3; i++ {
-		tReq, err := http.NewRequest("GET", cfURL, nil)
-		if err != nil {
-			log.Fatal(err)
+	// read response.Body as string
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		myLogger.Error(fmt.Sprintf("An error occurred while read response.Body: %v\n", err))
+		return
+	}
+	// decode body []byte into string
+	bodyStr := string(body)
+	asn := gjson.Get(bodyStr, "asn.asn")
+	if asn.Exists() {
+		if ASN, err = strconv.Atoi(asn.String()); err != nil {
+			myLogger.Error(fmt.Sprintf("An error occurred while convert ASN for header: %T, %v", asn.String(), asn.String()))
 		}
-		var client = http.Client{
-			Transport:     nil,
-			CheckRedirect: nil,
-			Jar:           nil,
-			Timeout:       httpRspTimeoutDuration + 1*time.Second,
+	}
+	city = gjson.Get(bodyStr, "location.city").String()
+	country = gjson.Get(bodyStr, "location.country_code").String()
+	return
+}
+
+// get loc from https://<cloudflared_url>/cdn-cgi/trace
+func getGeoInfoFromCF(ipStr *string) (loc string) {
+	baseUrl := getCFCDNCgiTraceUrl()
+	t_ip := *ipStr
+	t_port := -1
+	t_url, t_err := url.Parse(baseUrl)
+	if t_err != nil {
+		myLogger.Errorln("<getGeoInfoFromCF> invalid base url ", baseUrl)
+		return
+	}
+	if isValidIP(*ipStr) {
+		if t_url.Scheme == "http" {
+			t_port = 80
+		} else if t_url.Scheme == "https" {
+			t_port = 443
+		} else {
+			myLogger.Errorln("<getGeoInfoFromCF> invalid base url ", baseUrl)
+			return
 		}
-		if len(*ipStr) > 0 && isValidIPs(*ipStr) {
-			fullAddress := genHostFromIPStrPort(*ipStr, 443)
-			client.Transport = &http.Transport{
-				DialContext: GetDialContextByAddr(fullAddress),
-				//ResponseHeaderTimeout: HttpRspTimeoutDuration,
-			}
+	} else if isValidHost(*ipStr) {
+		ok := true
+		ok, t_ip, t_port = splitHost(*ipStr)
+		if !ok {
+			myLogger.Errorln("<getGeoInfoFromCF> invalid host ", *ipStr)
+			return
 		}
-		response, err := client.Do(tReq)
-		// connection is failed(network error), won't continue
-		if err != nil || response == nil {
-			myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
-			time.Sleep(time.Duration(interval) * time.Millisecond)
-			continue
-		}
-		if values, ok := (*response).Header["Cf-Meta-Asn"]; ok {
-			if len(values) > 0 {
-				if ASN, err = strconv.Atoi(values[0]); err != nil {
-					myLogger.Error(fmt.Sprintf("An error occurred while convert ASN for header: %T, %v", values[0], values[0]))
-				}
-			}
-		}
-		if values, ok := (*response).Header["Cf-Meta-City"]; ok {
-			if len(values) > 0 {
-				city = values[0]
-			}
-		}
-		if len(city) == 0 { // no "Cf-Meta-City" in header, we get "Cf-Meta-Country" instead
-			if values, ok := (*response).Header["Cf-Meta-Country"]; ok {
-				if len(values) > 0 {
-					city = values[0]
-				}
-			}
-		}
-		defaultASN = ASN
-		defaultCity = city
-		break
+	} else {
+		myLogger.Errorln("<getGeoInfoFromCF> invalid ip ", *ipStr)
+		return
+	}
+	t_url.Host = net.JoinHostPort(t_url.Hostname(), fmt.Sprint(t_port))
+	tReq, err := http.NewRequest("GET", t_url.String(), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fullAddress := genHostFromIPStrPort(t_ip, t_port)
+	var client = http.Client{
+		Transport: &http.Transport{
+			DialContext: GetDialContextByAddr(fullAddress),
+			//ResponseHeaderTimeout: HttpRspTimeoutDuration,
+		},
+		CheckRedirect: nil,
+		Jar:           nil,
+		Timeout:       httpRspTimeoutDuration + 5*time.Second,
+	}
+	response, err := client.Do(tReq)
+	// connection is failed(network error), won't continue
+	if err != nil || response == nil {
+		myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
+		time.Sleep(time.Duration(interval) * time.Millisecond)
+		return
+	}
+	// read response.Body as string
+	loc, err = read_loc_from_cf_cdn_cgi_trace_body(response.Body)
+	if err != nil {
+		myLogger.Error(fmt.Sprintf("An error occurred while read response.Body: %v\n", err))
+		return
 	}
 	return
 }
 
-func PrintFinalStat(v []VerifyResults, disableDownload bool) {
+func getCFCDNCgiTraceUrl() (baseurl string) {
+	t_cf_url, t_err := url.Parse(baseCfCDNCgiTraceUrl)
+	if t_err != nil {
+		myLogger.Errorln("<getCFCgiCDNTraceUrl> invalid base url ", baseCfCDNCgiTraceUrl)
+		baseurl = "https://ww1.zhfreal.top/cdn-cgi/trace"
+		return
+	}
+	if dtOnly {
+		if dtHttps {
+			t_url, t_err := url.Parse(dtUrl)
+			if t_err != nil {
+				myLogger.Warningln("<getCFCgiCDNTraceUrl> invalid dt url ", dtUrl)
+				baseurl = baseCfCDNCgiTraceUrl
+				return
+			}
+			t_cf_url.Host = t_url.Host
+		} else {
+			t_cf_url.Host = hostName
+		}
+	} else {
+		t_url, t_err := url.Parse(dltUrl)
+		if t_err != nil {
+			myLogger.Warningln("<getCFCgiCDNTraceUrl> invalid dt url ", dtUrl)
+			baseurl = baseCfCDNCgiTraceUrl
+			return
+		}
+		t_cf_url.Host = t_url.Host
+	}
+	baseurl = t_cf_url.String()
+	return
+}
+
+func genDBRecords(verifyResultsSlice []VerifyResults, getLocalAsnAndCity bool) (dbRecords []DBRecord) {
+	if len(verifyResultsSlice) > 0 {
+		dbRecords = make([]DBRecord, 0)
+		ASN, city := 0, ""
+		if getLocalAsnAndCity {
+			ASN, city, _ = getGeoInfoFromIncolumitas("")
+		}
+		for _, v := range verifyResultsSlice {
+			record := DBRecord{}
+			record.Asn = ASN
+			record.City = city
+			record.Label = suffixLabel
+			record.DS = dtSource
+			record.TestTimeStr = v.testTime.Format("2006-01-02 15:04:05")
+			record.IP = *v.ip
+			record.Loc = *v.loc
+			record.DTC = v.dtc
+			record.DTPC = v.dtpc
+			record.DTPR = v.dtpr
+			record.DA = v.da
+			record.DMI = v.dmi
+			record.DMX = v.dmx
+			record.DLTC = v.dltc
+			record.DLTPC = v.dltpc
+			record.DLTPR = v.dltpr
+			record.DLS = v.dls
+			record.DLDS = v.dlds
+			record.DLTD = v.dltd
+			dbRecords = append(dbRecords, record)
+		}
+	}
+	return
+}
+
+func printFinalStat(v []VerifyResults, dtOnly bool) {
 	// no data for print
 	if len(v) == 0 {
 		return
@@ -763,51 +414,31 @@ func PrintFinalStat(v []VerifyResults, disableDownload bool) {
 	// close line, LatestLogLength should be 0
 	fmt.Println()
 	for i := 0; i < len(v); i++ {
+		t_ip := *v[i].ip
+		if len(*v[i].loc) > 0 {
+			t_ip = fmt.Sprintf("%s#%s", t_ip, *v[i].loc)
+		}
 		if !dtOnly {
-			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), *v[i].ip, v[i].dls, v[i].da, v[i].dtpr*100)
+			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), t_ip, v[i].dls, v[i].da, v[i].dtpr*100)
 		} else {
-			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), *v[i].ip, v[i].da, v[i].dtpr*100)
+			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), t_ip, v[i].da, v[i].dtpr*100)
 		}
 	}
 	fmt.Println()
 	w.Flush()
 }
 
-func InsertIntoDb(verifyResultsSlice []VerifyResults, dbFile string) {
-	if len(verifyResultsSlice) > 0 && storeToDB {
-		//get ASN and city
-		tRound := MinInt(3, len(verifyResultsSlice))
-		dbRecords := make([]cfTestDetail, 0)
-		var ASN int
-		var city string
-		for _, item := range verifyResultsSlice[:tRound] {
-			ASN, city = getASNAndCityWithIP(item.ip)
-			if ASN > 0 || len(city) > 0 {
-				break
-			}
+func saveDBRecords(dbRecords []DBRecord, dbFile string) {
+	if len(dbRecords) > 0 {
+		db, err := OpenSqlite(dbFile)
+		if err != nil {
+			myLogger.Errorln("<saveDBRecords> open sqlite error ", err)
+			return
 		}
-		for _, v := range verifyResultsSlice {
-			record := cfTestDetail{}
-			record.asn = ASN
-			record.city = city
-			record.label = suffixLabel
-			record.testTimeStr = v.testTime.Format("2006-01-02 15:04:05")
-			record.ip = v.ip
-			record.dtc = v.dtc
-			record.dtpc = v.dtpc
-			record.dtpr = v.dtpr
-			record.da = v.da
-			record.dmi = v.dmi
-			record.dmx = v.dmx
-			record.dltc = v.dltc
-			record.dltpc = v.dltpc
-			record.dltpr = v.dltpr
-			record.dls = v.dls
-			record.dlds = v.dlds
-			record.dltd = v.dltd
-			dbRecords = append(dbRecords, record)
+		err = AddCFDTRecords(db, dbRecords)
+		if err != nil {
+			myLogger.Errorln("<saveDBRecords> add CFDT records error ", err)
 		}
-		insertData(dbRecords, dbFile)
 	}
 }
 
@@ -823,6 +454,7 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 	tVerifyResult.testTime = out.testTime
 	tIP := out.host
 	tVerifyResult.ip = &tIP
+	tVerifyResult.loc = &out.loc
 	if len(out.resultSlice) == 0 {
 		return tVerifyResult
 	}
@@ -830,6 +462,7 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 	var tDurationsAll = 0.0
 	var tDownloadDurations float64
 	var tDownloadSizes int64
+	var t_delays_slice = []float64{}
 	for _, v := range out.resultSlice {
 		if v.dTPassed {
 			tVerifyResult.dtpc += 1
@@ -837,9 +470,10 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 			tDuration := float64(v.dTDuration) / float64(time.Millisecond)
 			// if pingViaHttps, it should add the http duration
 			if dtHttps {
-				tDuration = +float64(v.httpReqRspDur) / float64(time.Millisecond)
+				tDuration += float64(v.httpReqRspDur) / float64(time.Millisecond)
 			}
 			tDurationsAll += tDuration
+			t_delays_slice = append(t_delays_slice, tDuration)
 			if tDuration > tVerifyResult.dmx {
 				tVerifyResult.dmx = tDuration
 			}
@@ -856,6 +490,11 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 	if tVerifyResult.dtpc > 0 {
 		tVerifyResult.da = tDurationsAll / float64(tVerifyResult.dtpc)
 		tVerifyResult.dtpr = float64(tVerifyResult.dtpc) / float64(tVerifyResult.dtc)
+		// just calculate variance and standard deviation when we ev-dt enabled
+		if enableStdEv {
+			tVerifyResult.daVar = variance(t_delays_slice)
+			tVerifyResult.daStd = std(t_delays_slice)
+		}
 	}
 	// we statistic download speed while the downloaded file size is greater than DownloadSizeMin
 	if statisticDownload && tVerifyResult.dltpc > 0 && tDownloadSizes > downloadSizeMin {
@@ -872,115 +511,6 @@ func EraseLine(n int) {
 		return
 	}
 	fmt.Printf("%s", strings.Repeat("\b \b", n))
-}
-
-type ipRange struct {
-	IPStart   net.IP
-	IPEnd     net.IP
-	Len       *big.Int
-	Extracted bool
-}
-
-func (ipr *ipRange) isValid() bool {
-	if ipr == nil || ipr.IPStart == nil || ipr.IPEnd == nil || ipr.Extracted {
-		return false
-	}
-	if len(ipr.IPStart) != len(ipr.IPEnd) {
-		return false
-	} else if len(ipr.IPStart) != net.IPv4len && len(ipr.IPStart) != net.IPv6len {
-		return false
-	} else {
-		for i := 0; i < len(ipr.IPStart); i++ {
-			if (ipr.IPStart)[i] > (ipr.IPEnd)[i] {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func (ipr *ipRange) IsValid() bool {
-	return ipr.isValid()
-}
-
-func (ipr *ipRange) length() *big.Int {
-	if !ipr.isValid() {
-		return big.NewInt(0)
-	}
-	var newLenBytes = make([]byte, len(ipr.IPEnd), cap(ipr.IPEnd))
-	reduce := 0
-	for i := len(ipr.IPStart) - 1; i >= 0; i-- {
-		m := (ipr.IPStart)[i]
-		n := (ipr.IPEnd)[i]
-		newValue := int(n) - int(m) - reduce
-		// n < m + reduce, borrow from i - 1
-		if newValue < 0 {
-			reduce = 1
-			newValue += int(1 << 8)
-		} else {
-			// reset reduce
-			reduce = 0
-		}
-		newLenBytes[i] = byte(newValue)
-	}
-	newLen := big.NewInt(0).SetBytes(newLenBytes)
-	// add 1 more
-	newLen = newLen.Add(newLen, big.NewInt(1))
-	return newLen
-}
-
-func (ipr *ipRange) Length() *big.Int {
-	return ipr.length()
-}
-
-func (ipr *ipRange) isV4() bool {
-	if !ipr.isValid() {
-		return false
-	}
-	return len(ipr.IPStart) == net.IPv4len
-}
-
-func (ipr *ipRange) isV6() bool {
-	if !ipr.isValid() {
-		return false
-	}
-	return len(ipr.IPStart) == net.IPv6len
-}
-
-func (ipr *ipRange) IsV4() bool {
-	return ipr.isV4()
-}
-
-func (ipr *ipRange) IsV6() bool {
-	return ipr.isV6()
-}
-
-func (ipr *ipRange) init(StartIP net.IP, EndIP net.IP) *ipRange {
-	t_s_startIP := StartIP
-	if t_s_startIP.To4() != nil {
-		t_s_startIP = t_s_startIP.To4()
-	}
-	t_s_endIP := EndIP
-	if t_s_endIP.To4() != nil {
-		t_s_endIP = t_s_endIP.To4()
-	}
-	ipr.IPStart = t_s_startIP
-	ipr.IPEnd = t_s_endIP
-
-	ipr.Extracted = false
-	if ipr.isValid() {
-		ipr.Len = ipr.length()
-		return ipr
-	}
-	return nil
-}
-
-func (ipr *ipRange) String() string {
-	if !ipr.isValid() {
-		return "null"
-	}
-	return fmt.Sprintf("Start With: %s; End With: %s; Length: %s; Extracted: %t",
-		(ipr.IPStart).String(), (ipr.IPEnd).String(), (ipr.length()).String(), ipr.Extracted)
 }
 
 func NewIPRangeFromIP(StartIP net.IP, EndIP net.IP) *ipRange {
@@ -1097,494 +627,32 @@ func ipShiftReverse(ip net.IP, num []byte) net.IP {
 	return newIP
 }
 
-func (ipr *ipRange) Extract(num int) (IPList []net.IP) {
-	if !ipr.isValid() {
-		return
-	}
-	// num should greater than 0
-	if num <= 0 {
-		return
-	}
-	// no more ip for extracted
-	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
-		return
-	}
-	numBig := big.NewInt(int64(num))
-	size := ipr.length()
-	// no enough IPs to extract
-	if size.Cmp(numBig) == -1 {
-		num = int(size.Int64())
-	}
-	newIP := ipr.IPStart
-	IPList = append(IPList, newIP)
-	num--
-	for num > 0 {
-		num_in_bytes := makeBytes(uint(1), len(newIP))
-		newIP = ipShift(newIP, num_in_bytes)
-		// some error shown
-		if newIP == nil {
-			return
-		}
-		IPList = append(IPList, newIP)
-		num--
-	}
-	// reset IPStart and Extracted
-	// no more IP between newIP and *IPEnd, set Extracted to true
-	if newIP.Equal(ipr.IPEnd) {
-		ipr.Extracted = true
-		ipr.IPStart = newIP
-		ipr.Len = big.NewInt(0)
-	} else {
-		// reset *IPStart to newIP + 1
-		num_in_bytes := makeBytes(uint(1), len(newIP))
-		ipr.IPStart = ipShift(newIP, num_in_bytes)
-		ipr.Len = ipr.length()
-	}
-	return
-}
-
-func (ipr *ipRange) ExtractReverse(num int) (IPList []net.IP) {
-	if !ipr.isValid() {
-		return
-	}
-	// num should greater than 0
-	if num <= 0 {
-		return
-	}
-	// no more ip for extracted
-	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
-		return
-	}
-	numBig := big.NewInt(int64(num))
-	size := ipr.length()
-	// no enough IPs to extract
-	if size.Cmp(numBig) == -1 {
-		return
-	}
-	newIP := ipr.IPEnd
-	IPList = append(IPList, newIP)
-	num--
-	for num > 0 {
-		num_in_bytes := makeBytes(uint(1), len(newIP))
-		newIP = ipShiftReverse(newIP, num_in_bytes)
-		// some error ocurred
-		if newIP == nil {
-			return
-		}
-		IPList = append(IPList, newIP)
-		num--
-	}
-	// reset IPStart and Extracted
-	// no more IP between *IPStart and newIP, set Extracted to true
-	if newIP.Equal(ipr.IPStart) {
-		ipr.Extracted = true
-		ipr.Len = big.NewInt(0)
-		ipr.IPEnd = newIP
-	} else {
-		// reset *IPEnd to newIP - 1
-		num_in_bytes := makeBytes(uint(1), len(newIP))
-		ipr.IPEnd = ipShiftReverse(newIP, num_in_bytes)
-		ipr.Len = ipr.length()
-	}
-	return
-}
-
-func (ipr *ipRange) ExtractAll() (IPList []net.IP) {
-	// we limit the max result length to MaxHostLen (currently, 65536), if it's to big, return nil
-	// or it's don't have any IPS to extract, return nil
-	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 || ipr.Len.Cmp(big.NewInt(maxHostLen)) == 1 {
-		return
-	}
-	return ipr.Extract(int(ipr.Len.Int64()))
-}
-
-func (ipr *ipRange) GetRandomX(num int) (IPList []net.IP) {
-	// or it's don't have any IPS to extract, return nil
-	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
-		return
-	}
-	// we extract all while ipr don't have enough ips for extracted
-	if big.NewInt(int64(num)).Cmp(ipr.Len) >= 0 {
-		m := ipr.ExtractAll()
-		if m == nil {
-			return
-		}
-		for i := 0; i < len(m); i++ {
-			IPList = append(IPList, m[i])
-		}
-		// shuffle
-		myRand.Shuffle(len(IPList), func(i, j int) {
-			IPList[i], IPList[j] = IPList[j], IPList[i]
-		})
-		// we done here
-		return
-	}
-	// get randomly
-	i := 0
-	for i < num {
-		n := big.NewInt(0)
-		n = n.Rand(myRand, ipr.Len)
-		num_in_bytes := fillBytes(n.Bytes(), len(ipr.IPStart))
-		newIP := ipShift(ipr.IPStart, num_in_bytes)
-		if newIP != nil {
-			IPList = append(IPList, newIP)
-			i++
-		}
-	}
-	return
-}
-
-func printOneRow(x, y int, style tcell.Style, str string) {
-	for _, c := range str {
-		var comb []rune
-		w := runewidth.RuneWidth(c)
-		if w == 0 {
-			comb = []rune{c}
-			c = ' '
-			w = 1
-		}
-		(*termAll).SetContent(x, y, c, comb, style)
-		x += w
-	}
-	tx, _ := (*termAll).Size()
-	if tx > len(str) {
-		c := ' '
-		for i := 0; i < tx-len(str); i++ {
-			(*termAll).SetContent(x, y, c, nil, tcell.StyleDefault)
-			x += 1
-		}
-	}
-}
-
-func initScreen() {
-	defer func() { (*termAll).Sync() }()
-	(*termAll).Clear()
-	printRuntimeWithoutSync()
-	printTitlePreWithoutSync()
-	printCancelWithoutSync()
-	updateScreen()
-}
-
-func printRuntimeWithoutSync() {
-	printOneRow(0, titleRuntimeRow, contentStyle, *titleRuntime)
-}
-
-func printTitlePreWithoutSync() {
-	var len0, len1, len2 int
-	len0 = MaxInt(len(titlePre[0][0]), len(titlePre[1][0]))
-	len1 = MaxInt(len(titlePre[0][1]), len(titlePre[1][1]))
-	len2 = MaxInt(len(titlePre[0][2]), len(titlePre[1][2]))
-	rowStr0 := fmt.Sprintf("%*v%-*v  %*v%v", len0, titlePre[0][0], len1, titlePre[0][1], len2, titlePre[0][2], titlePre[0][3])
-	printOneRow(0, titlePreRow, contentStyle, rowStr0)
-	if len(titlePre[1][0]) > 0 && len(titlePre[1][1]) > 0 {
-		rowStr1 := fmt.Sprintf("%*v%-*v", len0, titlePre[1][0], len1, titlePre[1][1])
-		if len(titlePre[1][2]) > 0 && len(titlePre[1][3]) > 0 {
-			rowStr1 += fmt.Sprintf("  %*v%v", len2, titlePre[1][2], titlePre[1][3])
-		}
-		printOneRow(0, titlePreRow+1, contentStyle, rowStr1)
-	}
-}
-
-func printCancelWithoutSync() {
-	printOneRow(0, titleCancelRow, titleStyleCancel, titleCancel)
-}
-
-func printCancelConfirmWithoutSync() {
-	printOneRow(0, titleCancelRow, titleStyleCancel, titleCancelConfirm)
-}
-
-func printQuitWaitingWithoutSync() {
-	printOneRow(0, titleCancelRow, titleStyleCancel, titleWaitQuit)
-}
-
-func printCancel() {
-	printCancelWithoutSync()
-	(*termAll).Show()
-}
-
-func printCancelConfirm() {
-	printCancelConfirmWithoutSync()
-	(*termAll).Show()
-}
-
-func printQuitWaiting() {
-	printQuitWaitingWithoutSync()
-	(*termAll).Show()
-}
-
-func printQuittingCountDown(sec int) {
-	for i := sec; i > 0; i-- {
-		printOneRow(0, titleCancelRow, titleStyleCancel, fmt.Sprintf("Exit in %ds...", i))
-		(*termAll).Show()
-		time.Sleep(time.Second)
-	}
-}
-
-func printTitleResultHintWithoutSync() {
-	printOneRow(0, titleResultHintRow, titleStyle, fmt.Sprintf("%s%v", titleResultHint, len(verifyResultsMap)))
-}
-
-func printTitleDebugHintWithoutSync() {
-	if !debug {
-		return
-	}
-	printOneRow(0, titleDebugHintRow, contentStyle, titleDebugHint)
-}
-
-func printTaskStatWithoutSync() {
-	if !dltOnly {
-		printOneRow(0, titleTasksStatRow, contentStyle, *titleTasksStat[0])
-		if !dtOnly {
-			// start from row 23
-			printOneRow(resultStatIndent, titleTasksStatRow+1, contentStyle, *titleTasksStat[1])
-		}
-	} else {
-		printOneRow(0, titleTasksStatRow, contentStyle, *titleTasksStat[0])
-	}
-}
-
-func printDetailsListWithoutSync(details [][]*string, startRow int, maxRowsDisplayed int) {
-	if len(details) == 0 {
-		return
-	}
-	t_len := len(details)
-	t_lowest := 0
-	if t_len > maxRowsDisplayed {
-		t_lowest = t_len - maxRowsDisplayed
-	}
-	// scan for indent
-	t_indent_slice := make([]int, 0)
-	for _, v := range detailTitleSlice {
-		t_indent_slice = append(t_indent_slice, len(v))
-	}
-	for i := t_lowest; i < t_len; i++ {
-		for j := 0; j < len(t_indent_slice); j++ {
-			t_indent_slice[j] = MaxInt(t_indent_slice[j], len(*details[i][j]))
-		}
-	}
-	// print title
-	t_sb := strings.Builder{}
-	for j := 0; j < len(t_indent_slice)-1; j++ {
-		t_sb.WriteString(fmt.Sprintf("%-*s%s", t_indent_slice[j], detailTitleSlice[j], myIndent))
-	}
-	t_sb.WriteString(fmt.Sprintf("%v", detailTitleSlice[len(t_indent_slice)-1]))
-	printOneRow(0, startRow, contentStyle, t_sb.String())
-	// print list
-	for i := t_len - 1; i >= t_lowest; i-- {
-		t_sb.Reset()
-		for j := 0; j < len(t_indent_slice)-1; j++ {
-			t_sb.WriteString(fmt.Sprintf("%-*s%s", t_indent_slice[j], *details[i][j], myIndent))
-		}
-		t_sb.WriteString(*details[i][len(t_indent_slice)-1])
-		printOneRow(0, startRow+t_len-i, contentStyle, t_sb.String())
-	}
-}
-
-func printResultListWithoutSync() {
-	printTitleResultHintWithoutSync()
-	printDetailsListWithoutSync(resultStrSlice, titleResultRow, maxResultsDisplay)
-}
-
-func printDebugListWithoutSync() {
-	if !debug {
-		return
-	}
-	printTitleDebugHintWithoutSync()
-	printDetailsListWithoutSync(debugStrSlice, titleDebugRow, maxDebugDisplay)
-}
-
-func updateScreen() {
-	defer func() { (*termAll).Show() }()
-	printTaskStatWithoutSync()
-	printResultListWithoutSync()
-	printDebugListWithoutSync()
-}
-
-func initTitleStr() {
-	var tMsgRuntime string
-	tMsgRuntime = fmt.Sprintf("%v %v - ", runTime, version)
-
-	if !dltOnly {
-		tMsgRuntime += fmt.Sprintf("Start Delay (%v) Test (DT)", dtSource)
-		if !dtOnly {
-			tMsgRuntime += " and "
-		}
-	}
-	if !dtOnly {
-		tMsgRuntime += "Speed Test (DLT)"
-	}
-	titleRuntime = &tMsgRuntime
-	titlePre[0][0] = "Result Exp.:"
-	// we just control the display "resultMin" in main.init()
-	titlePre[0][1] = " " + strconv.Itoa(resultMin)
-	// if !testAll {
-	// 	titlePre[0][1] = " " + strconv.Itoa(resultMin)
-	// } else {
-	// 	titlePre[0][1] = " ~"
-	// }
-	if dtOnly {
-		titlePre[0][2] = "Max Delay:"
-		titlePre[0][3] = fmt.Sprintf(" %vms", dtEvaluationDelay)
-		titlePre[1][0] = "Min Stab.:"
-		titlePre[1][1] = fmt.Sprintf(" %v", dtEvaluationDTPR) + "%"
-	} else if dltOnly {
-		titlePre[0][2] = "Min Speed:"
-		titlePre[0][3] = fmt.Sprintf(" %vKB/s", dltEvaluationSpeed)
-	} else {
-		titlePre[0][2] = "Min Speed:"
-		titlePre[0][3] = fmt.Sprintf(" %vKB/s", dltEvaluationSpeed)
-		titlePre[1][0] = "Max Delay:"
-		titlePre[1][1] = fmt.Sprintf(" %vms", dtEvaluationDelay)
-		titlePre[1][2] = "Min Stab.:"
-		titlePre[1][3] = fmt.Sprintf(" %v", dtEvaluationDTPR) + "%"
-	}
-	detailTitleSlice = append(detailTitleSlice, "IP")
-	if !dtOnly {
-		detailTitleSlice = append(detailTitleSlice, "Speed(KB/s)")
-	}
-	detailTitleSlice = append(detailTitleSlice, "Delay(ms)")
-	if !dltOnly {
-		detailTitleSlice = append(detailTitleSlice, "Stab.(%)")
-	}
-	updateTaskStatStr(overAllStat{0, 0, 0, 0, 0, 0, 0})
-}
-
-func updateTaskStatStr(ov overAllStat) {
-	var t = strings.Builder{}
-	var t1 = strings.Builder{}
-	t.WriteString(getTimeNowStr())
-	t.WriteString(myIndent)
-	// t.WriteString(fmt.Sprintf("Result:%-*d%s", resultNumLen, resultCount, myIndent))
-	t_dtCachedS := ov.dtCached
-	t_dltCachedS := ov.dltCached
-	t_dtCachedSNumLen := len(strconv.Itoa(t_dtCachedS))
-	t_dltCachedSNumLen := len(strconv.Itoa(t_dltCachedS))
-	t_dtDoneNumLen := len(strconv.Itoa(ov.dtTasksDone))
-	t_dltDoneNumLen := len(strconv.Itoa(ov.dltTasksDone))
-	var t_indent = 0
-	if !dltOnly {
-		t_indent = MaxInt(dtThreadsNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
-	}
-	if !dtOnly {
-		t_indent = MaxInt(t_indent, dltThreadsNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
-	}
-	if !dltOnly {
-		if dtOnly {
-			t.WriteString(fmt.Sprintf("DT - Tested:%-*d%s", t_indent, ov.dtTasksDone, myIndent))
-
-		} else {
-			t.WriteString(fmt.Sprintf("DT  - Tested:%-*d%s", t_indent, ov.dtTasksDone, myIndent))
-			t1.WriteString(fmt.Sprintf("DLT - Tested:%-*d%s", t_indent, ov.dltTasksDone, myIndent))
-			t1.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, ov.dltOnGoing, myIndent))
-			t1.WriteString(fmt.Sprintf("Cached:%-*d%s", t_indent, t_dltCachedS, myIndent))
-			ts1 := t1.String()
-			titleTasksStat[1] = &ts1
-		}
-		t.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, ov.dtOnGoing, myIndent))
-		t.WriteString(fmt.Sprintf("Cached:%-*d%s", t_indent, t_dtCachedS, myIndent))
-		ts := t.String()
-		titleTasksStat[0] = &ts
-	} else {
-		t.WriteString(fmt.Sprintf("DLT - Tested:%-*d%s", t_indent, ov.dltTasksDone, myIndent))
-		t.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, ov.dltOnGoing, myIndent))
-		t.WriteString(fmt.Sprintf("Cached:%-*d%s", t_indent, t_dltCachedS, myIndent))
-		ts := t.String()
-		titleTasksStat[0] = &ts
-	}
-}
-
-func updateDetailList(src [][]*string, v []VerifyResults, limit int) (dst [][]*string) {
-	dst = src
-	for _, tv := range v {
-		t_str_list := make([]*string, 0)
-		// t_v1 := fmt.Sprintf("%v", *tv.ip)
-		// t_str_list = append(t_str_list, &t_v1)
-		t_str_list = append(t_str_list, tv.ip)
-		// show speed only when it performed DLT
-		if !dtOnly {
-			t_v2 := fmt.Sprintf("%.2f", tv.dls)
-			t_str_list = append(t_str_list, &t_v2)
-		}
-		t_v3 := fmt.Sprintf("%.0f", tv.da)
-		t_str_list = append(t_str_list, &t_v3)
-		// show DTPR only when it performed DT
-		if !dltOnly {
-			t_v4 := fmt.Sprintf("%.2f", tv.dtpr*100)
-			t_str_list = append(t_str_list, &t_v4)
-		}
-		dst = append(dst, t_str_list)
-	}
-	if len(dst) > limit {
-		dst = dst[(len(dst) - limit):]
-	}
-	return
-}
-
-func updateResultStrList(v []VerifyResults) {
-	resultStrSlice = updateDetailList(resultStrSlice, v, maxResultsDisplay)
-}
-
-func updateDebugStrList(v []VerifyResults) {
-	if !debug {
-		return
-	}
-	debugStrSlice = updateDetailList(debugStrSlice, v, maxDebugDisplay)
-}
-
-func updateResult(v []VerifyResults) {
-	defer (*termAll).Show()
-	updateResultStrList(v)
-	printResultListWithoutSync()
-}
-
-func updateDebug(v []VerifyResults) {
-	if !debug {
-		return
-	}
-	defer (*termAll).Show()
-	updateDebugStrList(v)
-	printDebugListWithoutSync()
-}
-
-func updateTaskStat(ov overAllStat) {
-	defer (*termAll).Show()
-	updateTaskStatStr(ov)
-	printTaskStatWithoutSync()
-}
-
-func updateTcellDetails(isResult bool, v []VerifyResults) {
-	// prevent display debug msg when in not-debug mode
-	if !debug {
-		return
-	}
-	if isResult { // result
-		updateResult(v)
-	} else { // non-debug
-		updateDebug(v)
-	}
-}
-
 // test detail
 // loglvl should be logLevelDebug or logLevelInfo
 // when: 1. in non-debug mode, just print stats instead of pure qualified IPs.
 //  2. in debug mode, we show more as tcell or non-tcell form.
 //
-// isResult: used for tcell mode, indicate show in result area or debug area.
-func displayDetails(isResult, isSilence bool, v []VerifyResults) {
+// isResultArea: used for tcell mode, indicate show in result area or debug area.
+// showSpeed: indicate show speed or not
+func displayDetails(isResultArea, showSpeed bool, v []VerifyResults) {
 	if !debug {
 		// myLogger.PrintClearIPs(v)
-		if isSilence {
+		if silenceMode {
 			for _, t_v := range v {
-				myLogger.Println(*t_v.ip)
+				tStr := *t_v.ip
+				if len(*t_v.loc) > 0 {
+					tStr = fmt.Sprintf("%s#%s", tStr, *t_v.loc)
+				}
+				myLogger.Println(tStr)
 			}
 		} else {
-			myLogger.PrintDetails(LogLevel(logLevelInfo), v)
+			myLogger.PrintDetails(LogLevel(logLevelInfo), v, showSpeed)
 		}
 	} else {
 		if !tcellMode { // no-tcell
-			myLogger.PrintDetails(LogLevel(logLevelDebug), v)
+			myLogger.PrintDetails(LogLevel(logLevelDebug), v, showSpeed)
 		} else { // tcell
-			updateTcellDetails(isResult, v)
+			updateTcellDetails(isResultArea, showSpeed, v)
 		}
 	}
 }
@@ -1628,6 +696,21 @@ func MinInt(a, b int, num ...int) (t int) {
 	for _, i := range num {
 		if i < t {
 			t = i
+		}
+	}
+	return
+}
+
+func retrieveSome(amount int) (targetIPs []*string) {
+	var t_target = []*string{}
+	targetIPs = append(targetIPs, retrieveHosts(amount)...)
+	t_target = append(t_target, retrieveIPsFromIPR(amount)...)
+	for _, ipStr := range t_target {
+		for _, port := range ports {
+			host := genHostFromIPStrPort(*ipStr, port)
+			if len(host) > 0 {
+				targetIPs = append(targetIPs, &host)
+			}
 		}
 	}
 	return
@@ -1739,10 +822,10 @@ func splitHost(host string) (bool, string, int) {
 
 func genHostFromIPStrPort(ipStr string, port int) (connStr string) {
 	if !isValidIPs(ipStr) {
-		return
+		return ""
 	}
 	if port < 1 || port > 65535 {
-		return
+		return ""
 	}
 	connStr = net.JoinHostPort(ipStr, strconv.Itoa(port))
 	return
@@ -1766,4 +849,73 @@ func confirm(s string, tries int) bool {
 		}
 	}
 	return false
+}
+
+func uniqueIntSlice(strSlice []int) []int {
+	keys := make(map[int]bool)
+	list := []int{}
+	for _, entry := range strSlice {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
+}
+func mean(v []float64) float64 {
+	var res float64 = 0
+	var n int = len(v)
+	for i := 0; i < n; i++ {
+		res += v[i]
+	}
+	return res / float64(n)
+}
+
+func variance(v []float64) float64 {
+	if len(v) <= 1 {
+		return 0
+	}
+	var res float64 = 0
+	var m = mean(v)
+	var n int = len(v)
+	for i := 0; i < n; i++ {
+		res += (v[i] - m) * (v[i] - m)
+	}
+	return res / float64(n-1)
+}
+
+func std(v []float64) float64 {
+	if len(v) <= 1 {
+		return 0
+	}
+	return roundFloat(math.Sqrt(variance(v)), 2)
+}
+
+func roundFloat(val float64, precision uint) float64 {
+	ratio := math.Pow(10, float64(precision))
+	return math.Round(val*ratio) / ratio
+}
+
+func read_loc_from_cf_cdn_cgi_trace_body(body io.ReadCloser) (string, error) {
+	loc := ""
+	scanner := bufio.NewScanner(body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Apply the filter function
+		t_slice := strings.Split(line, "=")
+		if len(t_slice) != 2 {
+			continue
+		}
+		// if strings.ToLower(t_slice[0]) == "colo" {
+		// 	loc = t_slice[1]
+		// } else if strings.ToLower(t_slice[0]) == "loc" && strings.ToUpper(t_slice[1]) != "CN" {
+		if strings.ToLower(t_slice[0]) == "loc" {
+			loc = t_slice[1]
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return loc, err
+	}
+	return loc, nil
 }
