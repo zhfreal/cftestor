@@ -313,18 +313,10 @@ func (myLogger *MyLogger) PrintOverAllStat(logLvl LogLevel, ov overAllStat) {
 	}
 	myLogger.Logf(logLvl, "Result:%d%s ", ov.resultCount, myLogger.indent)
 	if !dltOnly {
-		myLogger.Printf("DT - Tested:%d%s", ov.dtTasksDone, myLogger.indent)
-		myLogger.Printf("OnGoing:%d%s", ov.dtOnGoing, myLogger.indent)
-		myLogger.Printf("Cached:%d", ov.dtCached)
-		// add more intent, while it's in both DT & DLT mode
-		if !dtOnly {
-			myLogger.Print("  ")
-		}
+		myLogger.Printf("DT - Tested:%d%s ", ov.dtTasksDone, myLogger.indent)
 	}
 	if !dtOnly {
-		myLogger.Printf("DLT - Tested:%d%s", ov.dltTasksDone, myLogger.indent)
-		myLogger.Printf("OnGoing:%d%s", ov.dltOnGoing, myLogger.indent)
-		myLogger.Printf("Cached:%d", ov.dltCached)
+		myLogger.Printf("DLT - Tested:%d%s ", ov.dltTasksDone, myLogger.indent)
 	}
-	myLogger.Println()
+	myLogger.Printf("Cached:%d\n", ov.dltCached)
 }

@@ -227,7 +227,7 @@ func initTitleStr() {
 
 func updateTaskStatStr(ov overAllStat) {
 	var t = strings.Builder{}
-	var t1 = strings.Builder{}
+	// var t1 = strings.Builder{}
 	t.WriteString(getTimeNowStr())
 	t.WriteString(myIndent)
 	// t.WriteString(fmt.Sprintf("Result:%-*d%s", resultNumLen, resultCount, myIndent))
@@ -245,28 +245,14 @@ func updateTaskStatStr(ov overAllStat) {
 		t_indent = MaxInt(t_indent, dltThreadsNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
 	}
 	if !dltOnly {
-		if dtOnly {
-			t.WriteString(fmt.Sprintf("DT - Tested:%-*d%s", t_indent, ov.dtTasksDone, myIndent))
-
-		} else {
-			t.WriteString(fmt.Sprintf("DT  - Tested:%-*d%s", t_indent, ov.dtTasksDone, myIndent))
-			t1.WriteString(fmt.Sprintf("DLT - Tested:%-*d%s", t_indent, ov.dltTasksDone, myIndent))
-			t1.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, ov.dltOnGoing, myIndent))
-			t1.WriteString(fmt.Sprintf("Cached:%-*d%s", t_indent, t_dltCachedS, myIndent))
-			ts1 := t1.String()
-			titleTasksStat[1] = &ts1
-		}
-		t.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, ov.dtOnGoing, myIndent))
-		t.WriteString(fmt.Sprintf("Cached:%-*d%s", t_indent, t_dtCachedS, myIndent))
-		ts := t.String()
-		titleTasksStat[0] = &ts
-	} else {
-		t.WriteString(fmt.Sprintf("DLT - Tested:%-*d%s", t_indent, ov.dltTasksDone, myIndent))
-		t.WriteString(fmt.Sprintf("OnGoing:%-*d%s", t_indent, ov.dltOnGoing, myIndent))
-		t.WriteString(fmt.Sprintf("Cached:%-*d%s", t_indent, t_dltCachedS, myIndent))
-		ts := t.String()
-		titleTasksStat[0] = &ts
+		t.WriteString(fmt.Sprintf("DT - Tested:%-*d%s ", t_indent, ov.dtTasksDone, myIndent))
 	}
+	if !dtOnly {
+		t.WriteString(fmt.Sprintf("DLT - Tested:%-*d%s ", t_indent, ov.dltTasksDone, myIndent))
+	}
+	t.WriteString(fmt.Sprintf("Cached:%-*d%s", t_indent, t_dltCachedS, myIndent))
+	ts := t.String()
+	titleTasksStat[0] = &ts
 }
 
 func updateDetailList(showSpeed bool, src [][]*string, v []VerifyResults, limit int) (dst [][]*string) {
