@@ -231,26 +231,22 @@ func updateTaskStatStr(ov overAllStat) {
 	t.WriteString(getTimeNowStr())
 	t.WriteString(myIndent)
 	// t.WriteString(fmt.Sprintf("Result:%-*d%s", resultNumLen, resultCount, myIndent))
-	t_dtCachedS := ov.dtCached
-	t_dltCachedS := ov.dltCached
-	t_dtCachedSNumLen := len(strconv.Itoa(t_dtCachedS))
-	t_dltCachedSNumLen := len(strconv.Itoa(t_dltCachedS))
-	t_dtDoneNumLen := len(strconv.Itoa(ov.dtTasksDone))
-	t_dltDoneNumLen := len(strconv.Itoa(ov.dltTasksDone))
-	var t_indent = 0
+
+	srcCount := len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
+
 	if !dltOnly {
-		t_indent = MaxInt(dtThreadsNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
+		t.WriteString(fmt.Sprintf("DT - Tested: %d\t", ov.dtTasksDone))
+		dtCached := ov.dtCached + srcCount
+		t.WriteString(fmt.Sprintf("Cached: %d\t", dtCached))
 	}
 	if !dtOnly {
-		t_indent = MaxInt(t_indent, dltThreadsNumLen, t_dtCachedSNumLen, t_dltCachedSNumLen, t_dtDoneNumLen, t_dltDoneNumLen)
+		t.WriteString(fmt.Sprintf("DLT - Tested: %d\t", ov.dltTasksDone))
+		dltCached := ov.dltCached
+		if dltOnly {
+			dltCached += srcCount
+		}
+		t.WriteString(fmt.Sprintf("Cached: %d", dltCached))
 	}
-	if !dltOnly {
-		t.WriteString(fmt.Sprintf("DT - Tested:%-*d%s ", t_indent, ov.dtTasksDone, myIndent))
-	}
-	if !dtOnly {
-		t.WriteString(fmt.Sprintf("DLT - Tested:%-*d%s ", t_indent, ov.dltTasksDone, myIndent))
-	}
-	t.WriteString(fmt.Sprintf("Cached:%-*d%s", t_indent, t_dltCachedS, myIndent))
 	ts := t.String()
 	titleTasksStat[0] = &ts
 }

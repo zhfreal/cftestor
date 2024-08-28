@@ -311,12 +311,20 @@ func (myLogger *MyLogger) PrintOverAllStat(logLvl LogLevel, ov overAllStat) {
 	if len(myLogger.indent) == 0 {
 		myLogger.indent = myIndent
 	}
-	myLogger.Logf(logLvl, "Result:%d%s ", ov.resultCount, myLogger.indent)
+	myLogger.Logf(logLvl, "Result: %d\t", ov.resultCount)
+	srcCount := len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
 	if !dltOnly {
-		myLogger.Printf("DT - Tested:%d%s ", ov.dtTasksDone, myLogger.indent)
+		myLogger.Printf("DT - Tested: %d\t", ov.dtTasksDone)
+		dtCached := ov.dtCached + srcCount
+		myLogger.Printf("Cached: %d\t", dtCached)
 	}
 	if !dtOnly {
-		myLogger.Printf("DLT - Tested:%d%s ", ov.dltTasksDone, myLogger.indent)
+		myLogger.Printf("DLT - Tested: %d\t", ov.dltTasksDone)
+		dltCached := ov.dltCached
+		if dltOnly {
+			dltCached += srcCount
+		}
+		myLogger.Printf("Cached: %d", dltCached)
 	}
-	myLogger.Printf("Cached:%d\n", ov.dltCached)
+	myLogger.Println("")
 }

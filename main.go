@@ -578,7 +578,7 @@ LOOP:
 				}
 			}
 			if debug {
-				cachedCount := len(dtTaskCache) + len(dltTaskCache) + len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
+				cachedCount := len(dtTaskCache) + len(dltTaskCache)
 				displayStat(overAllStat{
 					dtTasksDone:  dtDoneTasks,
 					dtOnGoing:    0,
