@@ -257,11 +257,11 @@ var (
 	cancelSigFromTerm                       = false
 	terminateConfirm                        = false
 	resultStatIndent                        = 9
-	dtThreadsNumLen, dltThreadsNumLen       = 0, 0
-	tcellMode                               = false
-	fastMode                                = false
-	silenceMode                             = false
-	ResolveLoc                              = false
+	// dtThreadsNumLen, dltThreadsNumLen       = 0, 0
+	tcellMode   = false
+	fastMode    = false
+	silenceMode = false
+	ResolveLoc  = false
 	// statInterval                                   = statisticIntervalNT
 	appArt string = `
   ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄

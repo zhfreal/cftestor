@@ -387,7 +387,7 @@ func init() {
 		}
 		dtTimeoutDuration = time.Duration(dtTimeout) * time.Millisecond
 
-		dtThreadsNumLen = len(strconv.Itoa(dtWorkerThread))
+		// dtThreadsNumLen = len(strconv.Itoa(dtWorkerThread))
 	}
 	// set downloadTimeMaxDuration only when we need do DLT
 	if !dtOnly {
@@ -412,7 +412,7 @@ func init() {
 		suffixLabel, _ = parseUrl(dltUrl)
 		httpRspTimeoutDuration = time.Duration(dltTimeout) * time.Millisecond
 		dltDurationInTotal = time.Duration(dltDurMax) * time.Second
-		dltThreadsNumLen = len(strconv.Itoa(dltWorkerThread))
+		// dltThreadsNumLen = len(strconv.Itoa(dltWorkerThread))
 	}
 
 	// if we write result file
