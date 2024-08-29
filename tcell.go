@@ -235,12 +235,12 @@ func updateTaskStatStr(ov overAllStat) {
 	srcCount := len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
 
 	if !dltOnly {
-		t.WriteString(fmt.Sprintf("DT - Tested: %d\t", ov.dtTasksDone))
+		t.WriteString(fmt.Sprintf("DT - Tested: %d  ", ov.dtTasksDone))
 		dtCached := ov.dtCached + srcCount
-		t.WriteString(fmt.Sprintf("Cached: %d\t", dtCached))
+		t.WriteString(fmt.Sprintf("Cached: %d    ", dtCached))
 	}
 	if !dtOnly {
-		t.WriteString(fmt.Sprintf("DLT - Tested: %d\t", ov.dltTasksDone))
+		t.WriteString(fmt.Sprintf("DLT - Tested: %d  ", ov.dltTasksDone))
 		dltCached := ov.dltCached
 		if dltOnly {
 			dltCached += srcCount

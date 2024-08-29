@@ -528,7 +528,7 @@ LOOP:
 			}
 			// // print stat
 			// if debug {
-			// 	displayStat(overAllStat{
+			// 	(overAllStat{
 			// 		dtTasksDone:  dtDoneTasks,
 			// 		dtOnGoing:    0,
 			// 		dtCached:     len(dtTaskCache),
@@ -578,14 +578,13 @@ LOOP:
 				}
 			}
 			if debug {
-				cachedCount := len(dtTaskCache) + len(dltTaskCache)
 				displayStat(overAllStat{
 					dtTasksDone:  dtDoneTasks,
 					dtOnGoing:    0,
-					dtCached:     cachedCount,
+					dtCached:     len(dtTaskCache),
 					dltTasksDone: dltDoneTasks,
 					dltOnGoing:   0,
-					dltCached:    cachedCount,
+					dltCached:    len(dltTaskCache),
 					resultCount:  len(verifyResultsMap),
 				})
 			}
@@ -674,14 +673,13 @@ LOOP:
 				}
 			}
 			if debug {
-				cachedCount := len(dtTaskCache) + len(dltTaskCache) + len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
 				displayStat(overAllStat{
 					dtTasksDone:  dtDoneTasks,
 					dtOnGoing:    0,
-					dtCached:     cachedCount,
+					dtCached:     len(dtTaskCache),
 					dltTasksDone: dltDoneTasks,
 					dltOnGoing:   0,
-					dltCached:    cachedCount,
+					dltCached:    len(dltTaskCache),
 					resultCount:  len(verifyResultsMap),
 				})
 			}
@@ -708,14 +706,13 @@ LOOP:
 	// for tcell only, send terminate signal to termControl
 	terminateConfirm = true
 	// update statistic just before quit controller
-	cachedCount := len(dtTaskCache) + len(dltTaskCache) + len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
 	displayStat(overAllStat{
 		dtTasksDone:  dtDoneTasks,
 		dtOnGoing:    0,
-		dtCached:     cachedCount,
+		dtCached:     len(dtTaskCache),
 		dltTasksDone: dltDoneTasks,
 		dltOnGoing:   0,
-		dltCached:    cachedCount,
+		dltCached:    len(dltTaskCache),
 		resultCount:  len(verifyResultsMap),
 	})
 	// close all chan
