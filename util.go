@@ -417,6 +417,7 @@ func printFinalStat(v []VerifyResults, dtOnly bool) {
 			header += "\tDelayStd\tDelayVar"
 		}
 	}
+	header += "\t"
 	fmt.Fprintln(w, header)
 	for i := 0; i < len(v); i++ {
 		line := fmt.Sprintf("%s\t%s", v[i].testTime.Format("15:04:05"), *v[i].ip)
