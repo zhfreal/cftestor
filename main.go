@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"math"
 	"math/big"
 	"os"
 	"regexp"
@@ -13,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
 	utls "github.com/refraction-networking/utls"
 	flag "github.com/spf13/pflag"
 )
@@ -61,8 +59,10 @@ func init() {
 	flag.BoolVar(&enableDTEvaluation, "ev-dt", false, "Evaluate DT test result. Default as disabled")
 	flag.IntVarP(&dtEvaluationDelay, "ev-dt-delay", "k", 600, "Delay for DT is beyond this one will be cause failure, unit ms, default 600ms.")
 	flag.Float64VarP(&dtEvaluationDTPR, "ev-dt-dtpr", "S", 100, "The DT successful rate below this will be cause failure, default 100%.")
-	flag.Float64Var(&dtStdExp, "ev-dt-std", 0, "expect standard deviation while do DT evaluation.")
+	flag.Float64Var(&dtStdExp, "ev-dt-std", 30, "expect standard deviation while do DT evaluation.")
 	flag.Float64VarP(&dltEvaluationSpeed, "speed", "l", 6000, "Download speed should not less than this, Unit KB/s, default 6000KB/s.")
+	flag.IntVar(&loop, "loop", -1, "Loop N round")
+	flag.IntVar(&loopInterval, "loop-interval", 60, "sleep N second between two loop")
 	flag.IntVarP(&resultMin, "result", "r", 10, "The total IPs qualified limitation, default 10")
 
 	flag.BoolVar(&disableDownload, "disable-download", false, "Deprecated, use --dt-only instead.")
@@ -86,7 +86,7 @@ func init() {
 
 	flag.BoolVar(&silenceMode, "silence", false, "silence mode.")
 	flag.BoolVarP(&debug, "debug", "V", false, "Print debug message.")
-	flag.BoolVar(&tcellMode, "tcell", false, "Use tcell form to show debug messages.")
+	// flag.BoolVar(&tcellMode, "tcell", false, "Use tcell form to show debug messages.")
 	flag.BoolVarP(&printVersion, "version", "v", false, "Show version.")
 	flag.Usage = func() {
 		fmt.Print(help)
@@ -96,7 +96,7 @@ func init() {
 		print_version()
 	} else {
 		debug = false
-		tcellMode = false
+		// tcellMode = false
 		storeToDB = false
 		storeToFile = false
 	}
@@ -151,9 +151,9 @@ func init() {
 	}
 
 	// tcellMode will activate debug automatically
-	if tcellMode {
-		debug = true
-	}
+	// if tcellMode {
+	// 	debug = true
+	// }
 
 	// initialize myLogger
 	if debug {
@@ -435,43 +435,45 @@ func init() {
 		}
 	}
 
-	if debug && tcellMode { // It's running on tcell mode
-		// reset the position of debugHint and debugTitle according maxResultsDisplay and resultMin
-		if !testAll && resultMin < maxResultsDisplay {
-			maxResultsDisplay = resultMin
-			titleDebugHintRow = titleResultRow + maxResultsDisplay + 2
-			titleDebugRow = titleDebugHintRow + 1
-		}
-		// init
-		resultStrSlice = make([][]*string, 0)
-		debugStrSlice = make([][]*string, 0)
-		detailTitleSlice = make([]string, 0)
-		// fix interval
-		// statInterval = statisticIntervalT
-		// fix rows when --dlt-only mode
-		if dltOnly {
-			titleCancelRow -= 1
-			titleTasksStatRow -= 1
-			titleResultHintRow -= 1
-			titleResultRow -= 1
-			titleDebugHintRow -= 1
-			titleDebugRow -= 1
-		}
-		initTitleStr()
-		// init tcell screen instance
-		ts, te := tcell.NewScreen()
-		if te != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", te)
-			os.Exit(1)
-		}
-		if te := ts.Init(); te != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", te)
-			os.Exit(1)
-		}
-		termAll = &ts
-		(*termAll).SetStyle(normalStyle)
-		// (*termAll).Sync()
-	}
+	LoopStatus = SafeStatus{v: false}
+
+	// if debug && tcellMode { // It's running on tcell mode
+	// 	// reset the position of debugHint and debugTitle according maxResultsDisplay and resultMin
+	// 	if !testAll && resultMin < maxResultsDisplay {
+	// 		maxResultsDisplay = resultMin
+	// 		titleDebugHintRow = titleResultRow + maxResultsDisplay + 2
+	// 		titleDebugRow = titleDebugHintRow + 1
+	// 	}
+	// 	// init
+	// 	resultStrSlice = make([][]*string, 0)
+	// 	debugStrSlice = make([][]*string, 0)
+	// 	detailTitleSlice = make([]string, 0)
+	// 	// fix interval
+	// 	// statInterval = statisticIntervalT
+	// 	// fix rows when --dlt-only mode
+	// 	if dltOnly {
+	// 		titleCancelRow -= 1
+	// 		titleTasksStatRow -= 1
+	// 		titleResultHintRow -= 1
+	// 		titleResultRow -= 1
+	// 		titleDebugHintRow -= 1
+	// 		titleDebugRow -= 1
+	// 	}
+	// 	initTitleStr()
+	// 	// init tcell screen instance
+	// 	ts, te := tcell.NewScreen()
+	// 	if te != nil {
+	// 		fmt.Fprintf(os.Stderr, "%v\n", te)
+	// 		os.Exit(1)
+	// 	}
+	// 	if te := ts.Init(); te != nil {
+	// 		fmt.Fprintf(os.Stderr, "%v\n", te)
+	// 		os.Exit(1)
+	// 	}
+	// 	termAll = &ts
+	// 	(*termAll).SetStyle(normalStyle)
+	// 	// (*termAll).Sync()
+	// }
 }
 
 func runWorker() {
@@ -482,20 +484,12 @@ func runWorker() {
 	var dltTaskChan = make(chan *string, dltWorkerThread)
 	var dltResultChan = make(chan singleVerifyResult, cap(dltTaskChan))
 
-	if debug && tcellMode {
-		go termControl(&wg)
-		wg.Add(1)
-	}
-	dtDoneTasks := 0
-	// the item in dtTaskCache is a ip string.
-	dtTaskCache := make([]*string, 0)
-	dltDoneTasks := 0
-	// the item in dltTaskCache is a ip string.
-	dltTaskCache := make([]*string, 0)
-	// the key of cacheResultMap should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
-	cacheResultMap := make(map[string]VerifyResults)
-	haveEnoughResult := false
-	showQuitWaiting := false
+	// if debug && tcellMode {
+	// 	go termControl(&wg)
+	// 	wg.Add(1)
+	// }
+
+	// showQuitWaiting := false
 
 	if !dltOnly {
 		for i := 0; i < dtWorkerThread; i++ {
@@ -513,206 +507,251 @@ func runWorker() {
 			go downloadWorkerNew(dltTaskChan, dltResultChan, &wg, &dltUrl, httpRspTimeoutDuration, dltCount, false)
 		}
 	}
-
+	loop_round_mode := false
+	loop_round := 0
 LOOP:
 	for {
-		// DT
-		if !dltOnly {
-			if len(dtTaskCache) < dtWorkerThread {
-				dtTaskCache = append(dtTaskCache, retrieveSome(dtWorkerThread)...)
-			}
-			// no more sources for testing
-			t_dt_sources_len := len(dtTaskCache)
-			if t_dt_sources_len == 0 {
-				break LOOP
-			}
-			// // print stat
-			// if debug {
-			// 	(overAllStat{
-			// 		dtTasksDone:  dtDoneTasks,
-			// 		dtOnGoing:    0,
-			// 		dtCached:     len(dtTaskCache),
-			// 		dltTasksDone: dltDoneTasks,
-			// 		dltOnGoing:   0,
-			// 		dltCached:    len(dltTaskCache),
-			// 		resultCount:  len(verifyResultsMap),
-			// 	})
-			// }
-			// put task
-			go func() {
-				for i := 0; i < t_dt_sources_len; i++ {
-					dtTaskChan <- dtTaskCache[i]
-				}
-				dtTaskCache = make([]*string, 0)
-			}()
-			// retrieve from dtResultChan
-			for i := 0; i < t_dt_sources_len; i++ {
-				dtResult := <-dtResultChan
-				// if ip not test then put it into dltTaskChan
-				dtDoneTasks += 1
-				var tVerifyResult = singleResultStatistic(dtResult, false)
-				if tVerifyResult.da > 0.0 &&
-					tVerifyResult.da <= float64(dtEvaluationDelay) &&
-					tVerifyResult.dtpr*100.0 >= float64(dtEvaluationDTPR) &&
-					(!enableStdEv || (enableStdEv && tVerifyResult.daStd <= dtStdExp)) {
-					if !dtOnly { // there are download test ongoing
-						// put ping test result to cacheResultMap for later
-						cacheResultMap[*tVerifyResult.ip] = tVerifyResult
-						dltTaskCache = append(dltTaskCache, tVerifyResult.ip)
-						// debug msg, show only in debug mode
-						if debug {
-							displayDetails(false, false, []VerifyResults{tVerifyResult})
+		dtDoneTasks := 0
+		// the item in dtTaskCache is a ip string.
+		dtTaskCache := make([]*string, 0)
+		dltDoneTasks := 0
+		// the item in dltTaskCache is a ip string.
+		dltTaskCache := make([]*string, 0)
+		// the key of cacheResultMap should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
+		cacheResultMap := make(map[string]VerifyResults)
+		haveEnoughResult := false
+	ONE_TASK:
+		for {
+			// DT
+			if !dltOnly {
+				if len(dtTaskCache) < dtWorkerThread {
+					if loop_round_mode {
+						for tIP := range verifyResultsMap {
+							dtTaskCache = append(dtTaskCache, &tIP)
 						}
-					} else { // Download test disabled
-						// non-debug msg
-						displayDetails(true, false, []VerifyResults{tVerifyResult})
-						verifyResultsMap[tVerifyResult.ip] = tVerifyResult
-						// we have expected result, break LOOP
+					} else {
+						dtTaskCache = append(dtTaskCache, retrieveSome(dtWorkerThread)...)
+					}
+				}
+				// no more sources for testing
+				t_dt_sources_len := len(dtTaskCache)
+				if t_dt_sources_len == 0 {
+					break ONE_TASK
+				}
+				// // print stat
+				// if debug {
+				// 	(overAllStat{
+				// 		dtTasksDone:  dtDoneTasks,
+				// 		dtOnGoing:    0,
+				// 		dtCached:     len(dtTaskCache),
+				// 		dltTasksDone: dltDoneTasks,
+				// 		dltOnGoing:   0,
+				// 		dltCached:    len(dltTaskCache),
+				// 		resultCount:  len(verifyResultsMap),
+				// 	})
+				// }
+				// put task
+				go func() {
+					for i := 0; i < t_dt_sources_len; i++ {
+						dtTaskChan <- dtTaskCache[i]
+					}
+					dtTaskCache = make([]*string, 0)
+				}()
+				// retrieve from dtResultChan
+				for i := 0; i < t_dt_sources_len; i++ {
+					dtResult := <-dtResultChan
+					// if ip not test then put it into dltTaskChan
+					dtDoneTasks += 1
+					var tVerifyResult = calcResult(dtResult, false)
+					if tVerifyResult.da > 0.0 &&
+						tVerifyResult.da <= float64(dtEvaluationDelay) &&
+						tVerifyResult.dtpr*100.0 >= float64(dtEvaluationDTPR) &&
+						(!enableStdEv || (enableStdEv && tVerifyResult.daStd <= dtStdExp)) {
+						if !dtOnly { // there are download test ongoing
+							// put ping test result to cacheResultMap for later
+							cacheResultMap[*tVerifyResult.ip] = tVerifyResult
+							dltTaskCache = append(dltTaskCache, tVerifyResult.ip)
+							// debug msg, show only in debug mode
+							if debug {
+								displayDetails(false, []VerifyResults{tVerifyResult})
+							}
+						} else { // Download test disabled
+							// non-debug msg
+							displayDetails(false, []VerifyResults{tVerifyResult})
+							// combine verifyResultsMap with verifyResultsMap[*tVerifyResult.ip]
+							v, ok := verifyResultsMap[*tVerifyResult.ip]
+							if !ok {
+								verifyResultsMap[*tVerifyResult.ip] = tVerifyResult
+							} else {
+								tVerifyResult.combine(v)
+								verifyResultsMap[*tVerifyResult.ip] = tVerifyResult
+							}
+							// we have expected result, break LOOP
+							if !testAll && len(verifyResultsMap) >= resultMin {
+								haveEnoughResult = true
+							}
+						}
+					} else if debug {
+						// debug msg
+						displayDetails(false, []VerifyResults{tVerifyResult})
+					}
+				}
+				if debug {
+					displayStat(overAllStat{
+						dtTasksDone:  dtDoneTasks,
+						dtOnGoing:    0,
+						dtCached:     len(dtTaskCache),
+						dltTasksDone: dltDoneTasks,
+						dltOnGoing:   0,
+						dltCached:    len(dltTaskCache),
+						resultCount:  len(verifyResultsMap),
+					})
+				}
+			}
+			//DLT
+			if !dtOnly {
+				// no source to do DLT
+				if len(dltTaskCache) <= 0 {
+					// DT enabled, just continue to do DT
+					if !dltOnly {
+						continue
+					} else {
+						// retrieve source IP
+						if loop_round_mode {
+							for tIP := range verifyResultsMap {
+								dltTaskCache = append(dltTaskCache, &tIP)
+							}
+						} else {
+							dltTaskCache = append(dltTaskCache, retrieveSome(dltWorkerThread)...)
+						}
+						// no source IP, break LOOP
+						if len(dltTaskCache) == 0 {
+							break ONE_TASK
+						}
+					}
+				}
+				t_dlt_sources_len := len(dltTaskCache)
+				// print stat
+				// if debug {
+				// 	displayStat(overAllStat{
+				// 		dtTasksDone:  dtDoneTasks,
+				// 		dtOnGoing:    0,
+				// 		dtCached:     len(dtTaskCache),
+				// 		dltTasksDone: dltDoneTasks,
+				// 		dltOnGoing:   0,
+				// 		dltCached:    t_dlt_sources_len,
+				// 		resultCount:  len(verifyResultsMap),
+				// 	})
+				// }
+				// put task
+				go func() {
+					for i := 0; i < t_dlt_sources_len; i++ {
+						dltTaskChan <- dltTaskCache[i]
+					}
+					dltTaskCache = make([]*string, 0)
+				}()
+				// retrieve result
+				for i := 0; i < t_dlt_sources_len; i++ {
+					out := <-dltResultChan
+					dltDoneTasks += 1
+					var tVerifyResult = calcResult(out, true)
+					if !dltOnly {
+						v := cacheResultMap[*tVerifyResult.ip]
+						// reset TestTime according download test result
+						tVerifyResult.combine(v)
+						cacheResultMap[*tVerifyResult.ip] = tVerifyResult
+					}
+					// tVerifyResult = v
+					// check speed and data size downloaded
+					if tVerifyResult.dls >= dltEvaluationSpeed && tVerifyResult.dlds > downloadSizeMin {
+						// combine verifyResultsMap with verifyResultsMap[*tVerifyResult.ip]
+						v, ok := verifyResultsMap[*tVerifyResult.ip]
+						if !ok {
+							verifyResultsMap[*tVerifyResult.ip] = tVerifyResult
+						} else {
+							tVerifyResult.combine(v)
+							verifyResultsMap[*tVerifyResult.ip] = tVerifyResult
+						}
+						// we have expected result
 						if !testAll && len(verifyResultsMap) >= resultMin {
 							haveEnoughResult = true
 						}
-					}
-				} else if debug {
-					// debug msg
-					displayDetails(false, false, []VerifyResults{tVerifyResult})
-				}
-			}
-			if debug {
-				displayStat(overAllStat{
-					dtTasksDone:  dtDoneTasks,
-					dtOnGoing:    0,
-					dtCached:     len(dtTaskCache),
-					dltTasksDone: dltDoneTasks,
-					dltOnGoing:   0,
-					dltCached:    len(dltTaskCache),
-					resultCount:  len(verifyResultsMap),
-				})
-			}
-		}
-		//DLT
-		if !dtOnly {
-			// no source to do DLT
-			if len(dltTaskCache) <= 0 {
-				// DT enabled, just continue to do DT
-				if !dltOnly {
-					continue
-				} else {
-					// retrieve source IP
-					dltTaskCache = append(dltTaskCache, retrieveSome(dltWorkerThread)...)
-					// no source IP, break LOOP
-					if len(dltTaskCache) == 0 {
-						break LOOP
+						// non-debug msg
+						displayDetails(true, []VerifyResults{tVerifyResult})
+					} else if debug {
+						// debug msg
+						displayDetails(true, []VerifyResults{tVerifyResult})
 					}
 				}
+				if debug {
+					displayStat(overAllStat{
+						dtTasksDone:  dtDoneTasks,
+						dtOnGoing:    0,
+						dtCached:     len(dtTaskCache),
+						dltTasksDone: dltDoneTasks,
+						dltOnGoing:   0,
+						dltCached:    len(dltTaskCache),
+						resultCount:  len(verifyResultsMap),
+					})
+				}
 			}
-			t_dlt_sources_len := len(dltTaskCache)
-			// print stat
-			// if debug {
-			// 	displayStat(overAllStat{
-			// 		dtTasksDone:  dtDoneTasks,
-			// 		dtOnGoing:    0,
-			// 		dtCached:     len(dtTaskCache),
-			// 		dltTasksDone: dltDoneTasks,
-			// 		dltOnGoing:   0,
-			// 		dltCached:    t_dlt_sources_len,
-			// 		resultCount:  len(verifyResultsMap),
-			// 	})
+			// cancel from terminal, or have enough results
+			// flush ping and download task chan
+			// MARK as REMOVE
+			// if cancelSigFromTerm {
+			// 	// show waiting msg, only when debug
+			// 	// if debug && !showQuitWaiting {
+			// 	// 	if tcellMode {
+			// 	// 		printQuitWaiting()
+			// 	// 	} else {
+			// 	// 		myLogger.Debugln(titleWaitQuit)
+			// 	// 	}
+			// 	// 	showQuitWaiting = true
+			// 	// }
+			// 	if debug {
+			// 		myLogger.Debugln(titleWaitQuit)
+			// 	}
+			// 	break LOOP
 			// }
-			// put task
-			go func() {
-				for i := 0; i < t_dlt_sources_len; i++ {
-					dltTaskChan <- dltTaskCache[i]
-				}
-				dltTaskCache = make([]*string, 0)
-			}()
-			// retrieve result
-			for i := 0; i < t_dlt_sources_len; i++ {
-				out := <-dltResultChan
-				dltDoneTasks += 1
-				var tVerifyResult = singleResultStatistic(out, true)
-				var v = VerifyResults{}
-				if dltOnly {
-					v = tVerifyResult
-				} else {
-					v = cacheResultMap[*tVerifyResult.ip]
-					// reset TestTime according download test result
-					v.testTime = tVerifyResult.testTime
-					v.dltc = tVerifyResult.dltc
-					v.dls = tVerifyResult.dls
-					v.dltpc = tVerifyResult.dltpc
-					v.dltpr = tVerifyResult.dltpr
-					v.dlds = tVerifyResult.dlds
-					v.dltd = tVerifyResult.dltd
-					// update ping static
-					tDelayTotal := float64(v.dtpc) * v.da
-					v.dtc += tVerifyResult.dtc
-					v.dtpc += tVerifyResult.dtpc
-					if v.dtc > 0 {
-						v.dtpr = float64(v.dtpc) / float64(v.dtc)
-					}
-					if tVerifyResult.dtpc > 0 {
-						v.dmx = math.Max(v.dmx, tVerifyResult.dmx)
-						v.dmi = math.Min(v.dmi, tVerifyResult.dmi)
-						v.da = (tDelayTotal + float64(tVerifyResult.dtpc)*tVerifyResult.da) / float64(v.dtpc)
-					}
-				}
-				tVerifyResult = v
-				// check speed and data size downloaded
-				if v.dls >= dltEvaluationSpeed && v.dlds > downloadSizeMin {
-					// put v into verifyResultsMap
-					verifyResultsMap[tVerifyResult.ip] = tVerifyResult
-					// we have expected result
-					if !testAll && len(verifyResultsMap) >= resultMin {
-						haveEnoughResult = true
-					}
-					// non-debug msg
-					displayDetails(true, true, []VerifyResults{tVerifyResult})
-				} else if debug {
-					// debug msg
-					displayDetails(false, true, []VerifyResults{tVerifyResult})
-				}
-			}
-			if debug {
-				displayStat(overAllStat{
-					dtTasksDone:  dtDoneTasks,
-					dtOnGoing:    0,
-					dtCached:     len(dtTaskCache),
-					dltTasksDone: dltDoneTasks,
-					dltOnGoing:   0,
-					dltCached:    len(dltTaskCache),
-					resultCount:  len(verifyResultsMap),
-				})
+			if haveEnoughResult {
+				break ONE_TASK
 			}
 		}
-		// cancel from terminal, or have enough results
-		// flush ping and download task chan
-		// MARK as REMOVE
-		if cancelSigFromTerm {
-			// show waiting msg, only when debug
-			if debug && !showQuitWaiting {
-				if tcellMode {
-					printQuitWaiting()
-				} else {
-					myLogger.Debugln(titleWaitQuit)
-				}
-				showQuitWaiting = true
-			}
+		// if there is no target IP after initial round, break LOOP
+		if len(verifyResultsMap) == 0 {
 			break LOOP
 		}
-		if haveEnoughResult {
+		// enter loop round after initial round
+		if loop > 0 {
+			if loop_round == 0 {
+				loop_round_mode = true
+				LoopStatus.Enable()
+			}
+			// counter loop_round after initial round
+			loop_round += 1
+			if loop_round <= loop {
+				if loopInterval > 0 { // set loop interval
+					myLogger.Debugf("sleep %d seconds for loop round %d\n", loopInterval, loop_round)
+					time.Sleep(time.Duration(loopInterval) * time.Second)
+				}
+			} else {
+				break LOOP
+			}
+		} else {
 			break LOOP
 		}
 	}
+
 	// for tcell only, send terminate signal to termControl
-	terminateConfirm = true
+	// terminateConfirm = true
 	// update statistic just before quit controller
 	displayStat(overAllStat{
-		dtTasksDone:  dtDoneTasks,
+		dtTasksDone:  0,
 		dtOnGoing:    0,
-		dtCached:     len(dtTaskCache),
-		dltTasksDone: dltDoneTasks,
+		dtCached:     0,
+		dltTasksDone: 0,
 		dltOnGoing:   0,
-		dltCached:    len(dltTaskCache),
+		dltCached:    0,
 		resultCount:  len(verifyResultsMap),
 	})
 	// close all chan
@@ -723,58 +762,60 @@ LOOP:
 	wg.Wait()
 }
 
-func termControl(wg *sync.WaitGroup) {
-	defer (*wg).Done()
-	defer (*termAll).Fini()
-LOOP:
-	for !terminateConfirm {
-		if !(*termAll).HasPendingEvent() {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		ev := (*termAll).PollEvent()
-		switch ev := ev.(type) {
-		case *tcell.EventKey:
-			switch ev.Key() {
-			case tcell.KeyEscape:
-				if !terminateConfirm && !cancelSigFromTerm && confirmQuit() {
-					cancelSigFromTerm = true
-				}
-				if terminateConfirm {
-					break LOOP
-				}
-			default:
-				if terminateConfirm {
-					break LOOP
-				}
-			}
-		case *tcell.EventResize:
-			initScreen()
-		}
-	}
-	printQuittingCountDown(quitWaitingTime)
-}
+// DELETION
+// func termControl(wg *sync.WaitGroup) {
+// 	defer (*wg).Done()
+// 	defer (*termAll).Fini()
+// LOOP:
+// 	for !terminateConfirm {
+// 		if !(*termAll).HasPendingEvent() {
+// 			time.Sleep(100 * time.Millisecond)
+// 			continue
+// 		}
+// 		ev := (*termAll).PollEvent()
+// 		switch ev := ev.(type) {
+// 		case *tcell.EventKey:
+// 			switch ev.Key() {
+// 			case tcell.KeyEscape:
+// 				if !terminateConfirm && !cancelSigFromTerm && confirmQuit() {
+// 					cancelSigFromTerm = true
+// 				}
+// 				if terminateConfirm {
+// 					break LOOP
+// 				}
+// 			default:
+// 				if terminateConfirm {
+// 					break LOOP
+// 				}
+// 			}
+// 		case *tcell.EventResize:
+// 			initScreen()
+// 		}
+// 	}
+// 	printQuittingCountDown(quitWaitingTime)
+// }
 
-func confirmQuit() bool {
-	printCancelConfirm()
-	for {
-		ev := (*termAll).PollEvent()
-		switch ev := ev.(type) {
-		case *tcell.EventKey:
-			switch ev.Key() {
-			case tcell.KeyEnter:
-				printQuitWaiting()
-				return true
-			default:
-				printCancel()
-				return false
-			}
-		case *tcell.EventResize:
-			initScreen()
-			printCancelConfirm()
-		}
-	}
-}
+// DELETION
+// func confirmQuit() bool {
+// 	printCancelConfirm()
+// 	for {
+// 		ev := (*termAll).PollEvent()
+// 		switch ev := ev.(type) {
+// 		case *tcell.EventKey:
+// 			switch ev.Key() {
+// 			case tcell.KeyEnter:
+// 				printQuitWaiting()
+// 				return true
+// 			default:
+// 				printCancel()
+// 				return false
+// 			}
+// 		case *tcell.EventResize:
+// 			initScreen()
+// 			printCancelConfirm()
+// 		}
+// 	}
+// }
 
 func main() {
 

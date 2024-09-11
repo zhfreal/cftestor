@@ -5,9 +5,9 @@ import (
 	"math/big"
 	"math/rand"
 	"net"
+	"sync"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
 	utls "github.com/refraction-networking/utls"
 )
 
@@ -210,7 +210,8 @@ var (
 	interval, dtEvaluationDelay, dtTimeout  int
 	dtStdExp                                float64
 	hostName, dltUrl, dtSource, dtUrl       string
-	dltTimeout                              int
+	dltTimeout, loop                        int
+	loopInterval                            int // in seconds
 	dtEvaluationDTPR, dltEvaluationSpeed    float64
 	dtHttps, disableDownload                bool
 	dtVia                                   string
@@ -227,38 +228,39 @@ var (
 	httpRspTimeoutDuration                  time.Duration
 	dtTimeoutDuration                       time.Duration
 	dltDurationInTotal                      time.Duration
-	verifyResultsMap                        = make(map[*string]VerifyResults)
+	verifyResultsMap                        = make(map[string]VerifyResults)
 	myRand                                  = rand.New(rand.NewSource(0))
-	titleRuntime                            *string
-	titlePre                                [2][4]string
-	titleTasksStat                          [2]*string
-	detailTitleSlice                        []string
-	resultStrSlice, debugStrSlice           [][]*string
-	termAll                                 *tcell.Screen
-	titleStyle                              = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorWhite)
-	normalStyle                             = tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorWhite)
-	titleStyleCancel                        = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorGray)
-	contentStyle                            = tcell.StyleDefault
-	maxResultsDisplay                       = 10
-	maxDebugDisplay                         = 10
-	titleRuntimeRow                         = 0
-	titlePreRow                             = titleRuntimeRow + 2
-	titleCancelRow                          = titlePreRow + 3
-	titleTasksStatRow                       = titleCancelRow + 2
-	titleResultHintRow                      = titleTasksStatRow + 2
-	titleResultRow                          = titleResultHintRow + 1
-	titleDebugHintRow                       = titleResultRow + maxResultsDisplay + 2
-	titleDebugRow                           = titleDebugHintRow + 1
-	titleCancel                             = "Press ESC to cancel!"
-	titleCancelConfirm                      = "Press ENTER to confirm; Any other key to back!"
-	titleWaitQuit                           = "Waiting for exit..."
-	titleResultHint                         = "Result:"
-	titleDebugHint                          = "Debug Msg:"
-	cancelSigFromTerm                       = false
-	terminateConfirm                        = false
-	resultStatIndent                        = 9
+	LoopStatus                              SafeStatus
+	// titleRuntime                            *string
+	// titlePre                                [2][4]string
+	// titleTasksStat                          [2]*string
+	// detailTitleSlice                        []string
+	// resultStrSlice, debugStrSlice           [][]*string
+	// termAll                                 *tcell.Screen
+	// titleStyle                              = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorWhite)
+	// normalStyle                             = tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorWhite)
+	// titleStyleCancel                        = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorGray)
+	// contentStyle                            = tcell.StyleDefault
+	// maxResultsDisplay                       = 10
+	// maxDebugDisplay                         = 10
+	// titleRuntimeRow                         = 0
+	// titlePreRow                             = titleRuntimeRow + 2
+	// titleCancelRow                          = titlePreRow + 3
+	// titleTasksStatRow                       = titleCancelRow + 2
+	// titleResultHintRow                      = titleTasksStatRow + 2
+	// titleResultRow                          = titleResultHintRow + 1
+	// titleDebugHintRow                       = titleResultRow + maxResultsDisplay + 2
+	// titleDebugRow                           = titleDebugHintRow + 1
+	// titleCancel                             = "Press ESC to cancel!"
+	// titleCancelConfirm                      = "Press ENTER to confirm; Any other key to back!"
+	// titleWaitQuit                           = "Waiting for exit..."
+	// titleResultHint                         = "Result:"
+	// titleDebugHint                          = "Debug Msg:"
+	// cancelSigFromTerm                       = false
+	// terminateConfirm                        = false
+	// resultStatIndent                        = 9
 	// dtThreadsNumLen, dltThreadsNumLen       = 0, 0
-	tcellMode   = false
+	// tcellMode   = false
 	fastMode    = false
 	silenceMode = false
 	ResolveLoc  = false
@@ -324,6 +326,7 @@ options:
         --fast                          Fast mode, use inner IPs for fast detection. Just when neither "-s/--ip"
                                         nor "-i/--in" is provided, and this flag is provided. It will be working
                                         Disabled by default.
+        --loop         int              Loop round N, disabled by default
     -4, --ipv4                          Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
                                         then it will do IPv4 test from build-in IPs from CloudFlare by default.
     -6, --ipv6                          Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
@@ -351,7 +354,6 @@ options:
                                         hostname from "--hostname" or "-u|--url" by default.
         --silence                       Silence mode.
     -V, --debug                         Print debug message.
-        --tcell                         Use tcell to display the running procedure when in debug mode.
                                         Turn this on will activate "--debug".
     -v, --version                       Show version.
 `
@@ -392,21 +394,105 @@ type VerifyResults struct {
 	testTime time.Time // test time
 	ip       *string   // should be <ipv4:port> or <[ipv6]:port>, not just a ip string.
 	loc      *string
-	dtc      int     // Delay Test(DT) tried count
-	dtpc     int     // DT passed count
-	dtpr     float64 // DT passed rate, in decimal
-	da       float64 // average delay, in ms
-	daVar    float64 // variance of average delay
-	daStd    float64 // standard deviation of average delay
-	dmi      float64 // minimal delay, in ms
-	dmx      float64 // max delay, in ms
-	dltc     int     // Download Test(DLT) tried count
-	dltpc    int     // DLT passed count
-	dltpr    float64 // DLT passed rate, in decimal
-	dls      float64 // DLT average speed, in KB/s
-	dlds     int64   // DLT download data size, in byte
-	dltd     float64 // DLT escaped times, in second
+	dtc      int       // Delay Test(DT) tried count
+	dtpc     int       // DT passed count
+	dtpr     float64   // DT passed rate, in decimal
+	da       float64   // average delay, in ms
+	daVar    float64   // variance of average delay
+	daStd    float64   // standard deviation of average delay
+	dmi      float64   // minimal delay, in ms
+	dmx      float64   // max delay, in ms
+	dltc     int       // Download Test(DLT) tried count
+	dltpc    int       // DLT passed count
+	dltpr    float64   // DLT passed rate, in decimal
+	dls      float64   // DLT average speed, in KB/s
+	dlds     int64     // DLT download data size, in byte
+	dltd     float64   // DLT escaped times, in second
+	dtDList  []float64 // Delay Test(DT) duration list in milliseconds
 }
+
+// combine b into a
+// this function will combine the delay test results of b into a.
+// It will add the tried count, passed count, and update the passed rate.
+// It will also update the average delay, minimal delay, and max delay.
+func (a *VerifyResults) combine(b VerifyResults) {
+	if *a.ip != *b.ip {
+		return
+	}
+	if a.testTime.Before(b.testTime) {
+		a.testTime = b.testTime
+	}
+	if b.loc != nil && len(*b.loc) != 0 {
+		a.loc = b.loc
+	}
+	a.dtc += b.dtc
+	a.dtpc += b.dtpc
+	if a.dtc > 0 {
+		a.dtpr = float64(a.dtpc) / float64(a.dtc)
+	}
+	a.dtDList = append(a.dtDList, b.dtDList...)
+	// remove 0 time form a.dtDList
+	for i := 0; i < len(a.dtDList); i++ {
+		if a.dtDList[i] == 0 {
+			a.dtDList = append(a.dtDList[:i], a.dtDList[i+1:]...)
+			i--
+		}
+	}
+	totalDelay := 0.0
+	for _, v := range a.dtDList {
+		totalDelay += v
+	}
+	if a.dtpc > 0 && len(a.dtDList) > 0 {
+		a.da = totalDelay / float64(len(a.dtDList))
+	}
+	a.daStd = std(a.dtDList)
+	a.daVar = variance(a.dtDList)
+	if a.dmi > b.dmi && b.dtpc > 0 {
+		a.dmi = b.dmi
+	}
+	if a.dmx < b.dmx && b.dtpc > 0 {
+		a.dmx = b.dmx
+	}
+	a.dltc += b.dltc
+	a.dltpc += b.dltpc
+	if a.dltc > 0 {
+		a.dltpr = float64(a.dltpc) / float64(a.dltc)
+	}
+	a.dlds += b.dlds
+	a.dltd += b.dltd
+	if a.dltpc > 0 && a.dltd > 0 {
+		a.dls = float64(a.dlds) / float64(a.dltd) / 1000
+	}
+}
+
+// do deep copy from original VerifyResults obj into brand new one
+// func (a *VerifyResults) copy() VerifyResults {
+// 	tIp := *a.ip
+// 	tLoc := *a.loc
+// 	tDtDList := make([]float64, len(a.dtDList))
+// 	copy(tDtDList, a.dtDList)
+// 	return VerifyResults{
+// 		testTime: a.testTime,
+// 		ip:       &tIp,
+// 		loc:      &tLoc,
+// 		dtc:      a.dtc,
+// 		dtpc:     a.dtpc,
+// 		dtpr:     a.dtpr,
+// 		da:       a.da,
+// 		daVar:    a.daVar,
+// 		daStd:    a.daStd,
+// 		dmi:      a.dmi,
+// 		dmx:      a.dmx,
+// 		dltc:     a.dltc,
+// 		dltpc:    a.dltpc,
+// 		dltpr:    a.dltpr,
+// 		dls:      a.dls,
+// 		dlds:     a.dlds,
+// 		dltd:     a.dltd,
+// 		dtDList:  tDtDList,
+// 	}
+
+// }
 
 type resultSpeedSorter []VerifyResults
 
@@ -668,4 +754,29 @@ func (ipr *ipRange) GetRandomX(num int) (IPList []net.IP) {
 		}
 	}
 	return
+}
+
+type SafeStatus struct {
+	mu sync.Mutex
+	v  bool
+}
+
+func (c *SafeStatus) set(key bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.v = key
+}
+
+func (c *SafeStatus) Enable() {
+	c.set(true)
+}
+
+func (c *SafeStatus) Disable() {
+	c.set(false)
+}
+
+func (c *SafeStatus) Ok() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.v
 }

@@ -406,23 +406,35 @@ func printFinalStat(v []VerifyResults, dtOnly bool) {
 		return
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight|tabwriter.Debug)
+	header := "Time\tIP"
 	if !dtOnly {
-		fmt.Fprintln(w, "Time\tIP\tSpeed(KB/s)\tDelayAvg(ms)\tStability(%)")
-	} else {
-		fmt.Fprintln(w, "Time\tIP\tDelayAvg(ms)\tStability(%)")
+		header += "\tSpeed(KB/s)\tDLT-Tries\tDLT-Passes(%)"
 	}
-	// close line, LatestLogLength should be 0
-	fmt.Println()
+	header += "\tDelayAvg(ms)"
+	if !dltOnly {
+		header += "\tDelayMin(ms)\tDelayMax(ms)\tDT-Tries\tDT-Passes(%)"
+		if enableDTEvaluation {
+			header += "\tDelayStd\tDelayVar"
+		}
+	}
+	fmt.Fprintln(w, header)
 	for i := 0; i < len(v); i++ {
-		t_ip := *v[i].ip
+		line := fmt.Sprintf("%s\t%s", v[i].testTime.Format("15:04:05"), *v[i].ip)
 		if len(*v[i].loc) > 0 {
-			t_ip = fmt.Sprintf("%s#%s", t_ip, *v[i].loc)
+			line = fmt.Sprintf("%s#%s", line, *v[i].loc)
 		}
 		if !dtOnly {
-			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), t_ip, v[i].dls, v[i].da, v[i].dtpr*100)
-		} else {
-			fmt.Fprintf(w, "%s\t%s\t%.0f\t%.2f\n", v[i].testTime.Format("15:04:05"), t_ip, v[i].da, v[i].dtpr*100)
+			line += fmt.Sprintf("\t%.0f\t%d\t%.2f", v[i].dls, v[i].dltc, v[i].dltpr*100)
 		}
+		line += fmt.Sprintf("\t%.0f", v[i].da)
+		if !dltOnly {
+			line += fmt.Sprintf("\t%.0f\t%.0f\t%d\t%.2f", v[i].dmi, v[i].dmx, v[i].dtc, v[i].dtpr*100)
+			if enableDTEvaluation {
+				line += fmt.Sprintf("\t%.2f\t%.2f", v[i].daStd, v[i].daVar)
+			}
+		}
+		line += "\t"
+		fmt.Fprintln(w, line)
 	}
 	fmt.Println()
 	w.Flush()
@@ -449,8 +461,11 @@ func GetDialContextByAddr(addrPort string) func(ctx context.Context, network, ad
 	}
 }
 
-func singleResultStatistic(out singleVerifyResult, statisticDownload bool) VerifyResults {
+// calcResult will calculate the statistic results of DT and DLT for a IP
+func calcResult(out singleVerifyResult, statDownload bool) VerifyResults {
+	// initialize VerifyResults
 	var tVerifyResult = VerifyResults{}
+	tVerifyResult.dtDList = make([]float64, 0)
 	tVerifyResult.testTime = out.testTime
 	tIP := out.host
 	tVerifyResult.ip = &tIP
@@ -460,30 +475,31 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 	}
 	tVerifyResult.dtc = len(out.resultSlice)
 	var tDurationsAll = 0.0
-	var tDownloadDurations float64
-	var tDownloadSizes int64
-	var t_delays_slice = []float64{}
+	// var t_delays_slice = []float64{}
 	for _, v := range out.resultSlice {
 		if v.dTPassed {
 			tVerifyResult.dtpc += 1
-			tVerifyResult.dltc += 1
 			tDuration := float64(v.dTDuration) / float64(time.Millisecond)
 			// if pingViaHttps, it should add the http duration
 			if dtHttps {
 				tDuration += float64(v.httpReqRspDur) / float64(time.Millisecond)
 			}
+			tVerifyResult.dtDList = append(tVerifyResult.dtDList, tDuration)
 			tDurationsAll += tDuration
-			t_delays_slice = append(t_delays_slice, tDuration)
+			// t_delays_slice = append(t_delays_slice, tDuration)
 			if tDuration > tVerifyResult.dmx {
 				tVerifyResult.dmx = tDuration
 			}
 			if tVerifyResult.dmi <= 0.0 || tDuration < tVerifyResult.dmi {
 				tVerifyResult.dmi = tDuration
 			}
-			if statisticDownload && v.dLTWasDone && v.dLTPassed {
-				tVerifyResult.dltpc += 1
-				tDownloadDurations += math.Round(float64(v.dLTDuration) / float64(time.Second))
-				tDownloadSizes += v.dLTDataSize
+			if statDownload {
+				tVerifyResult.dltc += 1
+				if v.dLTWasDone && v.dLTPassed {
+					tVerifyResult.dltpc += 1
+					tVerifyResult.dltd += float64(v.dLTDuration) / float64(time.Second)
+					tVerifyResult.dlds += v.dLTDataSize
+				}
 			}
 		}
 	}
@@ -492,19 +508,41 @@ func singleResultStatistic(out singleVerifyResult, statisticDownload bool) Verif
 		tVerifyResult.dtpr = float64(tVerifyResult.dtpc) / float64(tVerifyResult.dtc)
 		// just calculate variance and standard deviation when we ev-dt enabled
 		if enableStdEv {
-			tVerifyResult.daVar = variance(t_delays_slice)
-			tVerifyResult.daStd = std(t_delays_slice)
+			tVerifyResult.daVar = variance(tVerifyResult.dtDList)
+			tVerifyResult.daStd = std(tVerifyResult.dtDList)
 		}
 	}
 	// we statistic download speed while the downloaded file size is greater than DownloadSizeMin
-	if statisticDownload && tVerifyResult.dltpc > 0 && tDownloadSizes > downloadSizeMin {
-		tVerifyResult.dls = float64(tDownloadSizes) / tDownloadDurations / 1000
-		tVerifyResult.dltpr = float64(tVerifyResult.dltpc) / float64(tVerifyResult.dltc)
-		tVerifyResult.dlds = tDownloadSizes
-		tVerifyResult.dltd = tDownloadDurations
+	if statDownload {
+		if tVerifyResult.dltpc > 0 && tVerifyResult.dlds > downloadSizeMin {
+			tVerifyResult.dltpr = float64(tVerifyResult.dltpc) / float64(tVerifyResult.dltc)
+			tVerifyResult.dls = float64(tVerifyResult.dlds) / tVerifyResult.dltd / 1000
+		}
 	}
 	return tVerifyResult
 }
+
+// combine N VerifyResults into one
+// func combineVerifyResults(source ...VerifyResults) VerifyResults {
+// 	// check ip is the same of not in all element from results
+// 	if len(source) == 0 {
+// 		return VerifyResults{}
+// 	}
+// 	if len(source) == 1 {
+// 		return source[0]
+// 	}
+// 	result := source[0].copy()
+// 	ip := *result.ip
+// 	for _, v := range source[1:] {
+// 		// if element in results don't have the same IP, then return empty VerifyResults
+// 		if ip != *v.ip {
+// 			myLogger.Errorf("Combine different IP's test result!")
+// 			return VerifyResults{}
+// 		}
+// 		result.combine(v)
+// 	}
+// 	return result
+// }
 
 func EraseLine(n int) {
 	if n <= 0 {
@@ -633,10 +671,45 @@ func ipShiftReverse(ip net.IP, num []byte) net.IP {
 //  2. in debug mode, we show more as tcell or non-tcell form.
 //
 // isResultArea: used for tcell mode, indicate show in result area or debug area.
-// showSpeed: indicate show speed or not
-func displayDetails(isResultArea, showSpeed bool, v []VerifyResults) {
-	if !debug {
-		// myLogger.PrintClearIPs(v)
+// // showSpeed: indicate show speed or not
+// func displayDetails(isResultArea, showSpeed bool, v []VerifyResults) {
+// 	if !debug {
+// 		// myLogger.PrintClearIPs(v)
+// 		if silenceMode {
+// 			for _, t_v := range v {
+// 				tStr := *t_v.ip
+// 				if len(*t_v.loc) > 0 {
+// 					tStr = fmt.Sprintf("%s#%s", tStr, *t_v.loc)
+// 				}
+// 				myLogger.Println(tStr)
+// 			}
+// 		} else {
+// 			myLogger.PrintDetails(LogLevel(logLevelInfo), v, showSpeed)
+// 		}
+// 	} else {
+// 		myLogger.PrintDetails(LogLevel(logLevelDebug), v, showSpeed)
+// 		// if !tcellMode { // no-tcell
+// 		// 	myLogger.PrintDetails(LogLevel(logLevelDebug), v, showSpeed)
+// 		// } else { // tcell
+// 		// 	updateTcellDetails(isResultArea, showSpeed, v)
+// 		// }
+// 	}
+// }
+
+// displayDetailsNew displays the details of the given VerifyResults slice.
+// It will print the details to the console in debug mode, and only print the
+// IPs in non-debug mode. The showSpeed parameter determines whether the speed
+// information should be shown or not.
+func displayDetails(showSpeed bool, v []VerifyResults) {
+	// if in debug mode, print the details
+	if debug {
+		myLogger.PrintDetails(LogLevel(logLevelDebug), v, showSpeed)
+		// if tcell mode, update the tcell details
+		// if tcellMode {
+		// 	updateTcellDetails(isResultArea, showSpeed, v)
+		// }
+	} else {
+		// if in non-debug mode, only print the IPs
 		if silenceMode {
 			for _, t_v := range v {
 				tStr := *t_v.ip
@@ -646,24 +719,20 @@ func displayDetails(isResultArea, showSpeed bool, v []VerifyResults) {
 				myLogger.Println(tStr)
 			}
 		} else {
+			// print the details in non-debug mode
 			myLogger.PrintDetails(LogLevel(logLevelInfo), v, showSpeed)
-		}
-	} else {
-		if !tcellMode { // no-tcell
-			myLogger.PrintDetails(LogLevel(logLevelDebug), v, showSpeed)
-		} else { // tcell
-			updateTcellDetails(isResultArea, showSpeed, v)
 		}
 	}
 }
 
 // task statistic - only work in debug mode both in tcell and non-tcell mode
 func displayStat(ov overAllStat) {
-	if !tcellMode { // no-tcell
-		myLogger.PrintOverAllStat(logLevelDebug, ov)
-	} else { // tcell, print always
-		updateTaskStat(ov)
-	}
+	myLogger.PrintOverAllStat(logLevelDebug, ov)
+	// if !tcellMode { // no-tcell
+	// 	myLogger.PrintOverAllStat(logLevelDebug, ov)
+	// } else { // tcell, print always
+	// 	updateTaskStat(ov)
+	// }
 }
 
 func HaveIPv6() bool {

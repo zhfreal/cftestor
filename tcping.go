@@ -127,6 +127,7 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 				// connection is not make(uri error or server error), won't do download test
 				if response.StatusCode != 200 {
 					allResult = append(allResult, currentResult)
+					t_failure_counter += 1
 				} else {
 					currentResult.dTPassed = true
 					currentResult.dTDuration, currentResult.httpReqRspDur = tr.Stat()
@@ -161,6 +162,7 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 								/*myLogger.Debug(fmt.Sprintf("FullAddress: %s, Round %d, error: %v!, %5.2f", fullAddress, i, err,
 								  float64(time.Now().Sub(timeStart))/float64(time.Millisecond)))*/
 								downloadSuccess = false
+								t_failure_counter += 1
 							}
 							cancel()
 							if response.Body != nil {
@@ -189,7 +191,7 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 		cancel()
 		// if we need evaluate DT, we'll try DT as many as possible
 		// if we don't, we'll stop after the first successfully try
-		if doDTOnly && enableDTEvaluation && t_failure_counter > max_failure {
+		if (enableDTEvaluation || !doDTOnly) && t_failure_counter > max_failure {
 			break
 		}
 		time.Sleep(time.Duration(interval) * time.Millisecond)
@@ -204,12 +206,24 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 func downloadWorkerNew(chanIn chan *string, chanOut chan singleVerifyResult, wg *sync.WaitGroup, tUrl *string,
 	httpRspTimeoutDur time.Duration, round int, doDTOnly bool) {
 	defer (*wg).Done()
-	max_failure := get_max_ev_dt_failure()
+	max_failure := 0
+	if doDTOnly {
+		if !enableDTEvaluation {
+			max_failure = dtCount
+		} else {
+			max_failure = get_max_ev_dt_failure()
+		}
+	} else {
+		max_failure = dltCount
+	}
 LOOP:
 	for {
 		host, ok := <-chanIn
 		if !ok {
 			break LOOP
+		}
+		if doDTOnly && LoopStatus.Ok() {
+			max_failure = dtCount
 		}
 		tResultSlice, tLoc := downloadHandlerNew(host, tUrl, httpRspTimeoutDur, round, doDTOnly, max_failure)
 		tVerifyResult := singleVerifyResult{time.Now(), *host, tLoc, tResultSlice}
@@ -253,12 +267,18 @@ func sslDTHandlerNew(host *string, max_failure int) []singleResult {
 
 func sslDTWorkerNew(chanIn chan *string, chanOut chan singleVerifyResult, wg *sync.WaitGroup) {
 	defer (*wg).Done()
-	max_failure := get_max_ev_dt_failure()
+	max_failure := dtCount
+	if enableDTEvaluation {
+		max_failure = get_max_ev_dt_failure()
+	}
 LOOP:
 	for {
 		host, ok := <-chanIn
 		if !ok {
 			break LOOP
+		}
+		if LoopStatus.Ok() {
+			max_failure = dtCount
 		}
 		tResultSlice := sslDTHandlerNew(host, max_failure)
 		tVerifyResult := singleVerifyResult{time.Now(), *host, "", tResultSlice}
