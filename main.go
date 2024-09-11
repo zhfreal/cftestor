@@ -507,7 +507,6 @@ func runWorker() {
 			go downloadWorkerNew(dltTaskChan, dltResultChan, &wg, &dltUrl, httpRspTimeoutDuration, dltCount, false)
 		}
 	}
-	loop_round_mode := false
 	loop_round := 0
 LOOP:
 	for {
@@ -525,7 +524,7 @@ LOOP:
 			// DT
 			if !dltOnly {
 				if len(dtTaskCache) < dtWorkerThread {
-					if loop_round_mode {
+					if LoopStatus.Ok() {
 						for tIP := range verifyResultsMap {
 							dtTaskCache = append(dtTaskCache, &tIP)
 						}
@@ -617,7 +616,7 @@ LOOP:
 						continue
 					} else {
 						// retrieve source IP
-						if loop_round_mode {
+						if LoopStatus.Ok() {
 							for tIP := range verifyResultsMap {
 								dltTaskCache = append(dltTaskCache, &tIP)
 							}
@@ -713,7 +712,7 @@ LOOP:
 			// 	}
 			// 	break LOOP
 			// }
-			if haveEnoughResult {
+			if haveEnoughResult || LoopStatus.Ok() {
 				break ONE_TASK
 			}
 		}
@@ -724,7 +723,6 @@ LOOP:
 		// enter loop round after initial round
 		if loop > 0 {
 			if loop_round == 0 {
-				loop_round_mode = true
 				LoopStatus.Enable()
 			}
 			// counter loop_round after initial round
