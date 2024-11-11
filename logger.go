@@ -314,7 +314,7 @@ func (myLogger *MyLogger) PrintOverAllStat(logLvl LogLevel, ov overAllStat) {
 	myLogger.Logf(logLvl, "Result: %d    ", ov.resultCount)
 	srcCount := len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
 	if !dltOnly {
-		myLogger.Printf("DT - Tested: %d  ", ov.dtTasksDone)
+		myLogger.Printf(" | DT - Tested: %d  ", ov.dtTasksDone)
 		dtCached := ov.dtCached
 		if !LoopStatus.Ok() {
 			dtCached += srcCount
@@ -322,7 +322,7 @@ func (myLogger *MyLogger) PrintOverAllStat(logLvl LogLevel, ov overAllStat) {
 		myLogger.Printf("Cached: %d\t", dtCached)
 	}
 	if !dtOnly {
-		myLogger.Printf("DLT - Tested: %d  ", ov.dltTasksDone)
+		myLogger.Printf(" | DLT - Tested: %d  ", ov.dltTasksDone)
 		dltCached := ov.dltCached
 		if dltOnly && !LoopStatus.Ok() {
 			dltCached += srcCount
