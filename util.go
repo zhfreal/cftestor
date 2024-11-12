@@ -861,6 +861,50 @@ func isValidHost(host string) bool {
 	return ok
 }
 
+func getHostVer(host string) (ver int) {
+	tIP, _, err := net.SplitHostPort(host)
+	if err != nil {
+		return -1
+	}
+	return getIPVer(tIP)
+}
+
+// if ips is a valid IPv4 CIDR, return 0;
+//
+//	else if ips is a valid IPv6 CIDR, return 1;
+//	else using net.ParseIP() to parse IPs
+//	   if the result is null, return -1; else if the result is ipv4 (To4() is not null) return 0; else return 1
+func getIPsVer(ips string) (ver int) {
+	tV := getCIDRVer(ips)
+	if tV == -1 {
+		return getIPVer(ips)
+	} else {
+		return tV
+	}
+}
+
+func getCIDRVer(ips string) (ver int) {
+	_, _, err := net.ParseCIDR(ips)
+	if err != nil {
+		return -1
+	}
+	if strings.Contains(ips, ":") {
+		return 1
+	}
+	return 0
+}
+
+func getIPVer(ips string) (ver int) {
+	tIP := net.ParseIP(ips)
+	if tIP == nil {
+		return -1
+	} else if tIP.To4() != nil {
+		return 0
+	} else {
+		return 1
+	}
+}
+
 func splitHost(host string) (bool, string, int) {
 	host = strings.TrimSpace(host)
 	if len(host) == 0 {

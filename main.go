@@ -246,6 +246,15 @@ func init() {
 		ips := strings.TrimSpace(*srcIPS[i])
 		ips = strings.Split(ips, "#")[0]
 		if isValidIPs(ips) {
+			tV := getIPsVer(ips)
+			// tv == 0 means ipv4, tv == 1 means ipv6
+			if tV == 0 && ipv6Mode {
+				// just test ipv6, so we ignore ipv4
+				continue
+			} else if tV == 1 && ipv4Mode {
+				// just test ipv4, so we ignore ipv6
+				continue
+			}
 			ipr := NewIPRangeFromCIDR(&ips)
 			if ipr == nil {
 				myLogger.Fatalf("\"%v\" is invalid!\n", ips)
@@ -259,6 +268,15 @@ func init() {
 				srcIPRsRaw = append(srcIPRsRaw, ipr)
 			}
 		} else if isValidHost(ips) {
+			tV := getHostVer(ips)
+			// tv == 0 means ipv4, tv == 1 means ipv6
+			if tV == 0 && ipv6Mode {
+				// just test ipv6, so we ignore ipv4
+				continue
+			} else if tV == 1 && ipv4Mode {
+				// just test ipv4, so we ignore ipv6
+				continue
+			}
 			srcHosts = append(srcHosts, &ips)
 			t_qty = t_qty.Add(t_qty, big.NewInt(1))
 		} else {
