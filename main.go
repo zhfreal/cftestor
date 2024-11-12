@@ -174,12 +174,8 @@ func init() {
 	v4Flag := flag.Lookup("ipv4")
 	if (!v4Flag.Changed) && ipv6Mode {
 		ipv4Mode = false
-	}
-
-	// it's invalid when ipv4Mode and ipv6Mode is both true or false
-	if ipv4Mode == ipv6Mode {
-		myLogger.Fatalln("\"-4|--ipv4\" and \"-6|--ipv6\" should not be provided at the same time!")
-		os.Exit(1)
+	} else if !ipv4Mode && !ipv6Mode {
+		myLogger.Fatalln("we can't disable ipv4 and ipv6 at the same time!")
 	}
 
 	// check -I|--interval
@@ -220,6 +216,12 @@ func init() {
 
 	// no source IPs provided
 	if len(ipStr) == 0 && len(ipFile) == 0 || len(srcIPS) == 0 {
+		// it's invalid when ipv4Mode and ipv6Mode is both true or false at the same time and
+		// no specified source IPs or file is provided
+		if ipv4Mode == ipv6Mode {
+			myLogger.Fatalln("\"-4|--ipv4\" and \"-6|--ipv6\" should not be provided at the same time!")
+			os.Exit(1)
+		}
 		if !ipv6Mode {
 			t_cf_ipv4 := CFIPV4FULL
 			if fastMode {
@@ -248,10 +250,10 @@ func init() {
 		if isValidIPs(ips) {
 			tV := getIPsVer(ips)
 			// tv == 0 means ipv4, tv == 1 means ipv6
-			if tV == 0 && ipv6Mode {
+			if tV == 0 && !ipv4Mode {
 				// just test ipv6, so we ignore ipv4
 				continue
-			} else if tV == 1 && ipv4Mode {
+			} else if tV == 1 && !ipv6Mode {
 				// just test ipv4, so we ignore ipv6
 				continue
 			}
@@ -270,10 +272,10 @@ func init() {
 		} else if isValidHost(ips) {
 			tV := getHostVer(ips)
 			// tv == 0 means ipv4, tv == 1 means ipv6
-			if tV == 0 && ipv6Mode {
+			if tV == 0 && !ipv4Mode {
 				// just test ipv6, so we ignore ipv4
 				continue
-			} else if tV == 1 && ipv4Mode {
+			} else if tV == 1 && !ipv6Mode {
 				// just test ipv4, so we ignore ipv6
 				continue
 			}
