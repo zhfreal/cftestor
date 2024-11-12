@@ -582,14 +582,18 @@ LOOP:
 				// 	})
 				// }
 				// put task
+				t_task_size := dtWorkerThread
+				if t_dt_sources_len < dtWorkerThread {
+					t_task_size = t_dt_sources_len
+				}
 				go func() {
-					for i := 0; i < t_dt_sources_len; i++ {
+					for i := 0; i < t_task_size; i++ {
 						dtTaskChan <- dtTaskCache[i]
 					}
-					dtTaskCache = make([]*string, 0)
+					// dtTaskCache = make([]*string, 0)
 				}()
 				// retrieve from dtResultChan
-				for i := 0; i < t_dt_sources_len; i++ {
+				for i := 0; i < t_task_size; i++ {
 					dtResult := <-dtResultChan
 					// if ip not test then put it into dltTaskChan
 					dtDoneTasks += 1
@@ -626,6 +630,11 @@ LOOP:
 						// debug msg
 						displayDetails(false, []VerifyResults{tVerifyResult})
 					}
+				}
+				if t_task_size < t_dt_sources_len {
+					dtTaskCache = dtTaskCache[t_task_size:]
+				} else {
+					dtTaskCache = make([]*string, 0)
 				}
 				if debug {
 					displayStat(overAllStat{
@@ -675,14 +684,18 @@ LOOP:
 				// 	})
 				// }
 				// put task
+				t_task_size := dltWorkerThread
+				if t_dlt_sources_len < t_task_size {
+					t_task_size = t_dlt_sources_len
+				}
 				go func() {
-					for i := 0; i < t_dlt_sources_len; i++ {
+					for i := 0; i < t_task_size; i++ {
 						dltTaskChan <- dltTaskCache[i]
 					}
-					dltTaskCache = make([]*string, 0)
+					// dltTaskCache = make([]*string, 0)
 				}()
 				// retrieve result
-				for i := 0; i < t_dlt_sources_len; i++ {
+				for i := 0; i < t_task_size; i++ {
 					out := <-dltResultChan
 					dltDoneTasks += 1
 					var tVerifyResult = calcResult(out, true)
@@ -713,6 +726,11 @@ LOOP:
 						// debug msg
 						displayDetails(true, []VerifyResults{tVerifyResult})
 					}
+				}
+				if t_task_size < t_dlt_sources_len {
+					dltTaskCache = dltTaskCache[t_task_size:]
+				} else {
+					dltTaskCache = make([]*string, 0)
 				}
 				if debug {
 					displayStat(overAllStat{
