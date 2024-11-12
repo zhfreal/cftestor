@@ -245,6 +245,12 @@ func init() {
 		if len(srcIPS) == 0 {
 			myLogger.Fatalln("no source IPs provided!")
 		}
+		// set ipv6Mode to true when specific IPs are provided and neither "-4|--ipv4" nor ""-6|--ipv6" is provided
+		v6Flag := flag.Lookup("ipv6")
+		if !v6Flag.Changed && !v4Flag.Changed {
+			ipv6Mode = true
+		}
+
 	}
 
 	// shuffle srcIPR and srcIPRsCache when do not testAll
