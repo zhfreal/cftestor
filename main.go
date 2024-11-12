@@ -685,7 +685,7 @@ LOOP:
 				// }
 				// put task
 				t_task_size := dltWorkerThread
-				if t_dlt_sources_len < t_task_size {
+				if t_dlt_sources_len < t_task_size || !dltOnly {
 					t_task_size = t_dlt_sources_len
 				}
 				go func() {
