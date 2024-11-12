@@ -312,24 +312,24 @@ func (myLogger *MyLogger) PrintOverAllStat(logLvl LogLevel, ov overAllStat) {
 		myLogger.indent = myIndent
 	}
 	myLogger.Logf(logLvl, "==== Result: %d ==== ", ov.resultCount)
-	// srcCount := len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
+	srcCount := len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
 	if !dltOnly {
 		// myLogger.Printf(" | DT - Tested: %d ", ov.dtTasksDone)
-		// dtCached := ov.dtCached
-		// if !LoopStatus.Ok() {
-		// 	dtCached += srcCount
-		// }
+		dtTotal := ov.dtCached
+		if !LoopStatus.Ok() {
+			dtTotal += srcCount
+		}
 		// myLogger.Printf("Cached: %d", dtCached)
-		myLogger.Printf(" DT: %d/%d ", ov.dtTasksDone, ov.dtTasksDone+ov.dtCached)
+		myLogger.Printf(" DT: %d/%d ", ov.dtTasksDone, dtTotal)
 	}
 	if !dtOnly {
 		// myLogger.Printf(" DLT - Tested: %d ", ov.dltTasksDone)
-		// dltCached := ov.dltCached
-		// if dltOnly && !LoopStatus.Ok() {
-		// 	dltCached += srcCount
-		// }
+		dltTotal := ov.dltCached
+		if dltOnly && !LoopStatus.Ok() {
+			dltTotal += srcCount
+		}
 		// myLogger.Printf("Cached: %d", dltCached)
-		myLogger.Printf(" DLT: %d/%d ", ov.dltTasksDone, ov.dltTasksDone+ov.dltCached)
+		myLogger.Printf(" DLT: %d/%d ", ov.dltTasksDone, dltTotal)
 	}
 	myLogger.Println("")
 }
