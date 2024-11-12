@@ -174,7 +174,8 @@ func init() {
 	v4Flag := flag.Lookup("ipv4")
 	if (!v4Flag.Changed) && ipv6Mode {
 		ipv4Mode = false
-	} else if !ipv4Mode && !ipv6Mode {
+	}
+	if !ipv4Mode && !ipv6Mode {
 		myLogger.Fatalln("we can't disable ipv4 and ipv6 at the same time!")
 	}
 
@@ -193,29 +194,8 @@ func init() {
 	dbFile = strings.TrimSpace(dbFile)
 
 	var srcIPS []*string
-	if len(ipStr) != 0 {
-		for i := 0; i < len(ipStr); i++ {
-			srcIPS = append(srcIPS, &ipStr[i])
-		}
-	}
-	if len(ipFile) != 0 {
-		file, err := os.Open(ipFile)
-		if err != nil {
-			myLogger.Fatalf("file \"%s\" is not accessible! \n", ipFile)
-		}
-		scanner := bufio.NewScanner(file)
-		scanner.Split(bufio.ScanLines)
-		for scanner.Scan() {
-			tIp := strings.TrimSpace(scanner.Text())
-			if len(tIp) == 0 {
-				continue
-			}
-			srcIPS = append(srcIPS, &tIp)
-		}
-	}
-
 	// no source IPs provided
-	if len(ipStr) == 0 && len(ipFile) == 0 || len(srcIPS) == 0 {
+	if len(ipStr) == 0 && len(ipFile) == 0 {
 		// it's invalid when ipv4Mode and ipv6Mode is both true or false at the same time and
 		// no specified source IPs or file is provided
 		if ipv4Mode == ipv6Mode {
@@ -238,6 +218,32 @@ func init() {
 			for i := 0; i < len(t_cf_ipv6); i++ {
 				srcIPS = append(srcIPS, &t_cf_ipv6[i])
 			}
+		}
+	} else {
+		for i := 0; i < len(ipStr); i++ {
+			tIPs := strings.TrimSpace(ipStr[i])
+			if len(tIPs) == 0 {
+				continue
+			}
+			srcIPS = append(srcIPS, &ipStr[i])
+		}
+		if len(ipFile) != 0 {
+			file, err := os.Open(ipFile)
+			if err != nil {
+				myLogger.Fatalf("file \"%s\" is not accessible! \n", ipFile)
+			}
+			scanner := bufio.NewScanner(file)
+			scanner.Split(bufio.ScanLines)
+			for scanner.Scan() {
+				tIp := strings.TrimSpace(scanner.Text())
+				if len(tIp) == 0 {
+					continue
+				}
+				srcIPS = append(srcIPS, &tIp)
+			}
+		}
+		if len(srcIPS) == 0 {
+			myLogger.Fatalln("no source IPs provided!")
 		}
 	}
 
