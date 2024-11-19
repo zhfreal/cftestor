@@ -107,7 +107,7 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 			if response.Body != nil {
 				// retrieve loc
 				if response.Request.URL.Path == "/cdn-cgi/trace" && response.StatusCode == 200 && len(loc) == 0 {
-					loc, _ = read_loc_from_cf_cdn_cgi_trace_body(response.Body)
+					loc, _ = get_loc_from_cf(response.Body)
 				}
 			}
 			// connection test only, won't do download test
@@ -203,28 +203,30 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 	return allResult, loc
 }
 
-func downloadWorkerNew(chanIn chan *string, chanOut chan singleVerifyResult, wg *sync.WaitGroup, tUrl *string,
+func downloadWorkerNew(chanIn chan *task, chanOut chan singleVerifyResult, wg *sync.WaitGroup, tUrl *string,
 	httpRspTimeoutDur time.Duration, round int, doDTOnly bool) {
 	defer (*wg).Done()
-	max_failure := 0
-	if doDTOnly {
-		if !enableDTEvaluation {
-			max_failure = dtCount
-		} else {
-			max_failure = get_max_ev_dt_failure()
-		}
-	} else {
-		max_failure = dltCount
-	}
+	// max_failure := 0
+	// if doDTOnly {
+	// 	if !enableDTEvaluation {
+	// 		max_failure = dtCount
+	// 	} else {
+	// 		max_failure = get_max_ev_dt_failure()
+	// 	}
+	// } else {
+	// 	max_failure = dltCount
+	// }
 LOOP:
 	for {
-		host, ok := <-chanIn
+		t, ok := <-chanIn
 		if !ok {
 			break LOOP
 		}
-		if doDTOnly && LoopStatus.Ok() {
-			max_failure = dtCount
-		}
+		host := t.GetHost()
+		max_failure := t.GetMaxFailure()
+		// if doDTOnly && LoopStatus.Ok() {
+		// 	max_failure = dtCount
+		// }
 		tResultSlice, tLoc := downloadHandlerNew(host, tUrl, httpRspTimeoutDur, round, doDTOnly, max_failure)
 		tVerifyResult := singleVerifyResult{time.Now(), *host, tLoc, tResultSlice}
 		chanOut <- tVerifyResult
@@ -258,28 +260,30 @@ func sslDTHandlerNew(host *string, max_failure int) []singleResult {
 		}
 		time.Sleep(time.Duration(interval) * time.Millisecond)
 	}
-	// we just get the last record in all allResult while we diable enableDTEvaluation
+	// we just get the last record in all allResult while we disable enableDTEvaluation
 	if !enableDTEvaluation {
 		allResult = allResult[len(allResult)-1:]
 	}
 	return allResult
 }
 
-func sslDTWorkerNew(chanIn chan *string, chanOut chan singleVerifyResult, wg *sync.WaitGroup) {
+func sslDTWorkerNew(chanIn chan *task, chanOut chan singleVerifyResult, wg *sync.WaitGroup) {
 	defer (*wg).Done()
-	max_failure := dtCount
-	if enableDTEvaluation {
-		max_failure = get_max_ev_dt_failure()
-	}
+	// max_failure := dtCount
+	// if enableDTEvaluation {
+	// 	max_failure = get_max_ev_dt_failure()
+	// }
 LOOP:
 	for {
-		host, ok := <-chanIn
+		t, ok := <-chanIn
 		if !ok {
 			break LOOP
 		}
-		if LoopStatus.Ok() {
-			max_failure = dtCount
-		}
+		// if LoopStatus.Ok() {
+		// 	max_failure = dtCount
+		// }
+		host := t.GetHost()
+		max_failure := t.GetMaxFailure()
 		tResultSlice := sslDTHandlerNew(host, max_failure)
 		tVerifyResult := singleVerifyResult{time.Now(), *host, "", tResultSlice}
 		chanOut <- tVerifyResult
@@ -290,4 +294,15 @@ LOOP:
 
 func get_max_ev_dt_failure() int {
 	return int(math.Round(float64(dtCount) * (1 - dtEvaluationDTPR/100)))
+}
+
+// isDT: true for DT, false for DLT
+func get_max_failure(isDT bool) int {
+	if isDT {
+		if enableDTEvaluation {
+			return get_max_ev_dt_failure()
+		}
+		return dtCount
+	}
+	return dltCount
 }

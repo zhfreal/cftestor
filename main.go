@@ -1,13 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"math/big"
 	"os"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,12 +33,12 @@ func init() {
 
 	// version = "dev"
 	flag.BoolVar(&fastMode, "fast", false, "Fast mode")
-	flag.VarP(&ipStr, "ip", "s", "Specific IP or CIDR for test.")
+	flag.StringSliceVarP(&ipStr, "ip", "s", []string{}, "Specific IP or CIDR for test.")
 	flag.StringVarP(&ipFile, "in", "i", "", "Specific file of IPs and CIDRs for test.")
 
 	flag.IntVarP(&dtWorkerThread, "dt-thread", "m", 20, "Number of concurrent threads for Delay Test(DT).")
 	flag.IntVarP(&dtTimeout, "dt-timeout", "t", 2000, "Timeout for single DT(ms).")
-	flag.IntVarP(&dtCount, "dt-count", "c", 2, "Tries of DT for a IP.")
+	flag.IntVarP(&dtCount, "dt-count", "c", 4, "Tries of DT for a IP.")
 	// flag.IntVarP(&port, "port", "p", 443, "Port to test")
 	flag.StringSliceVarP(&portStrSlice, "port", "p", []string{}, "Port to test, could be specific one or more ports at same time.")
 	flag.StringVar(&hostName, "hostname", DefaultTestHost, "Hostname for DT test.")
@@ -53,7 +51,7 @@ func init() {
 	flag.IntVarP(&dltDurMax, "dlt-period", "d", 10, "The total times escaped for single DLT in seconds, default 10s.")
 	flag.IntVarP(&dltCount, "dlt-count", "b", 1, "Tries of DLT for a IP, default 1.")
 	flag.StringVarP(&dltUrl, "dlt-url", "u", defaultDLTUrl, "Customize test URL for DLT.")
-	flag.IntVar(&dltTimeout, "dlt-timeout", 5000, "Specify the timeout for http reponse when do DLT in milliseconds, default 5000 ms.")
+	flag.IntVar(&dltTimeout, "dlt-timeout", 5000, "Specify the timeout for http response when do DLT in milliseconds, default 5000 ms.")
 	flag.IntVarP(&interval, "interval", "I", 500, "Interval between two tests, unit ms, default 500ms.")
 
 	flag.BoolVar(&enableDTEvaluation, "ev-dt", false, "Evaluate DT test result. Default as disabled")
@@ -170,13 +168,20 @@ func init() {
 	// init rand seed
 	initRandSeed()
 
+	tMode := int8(0)
 	// set false for ipv4Mode, when just ipv6 flag set to true
 	v4Flag := flag.Lookup("ipv4")
 	if (!v4Flag.Changed) && ipv6Mode {
 		ipv4Mode = false
 	}
-	if !ipv4Mode && !ipv6Mode {
-		myLogger.Fatalln("we can't disable ipv4 and ipv6 at the same time!")
+	if ipv4Mode {
+		tMode |= TypeIPv4
+	}
+	if ipv6Mode {
+		tMode |= TypeIPv6
+	}
+	if tMode == TypeIPErr {
+		myLogger.Fatalln("we can't disable both ipv4 and ipv6 at the same time!")
 	}
 
 	// check -I|--interval
@@ -193,56 +198,48 @@ func init() {
 	dltUrl = strings.TrimSpace(dltUrl)
 	dbFile = strings.TrimSpace(dbFile)
 
-	var srcIPS []*string
+	// var srcIPS []*string
 	// no source IPs provided
 	if len(ipStr) == 0 && len(ipFile) == 0 {
 		// it's invalid when ipv4Mode and ipv6Mode is both true or false at the same time and
 		// no specified source IPs or file is provided
-		if ipv4Mode == ipv6Mode {
+		if (tMode&TypeIPv4) == TypeIPv4 && (tMode&TypeIPv6) == TypeIPv6 {
 			myLogger.Fatalln("\"-4|--ipv4\" and \"-6|--ipv6\" should not be provided at the same time!")
 			os.Exit(1)
 		}
-		if !ipv6Mode {
+		if (tMode & TypeIPv4) == TypeIPv4 {
 			t_cf_ipv4 := CFIPV4FULL
 			if fastMode {
 				t_cf_ipv4 = CFIPV4
 			}
-			for i := 0; i < len(t_cf_ipv4); i++ {
-				srcIPS = append(srcIPS, &t_cf_ipv4[i])
+			err := srcIPs.AddFromSlice(t_cf_ipv4, TypeIPv4)
+			if err != nil {
+				myLogger.Fatalln(err)
 			}
 		} else {
 			t_cf_ipv6 := CFIPV6FULL
 			if fastMode {
 				t_cf_ipv6 = CFIPV6
 			}
-			for i := 0; i < len(t_cf_ipv6); i++ {
-				srcIPS = append(srcIPS, &t_cf_ipv6[i])
+			err := srcIPs.AddFromSlice(t_cf_ipv6, TypeIPv6)
+			if err != nil {
+				myLogger.Fatalln(err)
 			}
 		}
 	} else {
-		for i := 0; i < len(ipStr); i++ {
-			tIPs := strings.TrimSpace(ipStr[i])
-			if len(tIPs) == 0 {
-				continue
+		if len(ipStr) > 0 {
+			err := srcIPs.AddFromSlice(ipStr, tMode)
+			if err != nil {
+				myLogger.Fatalln(err)
 			}
-			srcIPS = append(srcIPS, &ipStr[i])
 		}
 		if len(ipFile) != 0 {
-			file, err := os.Open(ipFile)
+			err := srcIPs.AddFromFile(ipFile, tMode)
 			if err != nil {
-				myLogger.Fatalf("file \"%s\" is not accessible! \n", ipFile)
-			}
-			scanner := bufio.NewScanner(file)
-			scanner.Split(bufio.ScanLines)
-			for scanner.Scan() {
-				tIp := strings.TrimSpace(scanner.Text())
-				if len(tIp) == 0 {
-					continue
-				}
-				srcIPS = append(srcIPS, &tIp)
+				myLogger.Fatalln(err)
 			}
 		}
-		if len(srcIPS) == 0 {
+		if srcIPs.LenInt() == 0 {
 			myLogger.Fatalln("no source IPs provided!")
 		}
 		// set ipv6Mode to true when specific IPs are provided and neither "-4|--ipv4" nor ""-6|--ipv6" is provided
@@ -255,63 +252,15 @@ func init() {
 
 	// shuffle srcIPR and srcIPRsCache when do not testAll
 	// and fix resultMin
-	t_qty := big.NewInt(0)
-	for i := 0; i < len(srcIPS); i++ {
-		ips := strings.TrimSpace(*srcIPS[i])
-		ips = strings.Split(ips, "#")[0]
-		if isValidIPs(ips) {
-			tV := getIPsVer(ips)
-			// tv == 0 means ipv4, tv == 1 means ipv6
-			if tV == 0 && !ipv4Mode {
-				// just test ipv6, so we ignore ipv4
-				continue
-			} else if tV == 1 && !ipv6Mode {
-				// just test ipv4, so we ignore ipv6
-				continue
-			}
-			ipr := NewIPRangeFromCIDR(&ips)
-			if ipr == nil {
-				myLogger.Fatalf("\"%v\" is invalid!\n", ips)
-			}
-			// when it do not testAll and ipr is not bigger than maxHostLenBig, extract to to cache
-			t_qty = t_qty.Add(t_qty, ipr.Len)
-			if ipr.Len.Cmp(maxHostLenBig) < 1 {
-				srcIPRsExtracted = append(srcIPRsExtracted, ipr.ExtractAll()...)
-			} else {
-				// when it do not perform tealAll or not bigger than maxHostLenBig, just put it to srcIPRs
-				srcIPRsRaw = append(srcIPRsRaw, ipr)
-			}
-		} else if isValidHost(ips) {
-			tV := getHostVer(ips)
-			// tv == 0 means ipv4, tv == 1 means ipv6
-			if tV == 0 && !ipv4Mode {
-				// just test ipv6, so we ignore ipv4
-				continue
-			} else if tV == 1 && !ipv6Mode {
-				// just test ipv4, so we ignore ipv6
-				continue
-			}
-			srcHosts = append(srcHosts, &ips)
-			t_qty = t_qty.Add(t_qty, big.NewInt(1))
-		} else {
-			myLogger.Fatalf("\"%v\" is neither valid IP/CIDR nor host!\n", ips)
-		}
-	}
-	// shuffle srcIPRsRaw, srcIPRsExtracted, and srcHosts
-	myRand.Shuffle(len(srcIPRsRaw), func(m, n int) {
-		srcIPRsRaw[m], srcIPRsRaw[n] = srcIPRsRaw[n], srcIPRsRaw[m]
-	})
-	myRand.Shuffle(len(srcIPRsExtracted), func(m, n int) {
-		srcIPRsExtracted[m], srcIPRsExtracted[n] = srcIPRsExtracted[n], srcIPRsExtracted[m]
-	})
-	myRand.Shuffle(len(srcHosts), func(m, n int) {
-		srcHosts[m], srcHosts[n] = srcHosts[n], srcHosts[m]
-	})
+
+	srcIPs.Shuffle()
+	srcIPs.AddPorts(portStrSlice)
+	t_qty := srcIPs.Len()
 	// check resultMin
 	if resultMin <= 0 {
 		myLogger.Fatalf("\"-r|--result %v\" should not be smaller than 0!\n", resultMin)
 	}
-	// re-caculate resultMin based on the source IPs
+	// re-calculate resultMin based on the source IPs
 	t_result_min := big.NewInt(int64(resultMin))
 	if testAll {
 		resultMin = -1
@@ -319,55 +268,6 @@ func init() {
 		if t_qty.Cmp(t_result_min) == -1 {
 			resultMin = int(t_qty.Int64())
 		}
-	}
-	port_regex := regexp.MustCompile(`[,;|]+`)
-	port_range_regex := regexp.MustCompile(`\d+[-:]\d+`)
-	port_range_split_regex := regexp.MustCompile(`[-:]`)
-	// set ports
-	if len(portStrSlice) > 0 {
-		for _, portStr := range portStrSlice {
-			portStr_slice := port_regex.Split(portStr, -1)
-			for _, t_port_str := range portStr_slice {
-				t_port_str = strings.TrimSpace(t_port_str)
-				if len(t_port_str) == 0 {
-					continue
-				}
-				// it's a range
-				if port_range_regex.MatchString(t_port_str) {
-					t_port_list := port_range_split_regex.Split(t_port_str, -1)
-					if len(t_port_list) != 2 {
-						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
-					}
-					t_start_port := t_port_list[0]
-					t_end_port := t_port_list[1]
-					start_port, err := strconv.Atoi(t_start_port)
-					if err != nil {
-						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_start_port)
-					}
-					end_port, err := strconv.Atoi(t_end_port)
-					if err != nil {
-						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_end_port)
-					}
-					if start_port > end_port || start_port < 1 || end_port > 65535 {
-						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
-					}
-					for i := start_port; i <= end_port; i++ {
-						ports = append(ports, i)
-					}
-				} else { // it's a single port
-					port, err := strconv.Atoi(t_port_str)
-					if err != nil || port < 1 || port > 65535 {
-						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
-					}
-					ports = append(ports, port)
-				}
-			}
-		}
-		// clean ports, make them unique
-		ports = uniqueIntSlice(ports)
-	}
-	if len(ports) == 0 {
-		ports = append(ports, 443)
 	}
 	// set suffixLabel
 	if len(suffixLabel) == 0 {
@@ -467,53 +367,14 @@ func init() {
 		}
 	}
 
-	LoopStatus = SafeStatus{v: false}
-
-	// if debug && tcellMode { // It's running on tcell mode
-	// 	// reset the position of debugHint and debugTitle according maxResultsDisplay and resultMin
-	// 	if !testAll && resultMin < maxResultsDisplay {
-	// 		maxResultsDisplay = resultMin
-	// 		titleDebugHintRow = titleResultRow + maxResultsDisplay + 2
-	// 		titleDebugRow = titleDebugHintRow + 1
-	// 	}
-	// 	// init
-	// 	resultStrSlice = make([][]*string, 0)
-	// 	debugStrSlice = make([][]*string, 0)
-	// 	detailTitleSlice = make([]string, 0)
-	// 	// fix interval
-	// 	// statInterval = statisticIntervalT
-	// 	// fix rows when --dlt-only mode
-	// 	if dltOnly {
-	// 		titleCancelRow -= 1
-	// 		titleTasksStatRow -= 1
-	// 		titleResultHintRow -= 1
-	// 		titleResultRow -= 1
-	// 		titleDebugHintRow -= 1
-	// 		titleDebugRow -= 1
-	// 	}
-	// 	initTitleStr()
-	// 	// init tcell screen instance
-	// 	ts, te := tcell.NewScreen()
-	// 	if te != nil {
-	// 		fmt.Fprintf(os.Stderr, "%v\n", te)
-	// 		os.Exit(1)
-	// 	}
-	// 	if te := ts.Init(); te != nil {
-	// 		fmt.Fprintf(os.Stderr, "%v\n", te)
-	// 		os.Exit(1)
-	// 	}
-	// 	termAll = &ts
-	// 	(*termAll).SetStyle(normalStyle)
-	// 	// (*termAll).Sync()
-	// }
 }
 
 func runWorker() {
 
 	var wg sync.WaitGroup
-	var dtTaskChan = make(chan *string, dtWorkerThread)
+	var dtTaskChan = make(chan *task, dtWorkerThread)
 	var dtResultChan = make(chan singleVerifyResult, cap(dtTaskChan))
-	var dltTaskChan = make(chan *string, dltWorkerThread)
+	var dltTaskChan = make(chan *task, dltWorkerThread)
 	var dltResultChan = make(chan singleVerifyResult, cap(dltTaskChan))
 
 	// if debug && tcellMode {
@@ -539,7 +400,11 @@ func runWorker() {
 			go downloadWorkerNew(dltTaskChan, dltResultChan, &wg, &dltUrl, httpRspTimeoutDuration, dltCount, false)
 		}
 	}
-	loop_round := 0
+	tmpResultMap := make(map[string]VerifyResults)
+	var tmpTestSlice map[string]bool
+	var thisSourceIPs = CopySourceIPs(srcIPs)
+	looper := NewSafeLooperWithInterval(loop, loopInterval*1000)
+	// verifyResultsMap
 LOOP:
 	for {
 		dtDoneTasks := 0
@@ -548,26 +413,22 @@ LOOP:
 		dltDoneTasks := 0
 		// the item in dltTaskCache is a ip string.
 		dltTaskCache := make([]*string, 0)
-		// the key of cacheResultMap should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
-		cacheResultMap := make(map[string]VerifyResults)
+		// the key of cachedMap should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
+		cachedMap := make(map[string]VerifyResults)
 		haveEnoughResult := false
-	ONE_TASK:
+		// reset ResultIPSlice while do LOOP
+		tmpTestSlice = make(map[string]bool)
+	CLEAN_ROUND:
 		for {
 			// DT
 			if !dltOnly {
 				if len(dtTaskCache) < dtWorkerThread {
-					if LoopStatus.Ok() {
-						for tIP := range verifyResultsMap {
-							dtTaskCache = append(dtTaskCache, &tIP)
-						}
-					} else {
-						dtTaskCache = append(dtTaskCache, retrieveSome(dtWorkerThread)...)
-					}
+					dtTaskCache = append(dtTaskCache, thisSourceIPs.RetrieveSome(dtWorkerThread, !testAll)...)
 				}
 				// no more sources for testing
 				t_dt_sources_len := len(dtTaskCache)
 				if t_dt_sources_len == 0 {
-					break ONE_TASK
+					break CLEAN_ROUND
 				}
 				// // print stat
 				// if debug {
@@ -578,7 +439,7 @@ LOOP:
 				// 		dltTasksDone: dltDoneTasks,
 				// 		dltOnGoing:   0,
 				// 		dltCached:    len(dltTaskCache),
-				// 		resultCount:  len(verifyResultsMap),
+				// 		resultCount:  len(tmpResultMap),
 				// 	})
 				// }
 				// put task
@@ -587,8 +448,10 @@ LOOP:
 					t_task_size = t_dt_sources_len
 				}
 				go func() {
+					max_failure := get_max_failure(true)
 					for i := 0; i < t_task_size; i++ {
-						dtTaskChan <- dtTaskCache[i]
+						t := NewTask(dtTaskCache[i], max_failure)
+						dtTaskChan <- t
 					}
 					// dtTaskCache = make([]*string, 0)
 				}()
@@ -603,34 +466,48 @@ LOOP:
 						tVerifyResult.dtpr*100.0 >= float64(dtEvaluationDTPR) &&
 						(!enableStdEv || (enableStdEv && tVerifyResult.daStd <= dtStdExp)) {
 						if !dtOnly { // there are download test ongoing
-							// put ping test result to cacheResultMap for later
-							cacheResultMap[*tVerifyResult.ip] = tVerifyResult
+							// put ping test result to cachedMap for later
+							cachedMap[*tVerifyResult.ip] = tVerifyResult
 							dltTaskCache = append(dltTaskCache, tVerifyResult.ip)
 							// debug msg, show only in debug mode
 							if debug {
 								displayDetails(false, []VerifyResults{tVerifyResult})
 							}
 						} else { // Download test disabled
-							// non-debug msg
-							displayDetails(false, []VerifyResults{tVerifyResult})
-							// combine verifyResultsMap with verifyResultsMap[*tVerifyResult.ip]
-							v, ok := verifyResultsMap[*tVerifyResult.ip]
+
+							// combine tmpResultMap with tmpResultMap[*tVerifyResult.ip]
+							v, ok := tmpResultMap[*tVerifyResult.ip]
 							if !ok {
-								verifyResultsMap[*tVerifyResult.ip] = tVerifyResult
+								tmpResultMap[*tVerifyResult.ip] = tVerifyResult
 							} else {
 								tVerifyResult.combine(v)
-								verifyResultsMap[*tVerifyResult.ip] = tVerifyResult
+								tmpResultMap[*tVerifyResult.ip] = tVerifyResult
 							}
+							// non-debug msg
+							displayDetails(false, []VerifyResults{tVerifyResult})
+							tmpTestSlice[*tVerifyResult.ip] = true
 							// we have expected result, break LOOP
-							if !testAll && len(verifyResultsMap) >= resultMin {
+							// TODO: this is a dirty way
+							if !testAll && len(tmpTestSlice) >= resultMin {
 								haveEnoughResult = true
 							}
 						}
 					} else if debug {
+						// update tmpResultMap[*tVerifyResult.ip] with tVerifyResult while in LOOP mode
+						if looper.InLooping() {
+							v, ok := tmpResultMap[*tVerifyResult.ip]
+							if !ok {
+								tmpResultMap[*tVerifyResult.ip] = tVerifyResult
+							} else {
+								tVerifyResult.combine(v)
+								tmpResultMap[*tVerifyResult.ip] = tVerifyResult
+							}
+						}
 						// debug msg
 						displayDetails(false, []VerifyResults{tVerifyResult})
 					}
 				}
+				// cut out the used source from dtTaskCache
 				if t_task_size < t_dt_sources_len {
 					dtTaskCache = dtTaskCache[t_task_size:]
 				} else {
@@ -644,29 +521,24 @@ LOOP:
 						dltTasksDone: dltDoneTasks,
 						dltOnGoing:   0,
 						dltCached:    len(dltTaskCache),
-						resultCount:  len(verifyResultsMap),
+						resultCount:  len(tmpTestSlice),
+						remain:       thisSourceIPs.LenInt(),
 					})
 				}
 			}
 			//DLT
 			if !dtOnly {
 				// no source to do DLT
-				if len(dltTaskCache) <= 0 {
+				if len(dltTaskCache) <= dltWorkerThread {
 					// DT enabled, just continue to do DT
 					if !dltOnly {
 						continue
 					} else {
 						// retrieve source IP
-						if LoopStatus.Ok() {
-							for tIP := range verifyResultsMap {
-								dltTaskCache = append(dltTaskCache, &tIP)
-							}
-						} else {
-							dltTaskCache = append(dltTaskCache, retrieveSome(dltWorkerThread)...)
-						}
+						dltTaskCache = append(dltTaskCache, thisSourceIPs.RetrieveSome(dltWorkerThread, !testAll)...)
 						// no source IP, break LOOP
 						if len(dltTaskCache) == 0 {
-							break ONE_TASK
+							break CLEAN_ROUND
 						}
 					}
 				}
@@ -680,7 +552,8 @@ LOOP:
 				// 		dltTasksDone: dltDoneTasks,
 				// 		dltOnGoing:   0,
 				// 		dltCached:    t_dlt_sources_len,
-				// 		resultCount:  len(verifyResultsMap),
+				// 		resultCount:  len(tmpResultMap),
+				// 		remain:       thisSourceIPs.LenInt(),
 				// 	})
 				// }
 				// put task
@@ -689,8 +562,10 @@ LOOP:
 					t_task_size = t_dlt_sources_len
 				}
 				go func() {
+					max_failure := get_max_failure(false)
 					for i := 0; i < t_task_size; i++ {
-						dltTaskChan <- dltTaskCache[i]
+						t := NewTask(dltTaskCache[i], max_failure)
+						dltTaskChan <- t
 					}
 					// dltTaskCache = make([]*string, 0)
 				}()
@@ -700,24 +575,25 @@ LOOP:
 					dltDoneTasks += 1
 					var tVerifyResult = calcResult(out, true)
 					if !dltOnly {
-						v := cacheResultMap[*tVerifyResult.ip]
+						v := cachedMap[*tVerifyResult.ip]
 						// reset TestTime according download test result
 						tVerifyResult.combine(v)
-						cacheResultMap[*tVerifyResult.ip] = tVerifyResult
+						cachedMap[*tVerifyResult.ip] = tVerifyResult
 					}
 					// tVerifyResult = v
 					// check speed and data size downloaded
 					if tVerifyResult.dls >= dltEvaluationSpeed && tVerifyResult.dlds > downloadSizeMin {
-						// combine verifyResultsMap with verifyResultsMap[*tVerifyResult.ip]
-						v, ok := verifyResultsMap[*tVerifyResult.ip]
+						// combine tmpResultMap with tmpResultMap[*tVerifyResult.ip]
+						v, ok := tmpResultMap[*tVerifyResult.ip]
 						if !ok {
-							verifyResultsMap[*tVerifyResult.ip] = tVerifyResult
+							tmpResultMap[*tVerifyResult.ip] = tVerifyResult
 						} else {
 							tVerifyResult.combine(v)
-							verifyResultsMap[*tVerifyResult.ip] = tVerifyResult
+							tmpResultMap[*tVerifyResult.ip] = tVerifyResult
 						}
+						tmpTestSlice[*tVerifyResult.ip] = true
 						// we have expected result
-						if !testAll && len(verifyResultsMap) >= resultMin {
+						if !testAll && len(tmpTestSlice) >= resultMin {
 							haveEnoughResult = true
 						}
 						// non-debug msg
@@ -727,6 +603,7 @@ LOOP:
 						displayDetails(true, []VerifyResults{tVerifyResult})
 					}
 				}
+				// ut out the used source from dltTaskCache
 				if t_task_size < t_dlt_sources_len {
 					dltTaskCache = dltTaskCache[t_task_size:]
 				} else {
@@ -740,68 +617,57 @@ LOOP:
 						dltTasksDone: dltDoneTasks,
 						dltOnGoing:   0,
 						dltCached:    len(dltTaskCache),
-						resultCount:  len(verifyResultsMap),
+						resultCount:  len(tmpTestSlice),
+						remain:       thisSourceIPs.LenInt(),
 					})
 				}
 			}
-			// cancel from terminal, or have enough results
-			// flush ping and download task chan
-			// MARK as REMOVE
-			// if cancelSigFromTerm {
-			// 	// show waiting msg, only when debug
-			// 	// if debug && !showQuitWaiting {
-			// 	// 	if tcellMode {
-			// 	// 		printQuitWaiting()
-			// 	// 	} else {
-			// 	// 		myLogger.Debugln(titleWaitQuit)
-			// 	// 	}
-			// 	// 	showQuitWaiting = true
-			// 	// }
-			// 	if debug {
-			// 		myLogger.Debugln(titleWaitQuit)
-			// 	}
-			// 	break LOOP
-			// }
-			if haveEnoughResult || LoopStatus.Ok() {
-				break ONE_TASK
+			if haveEnoughResult {
+				break CLEAN_ROUND
 			}
 		}
 		// if there is no target IP after initial round, break LOOP
-		if len(verifyResultsMap) == 0 {
+		if len(tmpResultMap) == 0 {
 			break LOOP
 		}
 		// enter loop round after initial round
-		if loop > 0 {
-			if loop_round == 0 {
-				LoopStatus.Enable()
-			}
-			// counter loop_round after initial round
-			loop_round += 1
-			if loop_round <= loop {
-				if loopInterval > 0 { // set loop interval
-					myLogger.Debugf("sleep %d seconds for loop round %d\n", loopInterval, loop_round)
-					time.Sleep(time.Duration(loopInterval) * time.Second)
-				}
-			} else {
-				break LOOP
-			}
-		} else {
+		ok := looper.Loop()
+		if !ok {
+			// looper is not valid or finished, break LOOP
 			break LOOP
+		} else { // looper is ready or in progress
+			// do thisSourceIPs reset and set new source ips before loop
+			tmp_slice := make([]string, 0)
+			for k := range tmpResultMap {
+				tmp_slice = append(tmp_slice, k)
+			}
+			thisSourceIPs.Reset()
+			thisSourceIPs.AddFromSlice(tmp_slice, TypeIPv4|TypeIPv6)
+			// set resultMin to len(tmpTestSlice) while we don't do testAll
+			// to perform testing all target in tmpTestSlice
+			if !testAll {
+				resultMin = len(tmp_slice)
+			}
+			looper_interval := float64(looper.GetInterval()) / 1000.0
+			next_round := looper.GetRound()
+			myLogger.Debugf("sleep %v seconds for loop round %d\n", looper_interval, next_round)
+			looper.Sleep()
 		}
 	}
-
-	// for tcell only, send terminate signal to termControl
-	// terminateConfirm = true
+	for tIP := range tmpTestSlice {
+		verifyResultsMap[tIP] = tmpResultMap[tIP]
+	}
 	// update statistic just before quit controller
-	displayStat(overAllStat{
-		dtTasksDone:  0,
-		dtOnGoing:    0,
-		dtCached:     0,
-		dltTasksDone: 0,
-		dltOnGoing:   0,
-		dltCached:    0,
-		resultCount:  len(verifyResultsMap),
-	})
+	// displayStat(overAllStat{
+	// 	dtTasksDone:  0,
+	// 	dtOnGoing:    0,
+	// 	dtCached:     0,
+	// 	dltTasksDone: 0,
+	// 	dltOnGoing:   0,
+	// 	dltCached:    0,
+	// 	resultCount:  len(verifyResultsMap),
+	// 	remain:       0,
+	// })
 	// close all chan
 	close(dtTaskChan)
 	close(dtResultChan)
@@ -809,61 +675,6 @@ LOOP:
 	close(dltResultChan)
 	wg.Wait()
 }
-
-// DELETION
-// func termControl(wg *sync.WaitGroup) {
-// 	defer (*wg).Done()
-// 	defer (*termAll).Fini()
-// LOOP:
-// 	for !terminateConfirm {
-// 		if !(*termAll).HasPendingEvent() {
-// 			time.Sleep(100 * time.Millisecond)
-// 			continue
-// 		}
-// 		ev := (*termAll).PollEvent()
-// 		switch ev := ev.(type) {
-// 		case *tcell.EventKey:
-// 			switch ev.Key() {
-// 			case tcell.KeyEscape:
-// 				if !terminateConfirm && !cancelSigFromTerm && confirmQuit() {
-// 					cancelSigFromTerm = true
-// 				}
-// 				if terminateConfirm {
-// 					break LOOP
-// 				}
-// 			default:
-// 				if terminateConfirm {
-// 					break LOOP
-// 				}
-// 			}
-// 		case *tcell.EventResize:
-// 			initScreen()
-// 		}
-// 	}
-// 	printQuittingCountDown(quitWaitingTime)
-// }
-
-// DELETION
-// func confirmQuit() bool {
-// 	printCancelConfirm()
-// 	for {
-// 		ev := (*termAll).PollEvent()
-// 		switch ev := ev.(type) {
-// 		case *tcell.EventKey:
-// 			switch ev.Key() {
-// 			case tcell.KeyEnter:
-// 				printQuitWaiting()
-// 				return true
-// 			default:
-// 				printCancel()
-// 				return false
-// 			}
-// 		case *tcell.EventResize:
-// 			initScreen()
-// 			printCancelConfirm()
-// 		}
-// 	}
-// }
 
 func main() {
 
@@ -897,10 +708,6 @@ func main() {
 			myLogger.Println()
 			myLogger.Println("All Results:")
 			printFinalStat(verifyResultsSlice, dtOnly)
-			// } else { // we display results in controler when in silence mode
-			// 	for _, v := range verifyResultsSlice {
-			// 		myLogger.Println(*(v.ip))
-			// 	}
 		}
 	}
 }

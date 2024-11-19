@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -224,7 +225,7 @@ func initRandSeed() {
 // }
 
 // from https://api.incolumitas.com/?q=3.5.140.2
-func getGeoInfoFromIncolumitas(querIP string) (ASN int, city, country string) {
+func getGeoInfoFromIncolumitas(ipStr string) (ASN int, city, country string) {
 	// if defaultASN > 0 || len(defaultCity) > 0 {
 	// 	ASN = defaultASN
 	// 	city = defaultCity
@@ -232,8 +233,8 @@ func getGeoInfoFromIncolumitas(querIP string) (ASN int, city, country string) {
 	// }
 	t_url, _ := url.Parse("https://api.incolumitas.com/")
 	params := url.Values{}
-	if len(querIP) > 0 && isValidIPs(querIP) {
-		params.Add("q", querIP)
+	if len(ipStr) > 0 && isValidIPs(ipStr) {
+		params.Add("q", ipStr)
 	}
 	t_url.RawQuery = params.Encode()
 	tReq, err := http.NewRequest("GET", t_url.String(), nil)
@@ -326,7 +327,7 @@ func getGeoInfoFromCF(ipStr *string) (loc string) {
 		return
 	}
 	// read response.Body as string
-	loc, err = read_loc_from_cf_cdn_cgi_trace_body(response.Body)
+	loc, err = get_loc_from_cf(response.Body)
 	if err != nil {
 		myLogger.Error(fmt.Sprintf("An error occurred while read response.Body: %v\n", err))
 		return
@@ -736,15 +737,6 @@ func displayStat(ov overAllStat) {
 	// }
 }
 
-func HaveIPv6() bool {
-	for _, ipr := range srcIPRsRaw {
-		if ipr.IsV6() {
-			return true
-		}
-	}
-	return false
-}
-
 func MaxInt(a, b int, num ...int) (t int) {
 	t = a
 	if b > t {
@@ -767,72 +759,6 @@ func MinInt(a, b int, num ...int) (t int) {
 		if i < t {
 			t = i
 		}
-	}
-	return
-}
-
-func retrieveSome(amount int) (targetIPs []*string) {
-	var t_target = []*string{}
-	targetIPs = append(targetIPs, retrieveHosts(amount)...)
-	t_target = append(t_target, retrieveIPsFromIPR(amount)...)
-	for _, ipStr := range t_target {
-		for _, port := range ports {
-			host := genHostFromIPStrPort(*ipStr, port)
-			if len(host) > 0 {
-				targetIPs = append(targetIPs, &host)
-			}
-		}
-	}
-	return
-}
-
-// we get target IPs based on <amount>. We will get amount of <amount> from every IPR in srcIPR and  from srcIPRsCache
-func retrieveIPsFromIPR(amount int) (targetIPs []*string) {
-	if amount < 0 || amount < retrieveCount {
-		amount = retrieveCount
-	}
-
-	t_ips := []net.IP{}
-	for _, ipr := range srcIPRsRaw {
-		if !testAll {
-			t_ips = append(t_ips, ipr.GetRandomX(amount)...)
-		} else {
-			t_ips = append(t_ips, ipr.Extract(amount)...)
-		}
-	}
-	if len(srcIPRsExtracted) > 0 {
-		if len(srcIPRsExtracted) <= amount {
-			t_ips = append(t_ips, srcIPRsExtracted...)
-			srcIPRsExtracted = []net.IP{}
-		} else {
-			t_ips = append(t_ips, srcIPRsExtracted[0:amount]...)
-			srcIPRsExtracted = srcIPRsExtracted[amount:]
-		}
-	}
-	for _, t_ip := range t_ips {
-		tIP := t_ip.String()
-		targetIPs = append(targetIPs, &tIP)
-	}
-	// randomize
-	myRand.Shuffle(len(targetIPs), func(m, n int) {
-		targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
-	})
-	return
-}
-
-func retrieveHosts(amount int) (targetHosts []*string) {
-	if amount <= 0 || len(srcHosts) == 0 {
-		return
-	}
-	t_amount := amount
-	if len(srcHosts) < amount {
-		t_amount = len(srcHosts)
-	}
-	targetHosts = append(targetHosts, srcHosts[:t_amount]...)
-	if len(srcHosts) <= amount {
-		srcHosts = []*string{}
-	} else {
-		srcHosts = srcHosts[t_amount:]
 	}
 	return
 }
@@ -861,20 +787,21 @@ func isValidHost(host string) bool {
 	return ok
 }
 
-func getHostVer(host string) (ver int) {
+func getHostVer(host string) (ver int8) {
 	tIP, _, err := net.SplitHostPort(host)
 	if err != nil {
-		return -1
+		return TypeIPErr
 	}
 	return getIPVer(tIP)
 }
 
-// if ips is a valid IPv4 CIDR, return 0;
+// if ips is a valid IPv4 CIDR, return TypeIPv4;
 //
-//	else if ips is a valid IPv6 CIDR, return 1;
+//	else if ips is a valid IPv6 CIDR, return TypeIPv6;
 //	else using net.ParseIP() to parse IPs
-//	   if the result is null, return -1; else if the result is ipv4 (To4() is not null) return 0; else return 1
-func getIPsVer(ips string) (ver int) {
+//	   if the result is null, return TypeIPErr;
+//	     else if the result is ipv4 (To4() is not null) return TypeIPv4; else return TypeIPv6
+func getIPsVer(ips string) (ver int8) {
 	tV := getCIDRVer(ips)
 	if tV == -1 {
 		return getIPVer(ips)
@@ -883,25 +810,25 @@ func getIPsVer(ips string) (ver int) {
 	}
 }
 
-func getCIDRVer(ips string) (ver int) {
+func getCIDRVer(ips string) (ver int8) {
 	_, _, err := net.ParseCIDR(ips)
 	if err != nil {
-		return -1
+		return TypeIPErr
 	}
 	if strings.Contains(ips, ":") {
-		return 1
+		return TypeIPv6
 	}
-	return 0
+	return TypeIPv4
 }
 
-func getIPVer(ips string) (ver int) {
+func getIPVer(ips string) (ver int8) {
 	tIP := net.ParseIP(ips)
 	if tIP == nil {
-		return -1
+		return TypeIPErr
 	} else if tIP.To4() != nil {
-		return 0
+		return TypeIPv4
 	} else {
-		return 1
+		return TypeIPv6
 	}
 }
 
@@ -934,14 +861,14 @@ func splitHost(host string) (bool, string, int) {
 // 	return
 // }
 
-func genHostFromIPStrPort(ipStr string, port int) (connStr string) {
-	if !isValidIPs(ipStr) {
+func genHostFromIPStrPort(ip string, port int) (connStr string) {
+	if !isValidIPs(ip) {
 		return ""
 	}
 	if port < 1 || port > 65535 {
 		return ""
 	}
-	connStr = net.JoinHostPort(ipStr, strconv.Itoa(port))
+	connStr = net.JoinHostPort(ip, strconv.Itoa(port))
 	return
 }
 
@@ -1010,7 +937,7 @@ func roundFloat(val float64, precision uint) float64 {
 	return math.Round(val*ratio) / ratio
 }
 
-func read_loc_from_cf_cdn_cgi_trace_body(body io.ReadCloser) (string, error) {
+func get_loc_from_cf(body io.ReadCloser) (string, error) {
 	loc := ""
 	scanner := bufio.NewScanner(body)
 	for scanner.Scan() {
@@ -1032,4 +959,8 @@ func read_loc_from_cf_cdn_cgi_trace_body(body io.ReadCloser) (string, error) {
 		return loc, err
 	}
 	return loc, nil
+}
+
+func newRand() *rand.Rand {
+	return rand.New(rand.NewSource(time.Now().UnixNano()))
 }

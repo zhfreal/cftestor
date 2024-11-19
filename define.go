@@ -1,10 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"math/big"
 	"math/rand"
 	"net"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,13 +33,16 @@ const (
 	userAgentEdge           = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 	userAgentSafari         = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15"
 
-	defaultDBFile       = "ip.db"
-	DefaultTestHost     = "cf.9999876.xyz"
-	maxHostLen          = 1 << 12
-	dtsSSL              = "SSL"
-	dtsHTTPS            = "HTTPS"
-	runTime             = "cftestor"
-	retrieveCount   int = 32
+	defaultDBFile        = "ip.db"
+	DefaultTestHost      = "cf.9999876.xyz"
+	maxHostLen           = 1 << 12
+	dtsSSL               = "SSL"
+	dtsHTTPS             = "HTTPS"
+	runTime              = "cftestor"
+	retrieveCount   int  = 32
+	TypeIPv4        int8 = 0x1
+	TypeIPv6        int8 = 0x2
+	TypeIPErr       int8 = 0x0
 )
 
 var (
@@ -198,39 +206,39 @@ var (
 var (
 	maxHostLenBig                           = big.NewInt(maxHostLen)
 	ipFile                                  string
-	version, buildTag, buildDate, buildHash string     = "dev", "dev", "dev", "dev"
-	srcIPRsRaw                              []*ipRange // CIDR slice
-	srcIPRsExtracted                        []net.IP   // net.IP slice
-	srcHosts                                []*string  // slice stored host: <ip>:<port>
-	ipStr                                   arrayFlags
-	dtCount, dtWorkerThread                 int
-	ports                                   []int
-	dltDurMax, dltWorkerThread              int
-	dltCount, resultMin                     int
-	interval, dtEvaluationDelay, dtTimeout  int
-	dtStdExp                                float64
-	hostName, dltUrl, dtSource, dtUrl       string
-	dltTimeout, loop                        int
-	loopInterval                            int // in seconds
-	dtEvaluationDTPR, dltEvaluationSpeed    float64
-	dtHttps, disableDownload                bool
-	dtVia                                   string
-	dtHttpRspReturnCodeExpected             int
-	enableDTEvaluation                      bool
-	ipv4Mode, ipv6Mode, dtOnly, dltOnly     bool
-	tlsClientID                             utls.ClientHelloID = utls.HelloChrome_Auto
-	userAgent                               string             = userAgentChrome
-	storeToFile, storeToDB, testAll, debug  bool
-	resolveLocalASNAndCity, enableStdEv     bool
-	resultFile, suffixLabel, dbFile         string
-	myLogger                                MyLogger
-	loggerLevel                             LogLevel
-	httpRspTimeoutDuration                  time.Duration
-	dtTimeoutDuration                       time.Duration
-	dltDurationInTotal                      time.Duration
-	verifyResultsMap                        = make(map[string]VerifyResults)
-	myRand                                  = rand.New(rand.NewSource(0))
-	LoopStatus                              SafeStatus
+	version, buildTag, buildDate, buildHash string = "dev", "dev", "dev", "dev"
+	// srcIPRsRaw                              []*ipRange // CIDR slice
+	// srcIPRsExtracted                        []net.IP   // net.IP slice
+	// srcHosts                                []*string  // slice stored host: <ip>:<port>
+	ipStr                                  []string
+	dtCount, dtWorkerThread                int
+	dltDurMax, dltWorkerThread             int
+	dltCount, resultMin                    int
+	interval, dtEvaluationDelay, dtTimeout int
+	dtStdExp                               float64
+	hostName, dltUrl, dtSource, dtUrl      string
+	dltTimeout, loop                       int
+	loopInterval                           int // in seconds
+	dtEvaluationDTPR, dltEvaluationSpeed   float64
+	dtHttps, disableDownload               bool
+	dtVia                                  string
+	dtHttpRspReturnCodeExpected            int
+	enableDTEvaluation                     bool
+	ipv4Mode, ipv6Mode, dtOnly, dltOnly    bool
+	tlsClientID                            utls.ClientHelloID = utls.HelloChrome_Auto
+	userAgent                              string             = userAgentChrome
+	storeToFile, storeToDB, testAll, debug bool
+	resolveLocalASNAndCity, enableStdEv    bool
+	resultFile, suffixLabel, dbFile        string
+	myLogger                               MyLogger
+	loggerLevel                            LogLevel
+	httpRspTimeoutDuration                 time.Duration
+	dtTimeoutDuration                      time.Duration
+	dltDurationInTotal                     time.Duration
+	verifyResultsMap                       = make(map[string]VerifyResults)
+	myRand                                 = newRand()
+	srcIPs                                 = NewSourceIPsWithRand(myRand)
+	// LoopStatus                             *SafeLooper
 	// titleRuntime                            *string
 	// titlePre                                [2][4]string
 	// titleTasksStat                          [2]*string
@@ -358,20 +366,20 @@ options:
     -v, --version                       Show version.
 `
 
-type arrayFlags []string
+// type arrayFlags []string
 
-func (i *arrayFlags) String() string {
-	return fmt.Sprintf("%v", *i)
-}
+// func (i *arrayFlags) String() string {
+// 	return fmt.Sprintf("%v", *i)
+// }
 
-func (i *arrayFlags) Set(value string) error {
-	*i = append(*i, value)
-	return nil
-}
+// func (i *arrayFlags) Set(value string) error {
+// 	*i = append(*i, value)
+// 	return nil
+// }
 
-func (i *arrayFlags) Type() string {
-	return "[]string"
-}
+// func (i *arrayFlags) Type() string {
+// 	return "[]string"
+// }
 
 type singleResult struct {
 	dTPassed      bool          // Delay Test (DT) passed (yes) or not (no)
@@ -508,6 +516,7 @@ type overAllStat struct {
 	dltOnGoing   int
 	dltCached    int
 	resultCount  int
+	remain       int
 }
 
 type ipRange struct {
@@ -689,7 +698,7 @@ func (ipr *ipRange) ExtractReverse(num int) (IPList []net.IP) {
 	for num > 0 {
 		num_in_bytes := makeBytes(uint(1), len(newIP))
 		newIP = ipShiftReverse(newIP, num_in_bytes)
-		// some error ocurred
+		// some error shown
 		if newIP == nil {
 			return
 		}
@@ -756,27 +765,430 @@ func (ipr *ipRange) GetRandomX(num int) (IPList []net.IP) {
 	return
 }
 
-type SafeStatus struct {
+type SafeLooper struct {
 	mu sync.Mutex
-	v  bool
+	// t: target loop rounds, t <= 0 means disabled
+	// c: current loop round, when t > 0 and c == 0 means loop is valid but not start yet
+	// when t > 0 and c >= 1 and c<= t means loop is running, and in round c
+	// when t > 0 and c > t means loop is done
+	t, c     int
+	interval int // interval in milliseconds
 }
 
-func (c *SafeStatus) set(key bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.v = key
+func (s *SafeLooper) Valid() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status() > -1
 }
 
-func (c *SafeStatus) Enable() {
-	c.set(true)
+func (s *SafeLooper) Loop() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.t <= 0 {
+		return false
+	}
+	if s.c >= s.t {
+		return false
+	}
+	s.c++
+	return true
 }
 
-func (c *SafeStatus) Disable() {
-	c.set(false)
+func (s *SafeLooper) Ready() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status() == 0
 }
 
-func (c *SafeStatus) Ok() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.v
+func (s *SafeLooper) InLooping() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status() == 1
+}
+
+func (s *SafeLooper) Finished() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status() == 2
+}
+
+// Status returns -1 if the SafeLooper is not valid, 0 if it has just been Enabled,
+// 1 if it is looping and 2 if it has finished looping.
+func (s *SafeLooper) status() int {
+	if s.t <= 0 {
+		return -1
+	}
+	if s.c == 0 {
+		return 0
+	}
+	if s.c <= s.t {
+		return 1
+	}
+	return 2
+}
+
+func (s *SafeLooper) Status() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status()
+}
+
+func (s *SafeLooper) Ok() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status() > 0
+}
+
+func (s *SafeLooper) SetInterval(interval int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.interval = interval
+}
+
+func (s *SafeLooper) GetInterval() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.interval
+}
+
+func (s *SafeLooper) GetRound() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.c
+}
+
+func (s *SafeLooper) Sleep() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	time.Sleep(time.Duration(s.interval) * time.Millisecond)
+}
+
+func (s *SafeLooper) SleepInterval(interval int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	time.Sleep(time.Duration(interval) * time.Millisecond)
+}
+
+func NewSafeLooper(t int) *SafeLooper {
+	c := 0
+	if t <= 0 {
+		c = -1
+	}
+	return &SafeLooper{
+		t:        t,
+		c:        c,
+		interval: 1000,
+	}
+}
+
+func NewSafeLooperWithInterval(t, interval int) *SafeLooper {
+	s := NewSafeLooper(t)
+	s.SetInterval(interval)
+	return s
+}
+
+type sourceIPs struct {
+	mu               sync.Mutex
+	srcHosts         []*string
+	srcIPRsRaw       []*ipRange
+	srcIPRsExtracted []net.IP
+	ports            []int
+	tRnd             *rand.Rand
+}
+
+func (s *sourceIPs) Len() *big.Int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t_qty := big.NewInt(0)
+	for i := 0; i < len(s.srcIPRsRaw); i++ {
+		t_qty = t_qty.Add(t_qty, s.srcIPRsRaw[i].Length())
+	}
+	t_qty = t_qty.Add(t_qty, big.NewInt(int64(len(s.srcIPRsExtracted))))
+	t_qty = t_qty.Add(t_qty, big.NewInt(int64(len(s.srcHosts))))
+	return t_qty
+}
+
+func (s *sourceIPs) LenInt() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t_qty := 0
+	t_qty += len(s.srcIPRsRaw)
+	t_qty += len(s.srcIPRsExtracted)
+	t_qty += len(s.srcHosts)
+	return t_qty
+}
+
+func (s *sourceIPs) add(IPs string, mode int8) error {
+	ips := strings.TrimSpace(IPs)
+	ips = strings.Split(ips, "#")[0]
+	if isValidIPs(ips) {
+		tV := getIPsVer(ips)
+		if tV == TypeIPErr {
+			return fmt.Errorf("\"%v\" is invalid", ips)
+		}
+		// when IPs is not the target version, return without any error
+		if (tV & mode) != tV {
+			return nil
+		}
+		ipr := NewIPRangeFromCIDR(&ips)
+		if ipr == nil {
+			return fmt.Errorf("\"%v\" is invalid", ips)
+		}
+		// when it do not testAll and ipr is not bigger than maxHostLenBig, extract to to cache
+		if ipr.Len.Cmp(maxHostLenBig) < 1 {
+			s.srcIPRsExtracted = append(s.srcIPRsExtracted, ipr.ExtractAll()...)
+		} else {
+			// when it do not perform tealAll or not bigger than maxHostLenBig, just put it to srcIPRs
+			s.srcIPRsRaw = append(s.srcIPRsRaw, ipr)
+		}
+	} else if isValidHost(ips) {
+		tV := getHostVer(ips)
+		if tV == TypeIPErr {
+			return fmt.Errorf("\"%v\" is invalid", ips)
+		}
+		// when IPs is not the target version, return without any error
+		if (tV & mode) != tV {
+			return nil
+		}
+		s.srcHosts = append(s.srcHosts, &ips)
+	} else {
+		return fmt.Errorf("\"%v\" is neither valid IP/CIDR nor host", ips)
+	}
+	return nil
+}
+
+func (s *sourceIPs) Add(IPs string, mode int8) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.add(IPs, mode)
+}
+
+func (s *sourceIPs) AddFromSlice(ipsSlice []string, mode int8) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ips := range ipsSlice {
+		err := s.add(ips, mode)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *sourceIPs) AddFromFile(filename string, mode int8) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tFile, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("file \"%s\" is not accessible", filename)
+	}
+	scanner := bufio.NewScanner(tFile)
+	scanner.Split(bufio.ScanLines)
+	for scanner.Scan() {
+		tIp := strings.TrimSpace(scanner.Text())
+		if len(tIp) == 0 {
+			continue
+		}
+		err := s.add(tIp, mode)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *sourceIPs) AddPorts(srcPorts []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	port_regex := regexp.MustCompile(`[,;|]+`)
+	port_range_regex := regexp.MustCompile(`\d+[-:]\d+`)
+	port_range_split_regex := regexp.MustCompile(`[-:]`)
+	if len(srcPorts) > 0 {
+		for _, portStr := range srcPorts {
+			portStr_slice := port_regex.Split(portStr, -1)
+			for _, t_port_str := range portStr_slice {
+				t_port_str = strings.TrimSpace(t_port_str)
+				if len(t_port_str) == 0 {
+					continue
+				}
+				// it's a range
+				if port_range_regex.MatchString(t_port_str) {
+					t_port_list := port_range_split_regex.Split(t_port_str, -1)
+					if len(t_port_list) != 2 {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+					}
+					t_start_port := t_port_list[0]
+					t_end_port := t_port_list[1]
+					start_port, err := strconv.Atoi(t_start_port)
+					if err != nil {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_start_port)
+					}
+					end_port, err := strconv.Atoi(t_end_port)
+					if err != nil {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_end_port)
+					}
+					if start_port > end_port || start_port < 1 || end_port > 65535 {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+					}
+					for i := start_port; i <= end_port; i++ {
+						s.ports = append(s.ports, i)
+					}
+				} else { // it's a single port
+					port, err := strconv.Atoi(t_port_str)
+					if err != nil || port < 1 || port > 65535 {
+						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+					}
+					s.ports = append(s.ports, port)
+				}
+			}
+		}
+
+	}
+	if len(s.ports) == 0 {
+		s.ports = append(s.ports, 443)
+	}
+	// clean ports, make them unique
+	s.ports = uniqueIntSlice(s.ports)
+}
+
+func (s *sourceIPs) RetrieveSome(amount int, isRand bool) (targetIPs []*string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var t_target = []*string{}
+	targetIPs = append(targetIPs, s.retrieveHosts(amount)...)
+	t_target = append(t_target, s.retrieveIPsFromIPR(amount, isRand)...)
+	for _, ipStr := range t_target {
+		for _, port := range s.ports {
+			host := genHostFromIPStrPort(*ipStr, port)
+			if len(host) > 0 {
+				targetIPs = append(targetIPs, &host)
+			}
+		}
+	}
+	return
+}
+
+func (s *sourceIPs) retrieveHosts(amount int) (targetHosts []*string) {
+	if amount <= 0 || len(s.srcHosts) == 0 {
+		return
+	}
+	t_amount := amount
+	if len(s.srcHosts) < amount {
+		t_amount = len(s.srcHosts)
+	}
+	targetHosts = append(targetHosts, s.srcHosts[:t_amount]...)
+	if len(s.srcHosts) <= amount {
+		s.srcHosts = []*string{}
+	} else {
+		s.srcHosts = s.srcHosts[t_amount:]
+	}
+	return
+}
+
+func (s *sourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*string) {
+	if amount <= 0 || amount < retrieveCount {
+		amount = retrieveCount
+	}
+
+	t_ips := []net.IP{}
+	for _, ipr := range s.srcIPRsRaw {
+		if isRandom {
+			t_ips = append(t_ips, ipr.GetRandomX(amount)...)
+		} else {
+			t_ips = append(t_ips, ipr.Extract(amount)...)
+		}
+	}
+	if len(s.srcIPRsExtracted) > 0 {
+		if len(s.srcIPRsExtracted) <= amount {
+			t_ips = append(t_ips, s.srcIPRsExtracted...)
+			s.srcIPRsExtracted = []net.IP{}
+		} else {
+			t_ips = append(t_ips, s.srcIPRsExtracted[0:amount]...)
+			s.srcIPRsExtracted = s.srcIPRsExtracted[amount:]
+		}
+	}
+	for _, t_ip := range t_ips {
+		tIP := t_ip.String()
+		targetIPs = append(targetIPs, &tIP)
+	}
+	// randomize
+	myRand.Shuffle(len(targetIPs), func(m, n int) {
+		targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
+	})
+	return
+}
+
+func (s *sourceIPs) Shuffle() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	myRand.Shuffle(len(s.srcHosts), func(m, n int) {
+		s.srcHosts[m], s.srcHosts[n] = s.srcHosts[n], s.srcHosts[m]
+	})
+	myRand.Shuffle(len(s.srcIPRsRaw), func(m, n int) {
+		s.srcIPRsRaw[m], s.srcIPRsRaw[n] = s.srcIPRsRaw[n], s.srcIPRsRaw[m]
+	})
+	myRand.Shuffle(len(s.srcIPRsExtracted), func(m, n int) {
+		s.srcIPRsExtracted[m], s.srcIPRsExtracted[n] = s.srcIPRsExtracted[n], s.srcIPRsExtracted[m]
+	})
+}
+
+func (s *sourceIPs) SetRand(mRnd *rand.Rand) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tRnd = mRnd
+}
+
+func (s *sourceIPs) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.srcHosts = []*string{}
+	s.srcIPRsRaw = []*ipRange{}
+	s.srcIPRsExtracted = []net.IP{}
+	s.ports = []int{443}
+}
+
+func NewSourceIPs() *sourceIPs {
+	return &sourceIPs{
+		srcHosts:         make([]*string, 0),
+		srcIPRsRaw:       make([]*ipRange, 0),
+		srcIPRsExtracted: make([]net.IP, 0),
+		ports:            []int{443},
+		tRnd:             newRand(),
+	}
+}
+
+func NewSourceIPsWithRand(tRnd *rand.Rand) *sourceIPs {
+	mSrc := NewSourceIPs()
+	mSrc.SetRand(tRnd)
+	return mSrc
+}
+
+func CopySourceIPs(src *sourceIPs) *sourceIPs {
+	mSrc := NewSourceIPs()
+	mSrc.srcHosts = append(mSrc.srcHosts, src.srcHosts...)
+	mSrc.srcIPRsRaw = append(mSrc.srcIPRsRaw, src.srcIPRsRaw...)
+	mSrc.srcIPRsExtracted = append(mSrc.srcIPRsExtracted, src.srcIPRsExtracted...)
+	mSrc.ports = append(mSrc.ports, src.ports...)
+	mSrc.tRnd = newRand()
+	return mSrc
+}
+
+type task struct {
+	host        *string
+	max_failure int
+}
+
+func (t *task) GetHost() *string {
+	return t.host
+}
+
+func (t *task) GetMaxFailure() int {
+	return t.max_failure
+}
+
+func NewTask(host *string, max_failure int) *task {
+	return &task{
+		host:        host,
+		max_failure: max_failure,
+	}
 }

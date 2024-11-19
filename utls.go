@@ -61,7 +61,7 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 	if err != nil {
 		return nil, fmt.Errorf("tcp net dial fail: %w", err)
 	}
-	// defer conn.Close() // nolint
+	// defer conn.Close()
 
 	b.tlsConn, err = b.tlsConnect(b.conn, req)
 	b.tlsHandShookAt = time.Now()
@@ -79,7 +79,7 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 		if err != nil {
 			resp, err = nil, fmt.Errorf("create http2 client with connection fail: %w", err)
 		} else {
-			// defer h2_conn.Close() // nolint
+			// defer h2_conn.Close()
 			resp, err = h2_conn.RoundTrip(req)
 		}
 	case "http/1.1", "":
@@ -90,7 +90,7 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 			resp, err = http.ReadResponse(bufio.NewReader(b.tlsConn), req)
 		}
 	default:
-		resp, err = nil, fmt.Errorf("unsuported http version: %s", httpVersion)
+		resp, err = nil, fmt.Errorf("unsupported http version: %s", httpVersion)
 	}
 	b.responseAt = time.Now()
 	return resp, err

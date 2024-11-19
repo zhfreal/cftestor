@@ -282,7 +282,7 @@ func (myLogger *MyLogger) PrintDetails(logLvl LogLevel, v []VerifyResults, showS
 		myLogger.Printf("Delay(ms):%.0f", lc[i].da)
 		myLogger.Printf("%sStab.(%%):%.2f", myLogger.indent, lc[i].dtpr*100)
 		if enableStdEv {
-			myLogger.Printf("%sVar.:%.2f", myLogger.indent, lc[i].daVar)
+			// myLogger.Printf("%sVar.:%.2f", myLogger.indent, lc[i].daVar)
 			myLogger.Printf("%sStd.:%.2f", myLogger.indent, lc[i].daStd)
 		}
 	}
@@ -312,11 +312,11 @@ func (myLogger *MyLogger) PrintOverAllStat(logLvl LogLevel, ov overAllStat) {
 		myLogger.indent = myIndent
 	}
 	myLogger.Logf(logLvl, "==== Result: %d ==== ", ov.resultCount)
-	srcCount := len(srcHosts) + len(srcIPRsRaw) + len(srcIPRsExtracted)
+	srcCount := ov.remain
 	if !dltOnly {
 		// myLogger.Printf(" | DT - Tested: %d ", ov.dtTasksDone)
 		dtTotal := ov.dtCached + ov.dtTasksDone + ov.dtOnGoing
-		if !LoopStatus.Ok() {
+		if dtOnly {
 			dtTotal += srcCount
 		}
 		// myLogger.Printf("Cached: %d", dtCached)
@@ -325,7 +325,7 @@ func (myLogger *MyLogger) PrintOverAllStat(logLvl LogLevel, ov overAllStat) {
 	if !dtOnly {
 		// myLogger.Printf(" DLT - Tested: %d ", ov.dltTasksDone)
 		dltTotal := ov.dltCached + ov.dltTasksDone + ov.dltOnGoing
-		if dltOnly && !LoopStatus.Ok() {
+		if dltOnly {
 			dltTotal += srcCount
 		}
 		// myLogger.Printf("Cached: %d", dltCached)

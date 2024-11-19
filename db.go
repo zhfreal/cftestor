@@ -24,7 +24,7 @@ import (
 // DLTPR         float        success rate of DLT
 // DLSA          float        average download speed (KB/s)
 // DLDS          int          total bytes downloaded
-// DLTD          float        total times escapted during download (in second)
+// DLTD          float        total times escaped during download (in second)
 const (
 	DBFile    = "ip.db"
 	TableName = "CFTD"
@@ -56,8 +56,8 @@ func (a *DBRecord) TableName() string {
 	return TableName
 }
 
-func OpenSqlite(dbfile string) (*gorm.DB, error) {
-	dial := sqlite.Open(dbfile)
+func OpenSqlite(dbFile string) (*gorm.DB, error) {
+	dial := sqlite.Open(dbFile)
 	return gorm.Open(dial, &gorm.Config{
 		NowFunc: func() time.Time {
 			return time.Now()
