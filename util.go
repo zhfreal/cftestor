@@ -432,7 +432,8 @@ func printFinalStat(v []VerifyResults, dtOnly bool) {
 		if !dltOnly {
 			line += fmt.Sprintf("\t%.0f\t%.0f\t%d\t%.2f", v[i].dmi, v[i].dmx, v[i].dtc, v[i].dtpr*100)
 			if enableDTEvaluation {
-				line += fmt.Sprintf("\t%.2f\t%.2f", v[i].daStd, v[i].daVar)
+				// line += fmt.Sprintf("\t%.2f\t%.2f", v[i].daStd, v[i].daVar)
+				line += fmt.Sprintf("\t%.2f", v[i].daStd)
 			}
 		}
 		line += "\t"
