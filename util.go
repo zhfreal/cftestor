@@ -951,15 +951,22 @@ func get_loc_from_cf(body io.ReadCloser) (string, error) {
 		// if strings.ToLower(t_slice[0]) == "colo" {
 		// 	loc = t_slice[1]
 		// } else if strings.ToLower(t_slice[0]) == "loc" && strings.ToUpper(t_slice[1]) != "CN" {
-		if strings.ToLower(t_slice[0]) == "loc" {
+		if strings.ToLower(t_slice[0]) == "colo" {
 			loc = t_slice[1]
 			break
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return loc, err
+		return "", err
 	}
-	return loc, nil
+	// get country code from iataMap
+	t, ok := iataMap[loc]
+	if ok {
+		return t, nil
+	} else {
+		return loc, nil
+	}
+
 }
 
 func newRand() *rand.Rand {
