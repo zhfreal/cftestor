@@ -531,7 +531,7 @@ LOOP:
 				// no source to do DLT
 				if len(dltTaskCache) <= dltWorkerThread {
 					// DT enabled, just continue to do DT
-					if !dltOnly {
+					if !dltOnly && len(dltTaskCache) == 0 {
 						continue
 					} else {
 						// retrieve source IP
