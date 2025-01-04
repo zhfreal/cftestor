@@ -335,6 +335,7 @@ options:
                                         nor "-i/--in" is provided, and this flag is provided. It will be working
                                         Disabled by default.
         --loop         int              Loop round N, disabled by default
+        --loop-interval int             Interval between two loops, unit second, default 60s
     -4, --ipv4                          Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
                                         then it will do IPv4 test from build-in IPs from CloudFlare by default.
     -6, --ipv6                          Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
