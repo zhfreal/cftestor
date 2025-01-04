@@ -424,7 +424,7 @@ type VerifyResults struct {
 // It will add the tried count, passed count, and update the passed rate.
 // It will also update the average delay, minimal delay, and max delay.
 func (a *VerifyResults) combine(b VerifyResults) {
-	if *a.ip != *b.ip {
+	if a.ip == nil || b.ip == nil || *a.ip != *b.ip {
 		return
 	}
 	if a.testTime.Before(b.testTime) {

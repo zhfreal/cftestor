@@ -369,6 +369,23 @@ func init() {
 
 }
 
+func validDTResult(tVerifyResult *VerifyResults) bool {
+	if tVerifyResult.da > 0.0 &&
+		tVerifyResult.da <= float64(dtEvaluationDelay) &&
+		tVerifyResult.dtpr*100.0 >= float64(dtEvaluationDTPR) &&
+		(!enableStdEv || (enableStdEv && tVerifyResult.daStd <= dtStdExp)) {
+		return true
+	}
+	return false
+}
+
+func validDLTResult(tVerifyResult *VerifyResults) bool {
+	if tVerifyResult.dls >= dltEvaluationSpeed && tVerifyResult.dlds > downloadSizeMin {
+		return true
+	}
+	return false
+}
+
 func runWorker() {
 
 	var wg sync.WaitGroup
@@ -418,7 +435,7 @@ LOOP:
 		haveEnoughResult := false
 		// reset ResultIPSlice while do LOOP
 		tmpTestSlice = make(map[string]bool)
-	CLEAN_ROUND:
+	SINGLE_ROUND:
 		for {
 			// DT
 			if !dltOnly {
@@ -428,7 +445,7 @@ LOOP:
 				// no more sources for testing
 				t_dt_sources_len := len(dtTaskCache)
 				if t_dt_sources_len == 0 {
-					break CLEAN_ROUND
+					break SINGLE_ROUND
 				}
 				// // print stat
 				// if debug {
@@ -461,10 +478,7 @@ LOOP:
 					// if ip not test then put it into dltTaskChan
 					dtDoneTasks += 1
 					var tVerifyResult = calcResult(dtResult, false)
-					if tVerifyResult.da > 0.0 &&
-						tVerifyResult.da <= float64(dtEvaluationDelay) &&
-						tVerifyResult.dtpr*100.0 >= float64(dtEvaluationDTPR) &&
-						(!enableStdEv || (enableStdEv && tVerifyResult.daStd <= dtStdExp)) {
+					if validDTResult(&tVerifyResult) {
 						if !dtOnly { // there are download test ongoing
 							// put ping test result to cachedMap for later
 							cachedMap[*tVerifyResult.ip] = tVerifyResult
@@ -538,7 +552,7 @@ LOOP:
 						dltTaskCache = append(dltTaskCache, thisSourceIPs.RetrieveSome(dltWorkerThread, !testAll)...)
 						// no source IP, break LOOP
 						if len(dltTaskCache) == 0 {
-							break CLEAN_ROUND
+							break SINGLE_ROUND
 						}
 					}
 				}
@@ -582,7 +596,7 @@ LOOP:
 					}
 					// tVerifyResult = v
 					// check speed and data size downloaded
-					if tVerifyResult.dls >= dltEvaluationSpeed && tVerifyResult.dlds > downloadSizeMin {
+					if validDLTResult(&tVerifyResult) && validDTResult(&tVerifyResult) {
 						// combine tmpResultMap with tmpResultMap[*tVerifyResult.ip]
 						v, ok := tmpResultMap[*tVerifyResult.ip]
 						if !ok {
@@ -623,7 +637,7 @@ LOOP:
 				}
 			}
 			if haveEnoughResult {
-				break CLEAN_ROUND
+				break SINGLE_ROUND
 			}
 		}
 		// if there is no target IP after initial round, break LOOP
@@ -655,7 +669,10 @@ LOOP:
 		}
 	}
 	for tIP := range tmpTestSlice {
-		verifyResultsMap[tIP] = tmpResultMap[tIP]
+		tr := tmpResultMap[tIP]
+		if validDTResult(&tr) && validDLTResult(&tr) {
+			verifyResultsMap[tIP] = tmpResultMap[tIP]
+		}
 	}
 	// update statistic just before quit controller
 	// displayStat(overAllStat{

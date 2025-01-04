@@ -107,7 +107,7 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 			if response.Body != nil {
 				// retrieve loc
 				if response.Request.URL.Path == "/cdn-cgi/trace" && response.StatusCode == 200 && len(loc) == 0 {
-					loc, _ = get_loc_from_cf(response.Body)
+					loc, _ = get_loc_from_cf_resp(response.Body)
 				}
 			}
 			// connection test only, won't do download test

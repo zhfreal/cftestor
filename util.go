@@ -327,7 +327,7 @@ func getGeoInfoFromCF(ipStr *string) (loc string) {
 		return
 	}
 	// read response.Body as string
-	loc, err = get_loc_from_cf(response.Body)
+	loc, err = get_loc_from_cf_resp(response.Body)
 	if err != nil {
 		myLogger.Error(fmt.Sprintf("An error occurred while read response.Body: %v\n", err))
 		return
@@ -415,7 +415,7 @@ func printFinalStat(v []VerifyResults, dtOnly bool) {
 	if !dltOnly {
 		header += "\tDelayMin(ms)\tDelayMax(ms)\tDT-Tries\tDT-Passes(%)"
 		if enableDTEvaluation {
-			header += "\tDelayStd\tDelayVar"
+			header += "\tDelayStd"
 		}
 	}
 	header += "\t"
@@ -938,7 +938,7 @@ func roundFloat(val float64, precision uint) float64 {
 	return math.Round(val*ratio) / ratio
 }
 
-func get_loc_from_cf(body io.ReadCloser) (string, error) {
+func get_loc_from_cf_resp(body io.ReadCloser) (string, error) {
 	loc := ""
 	scanner := bufio.NewScanner(body)
 	for scanner.Scan() {
