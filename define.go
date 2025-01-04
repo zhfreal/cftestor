@@ -282,51 +282,51 @@ var (
 
 var help = `Usage: ` + runTime + ` [options]
 options:
-    -s, --ip           string           Specify IP, CIDR, or host for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32",
+    -s, --ip            string          Specify IP, CIDR, or host for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32",
                                         "-s 1.0.0.1/24", "-s 1.1.1.1:2053".
-    -i, --in           string           Specify file for test, which contains multiple lines. Each line
+    -i, --in            string          Specify file for test, which contains multiple lines. Each line
                                         represent one IP, CIDR, host.
-    -p, --port         int              Port to test, could be specific one or more ports at same time. Can be
+    -p, --port          int             Port to test, could be specific one or more ports at same time. Can be
                                         specific like "-p 443-800,1000:1300;8443|8444 -p 10000-12000|13333".
                                         These ports should be working via SSL/TLS/HTTPS protocol,  default 443.
-    -m, --dt-thread    int              Number of concurrent threads for Delay Test(DT). How many IPs can
+    -m, --dt-thread     int             Number of concurrent threads for Delay Test(DT). How many IPs can
                                         be perform DT at the same time. Default 20 threads.
-    -t, --dt-timeout   int              Timeout for single DT, unit ms, default 2000ms for SSL mode, and 5000ms
+    -t, --dt-timeout    int             Timeout for single DT, unit ms, default 2000ms for SSL mode, and 5000ms
                                         for HTTPS mode. A single SSL/TLS or HTTPS request and response should
                                         be finished before timeout. It should not be less than
                                         "-k|--evaluate-dt-delay", It should be bigger --dt-via https than --dt-via
                                         ssl.
-    -c, --dt-count     int              Tries of DT for a IP, default 2.
-        --hostname     string           Hostname for DT test. It's valid when "--dt-only" is no and
+    -c, --dt-count      int             Tries of DT for a IP. Default 2.
+        --hostname      string          Hostname for DT test. It's valid when "--dt-only" is no and
                                         "--dt-via https" is not provided.
-        --dt-via https|tls|ssl          DT via https or SSL/TLS shaking hands, "--dt-via <https|tls|ssl>"
-                                        default https.
+        --dt-via <https|tls|ssl>        DT via https or SSL/TLS shaking hands, "--dt-via <https|tls|ssl>".
+                                        Default https.
         --dt-expect-code <status_code>  HTTP status code expected for DT test while we do '--dt-via https'.
                                         Default 200.
-        --dt-url       string           Specify test URL for DT.
+        --dt-url        string          Specify test URL for DT.
         --ev-dt                         Evaluate DT, we'll try "-c|--dt-count <value>" to evaluate delay;
                                         if we don't turn this on, we'll stop DT after we got the first
                                         successful DT; if we turn this on, we'll evaluate the test result
                                         through average delay of singe DT and statistic of all successful
                                         DT by these two thresholds "-k|--evaluate-dt-delay <value>" and
                                         "-S|--evaluate-dt-dtpr <value>", default turn off.
-    -k, --ev-dt-delay  int              single DT's delay should not bigger than this, unit ms, default 600ms.
-    -S, --ev-dt-dtpr   float            The DT pass rate should not lower than this, default 100, means 100%, all
+    -k, --ev-dt-delay   int             Single DT's delay should not bigger than this, unit ms, default 600ms.
+    -S, --ev-dt-dtpr    float           The DT pass rate should not lower than this, default 100, means 100%, all
                                         DT must be below "-k|--evaluate-dt-delay <value>".
-        --ev-dt-std    float            Expect standard deviation while do DT evaluation. while we enable
+        --ev-dt-std     float           Expect standard deviation while do DT evaluation. while we enable
                                         "--ev-dt" and set this to a value bigger than 0, standard deviation
                                         for delays would be calculated and compare to this value.
-    -n, --dlt-thread   int              Number of concurrent Threads for Download Test(DLT), default 1.
+    -n, --dlt-thread    int             Number of concurrent Threads for Download Test(DLT), default 1.
                                         How many IPs can be perform DLT at the same time.
-    -d, --dlt-period   int              The total times escaped for single DLT, default 10s.
-    -b, --dlt-count    int              Tries of DLT for a IP, default 1.
-    -u, --dlt-url      string           Specify test URL for DLT.
-        --dlt-timeout  int              Specify the timeout for http response when do DLT. In ms, default as 5000 ms.
-    -I  --interval     int              Interval between two tests, unit ms, default 500ms.
+    -d, --dlt-period    int             The total times escaped for single DLT, default 10s.
+    -b, --dlt-count     int             Tries of DLT for a IP, default 1.
+    -u, --dlt-url       string          Specify test URL for DLT.
+        --dlt-timeout   int             Specify the timeout for http response when do DLT. In ms, default as 5000 ms.
+    -I  --interval      int             Interval between two tests, unit ms, default 500ms.
                                         
-    -l, --speed        float            Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's
+    -l, --speed         float           Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's
                                         qualified when its speed is not lower than this value.
-    -r, --result       int              The total IPs qualified limitation, default 10. The Process will stop
+    -r, --result        int             The total IPs qualified limitation, default 10. The Process will stop
                                         after it got equal or more than this indicated. It would be invalid if
                                         "--test-all" was set.
         --dt-only                       Do DT only, we do DT & DLT at the same time by default.
@@ -334,7 +334,7 @@ options:
         --fast                          Fast mode, use inner IPs for fast detection. Just when neither "-s/--ip"
                                         nor "-i/--in" is provided, and this flag is provided. It will be working
                                         Disabled by default.
-        --loop         int              Loop round N, disabled by default
+        --loop          int             Loop round N, disabled by default
         --loop-interval int             Interval between two loops, unit second, default 60s
     -4, --ipv4                          Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
                                         then it will do IPv4 test from build-in IPs from CloudFlare by default.
@@ -356,10 +356,10 @@ options:
                                         and "-f|--db-file" is not provided, it will be named "ip.db" and
                                         store in current directory.
         --local-asn                     get local ASN and city info, default false. 
-		--resolve-loc                   Try to resolve location. 
+        --resolve-loc                   Try to resolve location. 
     -f, --db-file       string          Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
                                         provided, it will be named "ip.db" and store in current directory.
-    -g, --label        string           the label for a part of the result file's name and sqlite3 record. It's
+    -g, --label         string          the label for a part of the result file's name and sqlite3 record. It's
                                         hostname from "--hostname" or "-u|--url" by default.
         --silence                       Silence mode.
     -V, --debug                         Print debug message.
