@@ -43,6 +43,7 @@ const (
 	TypeIPv4        int8 = 0x1
 	TypeIPv6        int8 = 0x2
 	TypeIPErr       int8 = 0x0
+	DefaultPort     int  = 443
 )
 
 var (
@@ -238,6 +239,7 @@ var (
 	verifyResultsMap                       = make(map[string]VerifyResults)
 	myRand                                 = newRand()
 	srcIPs                                 = NewSourceIPsWithRand(myRand)
+	portStrSlice                           []string
 	// LoopStatus                             *SafeLooper
 	// titleRuntime                            *string
 	// titlePre                                [2][4]string
@@ -1046,7 +1048,7 @@ func (s *sourceIPs) AddPorts(srcPorts []string) {
 
 	}
 	if len(s.ports) == 0 {
-		s.ports = append(s.ports, 443)
+		s.ports = append(s.ports, DefaultPort)
 	}
 	// clean ports, make them unique
 	s.ports = uniqueIntSlice(s.ports)
@@ -1139,13 +1141,15 @@ func (s *sourceIPs) SetRand(mRnd *rand.Rand) {
 	s.tRnd = mRnd
 }
 
+// After reset, all will be empty, so you should using Add(), AddFromSlice(), AddFromFile(), and AddPorts
+// to initialize
 func (s *sourceIPs) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.srcHosts = []*string{}
 	s.srcIPRsRaw = []*ipRange{}
 	s.srcIPRsExtracted = []net.IP{}
-	s.ports = []int{443}
+	s.ports = []int{}
 }
 
 func NewSourceIPs() *sourceIPs {
@@ -1153,7 +1157,7 @@ func NewSourceIPs() *sourceIPs {
 		srcHosts:         make([]*string, 0),
 		srcIPRsRaw:       make([]*ipRange, 0),
 		srcIPRsExtracted: make([]net.IP, 0),
-		ports:            []int{443},
+		ports:            []int{},
 		tRnd:             newRand(),
 	}
 }

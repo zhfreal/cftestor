@@ -29,7 +29,6 @@ func print_version() {
 func init() {
 	var printVersion bool
 	var tlsHelloFirefox, tlsHelloChrome, tlsHelloEdge, tlsHelloSafari bool = false, false, false, false
-	var portStrSlice []string
 
 	// version = "dev"
 	flag.BoolVar(&fastMode, "fast", false, "Fast mode")
@@ -657,6 +656,7 @@ LOOP:
 			}
 			thisSourceIPs.Reset()
 			thisSourceIPs.AddFromSlice(tmp_slice, TypeIPv4|TypeIPv6)
+			thisSourceIPs.AddPorts(portStrSlice)
 			// set resultMin to len(tmpTestSlice) while we don't do testAll
 			// to perform testing all target in tmpTestSlice
 			if !testAll {
