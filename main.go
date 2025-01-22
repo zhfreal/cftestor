@@ -459,20 +459,20 @@ LOOP:
 				// 	})
 				// }
 				// put task
-				t_task_size := dtWorkerThread
+				t_dt_task_size := dtWorkerThread
 				if t_dt_sources_len < dtWorkerThread {
-					t_task_size = t_dt_sources_len
+					t_dt_task_size = t_dt_sources_len
 				}
 				go func() {
 					max_failure := get_max_failure(true)
-					for i := 0; i < t_task_size; i++ {
+					for i := 0; i < t_dt_task_size; i++ {
 						t := NewTask(dtTaskCache[i], max_failure)
 						dtTaskChan <- t
 					}
 					// dtTaskCache = make([]*string, 0)
 				}()
 				// retrieve from dtResultChan
-				for i := 0; i < t_task_size; i++ {
+				for i := 0; i < t_dt_task_size; i++ {
 					dtResult := <-dtResultChan
 					// if ip not test then put it into dltTaskChan
 					dtDoneTasks += 1
@@ -521,8 +521,8 @@ LOOP:
 					}
 				}
 				// cut out the used source from dtTaskCache
-				if t_task_size < t_dt_sources_len {
-					dtTaskCache = dtTaskCache[t_task_size:]
+				if t_dt_task_size < t_dt_sources_len {
+					dtTaskCache = dtTaskCache[t_dt_task_size:]
 				} else {
 					dtTaskCache = make([]*string, 0)
 				}
@@ -544,8 +544,10 @@ LOOP:
 				// no source to do DLT
 				if len(dltTaskCache) <= dltWorkerThread {
 					// DT enabled, just continue to do DT
-					if !dltOnly && len(dltTaskCache) == 0 {
-						continue
+					if !dltOnly {
+						if len(dltTaskCache) == 0 {
+							continue
+						}
 					} else {
 						// retrieve source IP
 						dltTaskCache = append(dltTaskCache, thisSourceIPs.RetrieveSome(dltWorkerThread, !testAll)...)
@@ -570,20 +572,20 @@ LOOP:
 				// 	})
 				// }
 				// put task
-				t_task_size := dltWorkerThread
-				if t_dlt_sources_len < t_task_size || !dltOnly {
-					t_task_size = t_dlt_sources_len
+				t_dlt_task_size := dltWorkerThread
+				if t_dlt_sources_len < t_dlt_task_size || !dltOnly {
+					t_dlt_task_size = t_dlt_sources_len
 				}
 				go func() {
 					max_failure := get_max_failure(false)
-					for i := 0; i < t_task_size; i++ {
+					for i := 0; i < t_dlt_task_size; i++ {
 						t := NewTask(dltTaskCache[i], max_failure)
 						dltTaskChan <- t
 					}
 					// dltTaskCache = make([]*string, 0)
 				}()
 				// retrieve result
-				for i := 0; i < t_task_size; i++ {
+				for i := 0; i < t_dlt_task_size; i++ {
 					out := <-dltResultChan
 					dltDoneTasks += 1
 					var tVerifyResult = calcResult(out, true)
@@ -617,8 +619,8 @@ LOOP:
 					}
 				}
 				// ut out the used source from dltTaskCache
-				if t_task_size < t_dlt_sources_len {
-					dltTaskCache = dltTaskCache[t_task_size:]
+				if t_dlt_task_size < t_dlt_sources_len {
+					dltTaskCache = dltTaskCache[t_dlt_task_size:]
 				} else {
 					dltTaskCache = make([]*string, 0)
 				}
