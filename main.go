@@ -55,7 +55,7 @@ func init() {
 
 	flag.BoolVar(&enableDTEvaluation, "ev-dt", false, "Evaluate DT test result. Default as disabled")
 	flag.IntVarP(&dtEvaluationDelay, "ev-dt-delay", "k", 600, "Delay for DT is beyond this one will be cause failure, unit ms, default 600ms.")
-	flag.Float64VarP(&dtEvaluationDTPR, "ev-dt-dtpr", "S", 100, "The DT successful rate below this will be cause failure, default 100%.")
+	flag.Float64Var(&dtEvaluationDTPR, "ev-dt-dtpr", 100, "The DT successful rate below this will be cause failure, default 100%.")
 	flag.Float64Var(&dtStdExp, "ev-dt-std", 30, "expect standard deviation while do DT evaluation.")
 	flag.Float64VarP(&dltEvaluationSpeed, "speed", "l", 6000, "Download speed should not less than this, Unit KB/s, default 6000KB/s.")
 	flag.IntVar(&loop, "loop", -1, "Loop N round")
@@ -81,7 +81,7 @@ func init() {
 	flag.StringVarP(&suffixLabel, "label", "g", "", "the label for a part of the result file's name and sqlite3 record.")
 	flag.BoolVar(&ResolveLoc, "resolve-loc", false, "try to resolve location.")
 
-	flag.BoolVar(&silenceMode, "silence", false, "silence mode.")
+	flag.BoolVarP(&silenceMode, "silence", "S", false, "silence mode.")
 	flag.BoolVarP(&debug, "debug", "V", false, "Print debug message.")
 	// flag.BoolVar(&tcellMode, "tcell", false, "Use tcell form to show debug messages.")
 	flag.BoolVarP(&printVersion, "version", "v", false, "Show version.")
@@ -153,15 +153,23 @@ func init() {
 	// }
 
 	// initialize myLogger
-	if debug {
-		loggerLevel = logLevelDebug
+	if silenceMode {
+		loggerLevel = logLevelFatal
 	} else {
-		if !silenceMode {
-			loggerLevel = logLevelInfo
-		} else {
-			loggerLevel = logLevelFatal
+		loggerLevel = logLevelInfo
+		if debug {
+			loggerLevel = logLevelDebug
 		}
 	}
+	// if debug {
+	// 	loggerLevel = logLevelDebug
+	// } else {
+	// 	if !silenceMode {
+	// 		loggerLevel = logLevelInfo
+	// 	} else {
+	// 		loggerLevel = logLevelFatal
+	// 	}
+	// }
 	// init myLogger
 	myLogger = myLogger.newLogger(loggerLevel)
 	// init rand seed
@@ -484,10 +492,14 @@ LOOP:
 							dltTaskCache = append(dltTaskCache, tVerifyResult.ip)
 							// debug msg, show only in debug mode
 							if debug {
-								displayDetails(false, []VerifyResults{tVerifyResult})
+								displayDetails(false, looper.Status() > -1, []VerifyResults{tVerifyResult})
 							}
 						} else { // Download test disabled
-
+							// update loc when --resolve-loc is enabled and it is in silent mode and we are not in LOOP
+							if ResolveLoc && silenceMode && looper.Status() == -1 && (tVerifyResult.loc == nil || len(*tVerifyResult.loc) == 0) {
+								loc := getGeoInfoFromCF(tVerifyResult.ip)
+								tVerifyResult.loc = &loc
+							}
 							// combine tmpResultMap with tmpResultMap[*tVerifyResult.ip]
 							v, ok := tmpResultMap[*tVerifyResult.ip]
 							if !ok {
@@ -497,7 +509,7 @@ LOOP:
 								tmpResultMap[*tVerifyResult.ip] = tVerifyResult
 							}
 							// non-debug msg
-							displayDetails(false, []VerifyResults{tVerifyResult})
+							displayDetails(false, looper.Status() > -1, []VerifyResults{tVerifyResult})
 							tmpTestSlice[*tVerifyResult.ip] = true
 							// we have expected result, break LOOP
 							// TODO: this is a dirty way
@@ -517,7 +529,7 @@ LOOP:
 							}
 						}
 						// debug msg
-						displayDetails(false, []VerifyResults{tVerifyResult})
+						displayDetails(false, looper.Status() > -1, []VerifyResults{tVerifyResult})
 					}
 				}
 				// cut out the used source from dtTaskCache
@@ -597,7 +609,12 @@ LOOP:
 					}
 					// tVerifyResult = v
 					// check speed and data size downloaded
-					if validDLTResult(&tVerifyResult) && validDTResult(&tVerifyResult) {
+					if validDLTResult(&tVerifyResult) && (dltOnly || (!dltOnly && validDTResult(&tVerifyResult))) {
+						// update loc when --resolve-loc is enabled and it is in silent mode and we are not in LOOP
+						if ResolveLoc && silenceMode && looper.Status() == -1 && (tVerifyResult.loc == nil || len(*tVerifyResult.loc) == 0) {
+							loc := getGeoInfoFromCF(tVerifyResult.ip)
+							tVerifyResult.loc = &loc
+						}
 						// combine tmpResultMap with tmpResultMap[*tVerifyResult.ip]
 						v, ok := tmpResultMap[*tVerifyResult.ip]
 						if !ok {
@@ -611,12 +628,13 @@ LOOP:
 						if !testAll && len(tmpTestSlice) >= resultMin {
 							haveEnoughResult = true
 						}
-						// non-debug msg
-						displayDetails(true, []VerifyResults{tVerifyResult})
-					} else if debug {
-						// debug msg
-						displayDetails(true, []VerifyResults{tVerifyResult})
+						displayDetails(true, looper.Status() > -1, []VerifyResults{tVerifyResult})
+					} else {
+						if debug {
+							displayDetails(true, looper.Status() > -1, []VerifyResults{tVerifyResult})
+						}
 					}
+
 				}
 				// ut out the used source from dltTaskCache
 				if t_dlt_task_size < t_dlt_sources_len {
@@ -672,7 +690,14 @@ LOOP:
 	}
 	for tIP := range tmpTestSlice {
 		tr := tmpResultMap[tIP]
-		if validDTResult(&tr) && validDLTResult(&tr) {
+		isValid := true
+		if !dltOnly && !validDTResult(&tr) {
+			isValid = false
+		}
+		if !dtOnly && !validDLTResult(&tr) {
+			isValid = false
+		}
+		if isValid {
 			verifyResultsMap[tIP] = tmpResultMap[tIP]
 		}
 	}
@@ -708,25 +733,40 @@ func main() {
 			}
 			verifyResultsSlice = append(verifyResultsSlice, v)
 		}
-		if !silenceMode {
-			records := genDBRecords(verifyResultsSlice, resolveLocalASNAndCity)
+		var records []DBRecord
+		if storeToFile || storeToDB {
+			records = genDBRecords(verifyResultsSlice, resolveLocalASNAndCity)
 			// write to csv file
 			if storeToFile {
-				myLogger.Print("Write to csv " + resultFile)
+				if !silenceMode {
+					myLogger.Print("Write to csv " + resultFile)
+				}
 				writeCSVResult(records, resultFile)
-				myLogger.Println("  Done!")
+				if !silenceMode {
+					myLogger.Println("  Done!")
+				}
 			}
 			// write to db
 			if storeToDB {
-				myLogger.Print("Write to sqlite3 db file " + dbFile)
+				if !silenceMode {
+					myLogger.Print("Write to sqlite3 db file " + dbFile)
+				}
 				saveDBRecords(records, dbFile)
-				myLogger.Println("  Done!")
+				if !silenceMode {
+					myLogger.Println("  Done!")
+				}
 			}
-			// sort by speed
-			sort.Sort(sort.Reverse(resultSpeedSorter(verifyResultsSlice)))
+		}
+		// sort by speed
+		sort.Sort(sort.Reverse(resultSpeedSorter(verifyResultsSlice)))
+		if !silenceMode {
 			myLogger.Println()
 			myLogger.Println("All Results:")
-			printFinalStat(verifyResultsSlice, dtOnly)
+			printFinalStat(verifyResultsSlice, dtOnly, false)
+		} else {
+			if loop > 0 {
+				printFinalStat(verifyResultsSlice, dtOnly, true)
+			}
 		}
 	}
 }

@@ -55,7 +55,14 @@ func (myLogger *MyLogger) newLogger(lv LogLevel) MyLogger {
 	return MyLogger{lv, myIndent}
 }
 
+func (myLogger *MyLogger) matchLogLevel(lv LogLevel) bool {
+	return myLogger.loggerLevel&lv == lv
+}
+
 func (myLogger *MyLogger) log_newline(lv LogLevel, newline bool, info ...any) {
+	if !myLogger.matchLogLevel(lv) {
+		return
+	}
 	fmt.Print(getTimeNowStr())
 	fmt.Print(myLogger.indent)
 	t_log_type_str := myLogger.getLogLevelString(lv)
@@ -65,6 +72,9 @@ func (myLogger *MyLogger) log_newline(lv LogLevel, newline bool, info ...any) {
 }
 
 func (myLogger *MyLogger) log_newlinef(lv LogLevel, format string, info ...any) {
+	if !myLogger.matchLogLevel(lv) {
+		return
+	}
 	fmt.Print(getTimeNowStr())
 	fmt.Print(myLogger.indent)
 	t_log_type_str := myLogger.getLogLevelString(lv)

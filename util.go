@@ -401,46 +401,57 @@ func genDBRecords(verifyResultsSlice []VerifyResults, getLocalAsnAndCity bool) (
 	return
 }
 
-func printFinalStat(v []VerifyResults, dtOnly bool) {
+func printFinalStat(v []VerifyResults, dtOnly, inSilence bool) {
 	// no data for print
 	if len(v) == 0 {
 		return
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight|tabwriter.Debug)
-	header := "Time\tIP"
-	if !dtOnly {
-		header += "\tSpeed(KB/s)\tDLT-Tries\tDLT-Passes(%)"
-	}
-	header += "\tDelayAvg(ms)"
-	if !dltOnly {
-		header += "\tDelayMin(ms)\tDelayMax(ms)\tDT-Tries\tDT-Passes(%)"
-		if enableDTEvaluation {
-			header += "\tDelayStd"
-		}
-	}
-	header += "\t"
-	fmt.Fprintln(w, header)
-	for i := 0; i < len(v); i++ {
-		line := fmt.Sprintf("%s\t%s", v[i].testTime.Format("15:04:05"), *v[i].ip)
-		if len(*v[i].loc) > 0 {
-			line = fmt.Sprintf("%s#%s", line, *v[i].loc)
-		}
+	if !inSilence {
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight|tabwriter.Debug)
+		header := "Time\tIP"
 		if !dtOnly {
-			line += fmt.Sprintf("\t%.0f\t%d\t%.2f", v[i].dls, v[i].dltc, v[i].dltpr*100)
+			header += "\tSpeed(KB/s)\tDLT-Tries\tDLT-Passes(%)"
 		}
-		line += fmt.Sprintf("\t%.0f", v[i].da)
+		header += "\tDelayAvg(ms)"
 		if !dltOnly {
-			line += fmt.Sprintf("\t%.0f\t%.0f\t%d\t%.2f", v[i].dmi, v[i].dmx, v[i].dtc, v[i].dtpr*100)
+			header += "\tDelayMin(ms)\tDelayMax(ms)\tDT-Tries\tDT-Passes(%)"
 			if enableDTEvaluation {
-				// line += fmt.Sprintf("\t%.2f\t%.2f", v[i].daStd, v[i].daVar)
-				line += fmt.Sprintf("\t%.2f", v[i].daStd)
+				header += "\tDelayStd"
 			}
 		}
-		line += "\t"
-		fmt.Fprintln(w, line)
+		header += "\t"
+		fmt.Fprintln(w, header)
+		for i := 0; i < len(v); i++ {
+			line := fmt.Sprintf("%s\t%s", v[i].testTime.Format("15:04:05"), *v[i].ip)
+			if len(*v[i].loc) > 0 {
+				line = fmt.Sprintf("%s#%s", line, *v[i].loc)
+			}
+			if !dtOnly {
+				line += fmt.Sprintf("\t%.0f\t%d\t%.2f", v[i].dls, v[i].dltc, v[i].dltpr*100)
+			}
+			line += fmt.Sprintf("\t%.0f", v[i].da)
+			if !dltOnly {
+				line += fmt.Sprintf("\t%.0f\t%.0f\t%d\t%.2f", v[i].dmi, v[i].dmx, v[i].dtc, v[i].dtpr*100)
+				if enableDTEvaluation {
+					// line += fmt.Sprintf("\t%.2f\t%.2f", v[i].daStd, v[i].daVar)
+					line += fmt.Sprintf("\t%.2f", v[i].daStd)
+				}
+			}
+			line += "\t"
+			fmt.Fprintln(w, line)
+		}
+		fmt.Fprintln(w, "")
+		w.Flush()
+	} else {
+		for i := 0; i < len(v); i++ {
+			t_str := *v[i].ip
+			if v[i].loc != nil && len(*v[i].loc) > 0 {
+				t_str += fmt.Sprintf("#%s", *v[i].loc)
+			}
+			fmt.Println(t_str)
+		}
 	}
-	fmt.Println()
-	w.Flush()
+
 }
 
 func saveDBRecords(dbRecords []DBRecord, dbFile string) {
@@ -703,7 +714,7 @@ func ipShiftReverse(ip net.IP, num []byte) net.IP {
 // It will print the details to the console in debug mode, and only print the
 // IPs in non-debug mode. The showSpeed parameter determines whether the speed
 // information should be shown or not.
-func displayDetails(showSpeed bool, v []VerifyResults) {
+func displayDetails(showSpeed, loopEnabled bool, v []VerifyResults) {
 	// if in debug mode, print the details
 	if debug {
 		myLogger.PrintDetails(LogLevel(logLevelDebug), v, showSpeed)
@@ -714,12 +725,14 @@ func displayDetails(showSpeed bool, v []VerifyResults) {
 	} else {
 		// if in non-debug mode, only print the IPs
 		if silenceMode {
-			for _, t_v := range v {
-				tStr := *t_v.ip
-				if len(*t_v.loc) > 0 {
-					tStr = fmt.Sprintf("%s#%s", tStr, *t_v.loc)
+			if !loopEnabled {
+				for _, t_v := range v {
+					tStr := *t_v.ip
+					if t_v.loc != nil && len(*t_v.loc) > 0 {
+						tStr = fmt.Sprintf("%s#%s", tStr, *t_v.loc)
+					}
+					myLogger.Println(tStr)
 				}
-				myLogger.Println(tStr)
 			}
 		} else {
 			// print the details in non-debug mode
@@ -952,7 +965,10 @@ func get_loc_from_cf_resp(body io.ReadCloser) (string, error) {
 		// 	loc = t_slice[1]
 		// } else if strings.ToLower(t_slice[0]) == "loc" && strings.ToUpper(t_slice[1]) != "CN" {
 		if strings.ToLower(t_slice[0]) == "colo" {
-			loc = t_slice[1]
+			loc = strings.ToUpper(t_slice[1])
+			if len(loc) > 3 {
+				loc = loc[:3]
+			}
 			break
 		}
 	}

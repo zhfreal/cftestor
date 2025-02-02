@@ -10,3 +10,4 @@ cftestor
 *.xml
 *.bat
 *.py
+__debug*

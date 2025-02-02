@@ -313,7 +313,7 @@ options:
                                         DT by these two thresholds "-k|--evaluate-dt-delay <value>" and
                                         "-S|--evaluate-dt-dtpr <value>", default turn off.
     -k, --ev-dt-delay   int             Single DT's delay should not bigger than this, unit ms, default 600ms.
-    -S, --ev-dt-dtpr    float           The DT pass rate should not lower than this, default 100, means 100%, all
+        --ev-dt-dtpr    float           The DT pass rate should not lower than this, default 100, means 100%, all
                                         DT must be below "-k|--evaluate-dt-delay <value>".
         --ev-dt-std     float           Expect standard deviation while do DT evaluation. while we enable
                                         "--ev-dt" and set this to a value bigger than 0, standard deviation
@@ -363,7 +363,7 @@ options:
                                         provided, it will be named "ip.db" and store in current directory.
     -g, --label         string          the label for a part of the result file's name and sqlite3 record. It's
                                         hostname from "--hostname" or "-u|--url" by default.
-        --silence                       Silence mode.
+    -S, --silence                       Silence mode.
     -V, --debug                         Print debug message.
                                         Turn this on will activate "--debug".
     -v, --version                       Show version.
@@ -433,7 +433,7 @@ func (a *VerifyResults) combine(b VerifyResults) {
 	if a.testTime.Before(b.testTime) {
 		a.testTime = b.testTime
 	}
-	if b.loc != nil && len(*b.loc) != 0 {
+	if b.loc != nil && len(*b.loc) != 0 && (a.loc == nil || len(*a.loc) == 0) {
 		a.loc = b.loc
 	}
 	a.dtc += b.dtc
