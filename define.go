@@ -40,9 +40,9 @@ const (
 	dtsHTTPS             = "HTTPS"
 	runTime              = "cftestor"
 	retrieveCount   int  = 32
-	TypeIPv4        int8 = 0x1
-	TypeIPv6        int8 = 0x2
-	TypeIPErr       int8 = 0x0
+	TypeIPv4        int8 = 1
+	TypeIPv6        int8 = 1 << 1
+	TypeIPErr       int8 = 0
 	DefaultPort     int  = 443
 )
 
@@ -283,90 +283,75 @@ var (
 )
 
 var help = `Usage: ` + runTime + ` [options]
-options:
-    -s, --ip            string          Specify IP, CIDR, or host for test. E.g.: "-s 1.0.0.1", "-s 1.0.0.1/32",
+Options:
+	-s, --ip            string          Specify IP, CIDR, or host for testing. Examples: "-s 1.0.0.1", "-s 1.0.0.1/32",
                                         "-s 1.0.0.1/24", "-s 1.1.1.1:2053".
-    -i, --in            string          Specify file for test, which contains multiple lines. Each line
-                                        represent one IP, CIDR, host.
-    -p, --port          int             Port to test, could be specific one or more ports at same time. Can be
-                                        specific like "-p 443-800,1000:1300;8443|8444 -p 10000-12000|13333".
-                                        These ports should be working via SSL/TLS/HTTPS protocol,  default 443.
-    -m, --dt-thread     int             Number of concurrent threads for Delay Test(DT). How many IPs can
-                                        be perform DT at the same time. Default 20 threads.
-    -t, --dt-timeout    int             Timeout for single DT, unit ms, default 2000ms for SSL mode, and 5000ms
-                                        for HTTPS mode. A single SSL/TLS or HTTPS request and response should
-                                        be finished before timeout. It should not be less than
-                                        "-k|--evaluate-dt-delay", It should be bigger --dt-via https than --dt-via
-                                        ssl.
-    -c, --dt-count      int             Tries of DT for a IP. Default 2.
-        --hostname      string          Hostname for DT test. It's valid when "--dt-only" is no and
+	-i, --in            string          Specify a file for testing, containing multiple lines. Each line
+                                        represents one IP, CIDR, or host.
+	-p, --port          int             Specify port(s) to test. Can be a single port or a range, e.g.,
+                                        "-p 443-800,1000:1300;8443|8444 -p 10000-12000|13333".
+                                        Ports should support SSL/TLS/HTTPS protocols. Default is 443.
+	-m, --dt-thread     int             Number of concurrent threads for Delay Test (DT). Default is 20 threads.
+	-t, --dt-timeout    int             Timeout for a single DT in milliseconds. Default is 2000ms for SSL mode
+                                        and 5000ms for HTTPS mode. Should not be less than "-k|--evaluate-dt-delay".
+	-c, --dt-count      int             Number of DT attempts per IP. Default is 2.
+		--hostname      string          Hostname for DT testing. Valid when "--dt-only" is off and
                                         "--dt-via https" is not provided.
-        --dt-via <https|tls|ssl>        DT via https or SSL/TLS shaking hands, "--dt-via <https|tls|ssl>".
-                                        Default https.
-        --dt-expect-code <status_code>  HTTP status code expected for DT test while we do '--dt-via https'.
-                                        Default 200.
-        --dt-url        string          Specify test URL for DT.
-        --ev-dt                         Evaluate DT, we'll try "-c|--dt-count <value>" to evaluate delay;
-                                        if we don't turn this on, we'll stop DT after we got the first
-                                        successful DT; if we turn this on, we'll evaluate the test result
-                                        through average delay of singe DT and statistic of all successful
-                                        DT by these two thresholds "-k|--evaluate-dt-delay <value>" and
-                                        "-S|--evaluate-dt-dtpr <value>", default turn off.
-    -k, --ev-dt-delay   int             Single DT's delay should not bigger than this, unit ms, default 600ms.
-        --ev-dt-dtpr    float           The DT pass rate should not lower than this, default 100, means 100%, all
-                                        DT must be below "-k|--evaluate-dt-delay <value>".
-        --ev-dt-std     float           Expect standard deviation while do DT evaluation. while we enable
-                                        "--ev-dt" and set this to a value bigger than 0, standard deviation
-                                        for delays would be calculated and compare to this value.
-    -n, --dlt-thread    int             Number of concurrent Threads for Download Test(DLT), default 1.
-                                        How many IPs can be perform DLT at the same time.
-    -d, --dlt-period    int             The total times escaped for single DLT, default 10s.
-    -b, --dlt-count     int             Tries of DLT for a IP, default 1.
-    -u, --dlt-url       string          Specify test URL for DLT.
-        --dlt-timeout   int             Specify the timeout for http response when do DLT. In ms, default as 5000 ms.
-    -I  --interval      int             Interval between two tests, unit ms, default 500ms.
-                                        
-    -l, --speed         float           Download speed filter, Unit KB/s, default 6000KB/s. After DLT, it's
-                                        qualified when its speed is not lower than this value.
-    -r, --result        int             The total IPs qualified limitation, default 10. The Process will stop
-                                        after it got equal or more than this indicated. It would be invalid if
-                                        "--test-all" was set.
-        --dt-only                       Do DT only, we do DT & DLT at the same time by default.
-        --dlt-only                      Do DLT only, we do DT & DLT at the same time by default.
-        --fast                          Fast mode, use inner IPs for fast detection. Just when neither "-s/--ip"
-                                        nor "-i/--in" is provided, and this flag is provided. It will be working
-                                        Disabled by default.
-        --loop          int             Loop round N, disabled by default
-        --loop-interval int             Interval between two loops, unit second, default 60s
-    -4, --ipv4                          Just test IPv4. When we don't specify IPs to test by "-s" or "-i",
-                                        then it will do IPv4 test from build-in IPs from CloudFlare by default.
-    -6, --ipv6                          Just test IPv6. When we don't specify IPs to test by "-s" or "-i",
-                                        then it will do IPv6 test from build-in IPs from CloudFlare by using
-                                        this flag.
-        --hello-firefox                 Work as firefox to perform tls/https
-        --hello-chrome                  Work as Chrome to perform tls/https
-        --hello-edge                    Work as Microsoft Edge to perform tls/https
-        --hello-safari                  Work as safari to perform tls/https
-    -a  --test-all                      Test all IPs until no more IP left. It's disabled by default.
-    -w, --to-file                       Write result to csv file, disabled by default. If it is provided and
-                                        "-o|--result-file <value>" is not provided, the result file will be named
-                                        as "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -o, --out-file      string          File name of result. If it don't provided and "-w|--store-to-file"
-                                        is provided, the result file will be named as
-                                        "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and be stored in current DIR.
-    -e, --to-db                         Write result to sqlite3 db file, disabled by default. If it's provided
-                                        and "-f|--db-file" is not provided, it will be named "ip.db" and
-                                        store in current directory.
-        --local-asn                     get local ASN and city info, default false. 
-        --resolve-loc                   Try to resolve location. 
-    -f, --db-file       string          Sqlite3 db file name. If it's not provided and "-e|--store-to-db" is
-                                        provided, it will be named "ip.db" and store in current directory.
-    -g, --label         string          the label for a part of the result file's name and sqlite3 record. It's
-                                        hostname from "--hostname" or "-u|--url" by default.
-    -S, --silence                       Silence mode.
-    -V, --debug                         Print debug message.
-                                        Turn this on will activate "--debug".
-    -v, --version                       Show version.
+		--dt-via <https|tls|ssl>        Perform DT via HTTPS, TLS, or SSL. Default is HTTPS.
+		--dt-expect-code <status_code>  Expected HTTP status code for DT testing when using '--dt-via https'.
+                                        Default is 200.
+		--dt-url        string          Specify a test URL for DT. Ensure the URL is valid, reachable, and uses HTTPS.
+                                        For custom ports, use "--port" or provide them with IPs using "-s" or "-i".
+		--ev-dt                         Enable DT evaluation. Evaluates delay using "-c|--dt-count <value>".
+                                        Without this, DT stops after the first successful attempt. When enabled,
+                                        results are evaluated using "-k|--evaluate-dt-delay <value>" and
+                                        "-S|--evaluate-dt-dtpr <value>". Default is off.
+	-k, --ev-dt-delay   int             Maximum delay for a single DT in milliseconds. Default is 600ms.
+		--ev-dt-dtpr    float           Minimum DT pass rate as a percentage. Default is 100% (all DTs must pass).
+		--ev-dt-std     float           Expected standard deviation for DT evaluation. If enabled and set to a value
+                                        greater than 0, delays are evaluated against this value.
+	-n, --dlt-thread    int             Number of concurrent threads for Download Test (DLT). Default is 1.
+	-d, --dlt-period    int             Total duration for a single DLT in seconds. Default is 10s.
+	-b, --dlt-count     int             Number of DLT attempts per IP. Default is 1.
+	-u, --dlt-url       string          Specify a test URL for DLT. Ensure the URL is valid, reachable, and uses HTTPS.
+                                        For custom ports, use "--port" or provide them with IPs using "-s" or "-i".
+		--dlt-timeout   int             Timeout for HTTP response during DLT in milliseconds. Default is 5000ms.
+	-I, --interval      int             Interval between tests in milliseconds. Default is 500ms.
+	-l, --speed         float           Minimum download speed filter in KB/s. Default is 6000KB/s.
+	-r, --result        int             Maximum number of qualified IPs. Default is 10. Ignored if "--test-all" is set.
+		--dt-only                       Perform only DT. By default, both DT and DLT are performed.
+		--dlt-only                      Perform only DLT. By default, both DT and DLT are performed.
+		--fast                          Enable fast mode using internal IPs for quick detection. Works only when
+                                        neither "-s/--ip" nor "-i/--in" is provided. Default is off.
+		--loop          int             Number of loop rounds. Default is disabled.
+		--loop-interval int             Interval between loops in seconds. Default is 60s.
+	-4, --ipv4                          Test only IPv4. If no IPs are specified with "-s" or "-i", tests IPv4
+                                        using built-in CloudFlare IPs by default.
+	-6, --ipv6                          Test only IPv6. If no IPs are specified with "-s" or "-i", tests IPv6
+                                        using built-in CloudFlare IPs with this flag.
+		--hello-firefox                 Simulate Firefox for TLS/HTTPS.
+		--hello-chrome                  Simulate Chrome for TLS/HTTPS.
+		--hello-edge                    Simulate Microsoft Edge for TLS/HTTPS.
+		--hello-safari                  Simulate Safari for TLS/HTTPS.
+	-a, --test-all                      Test all IPs until none are left. Default is off.
+	-w, --to-file                       Write results to a CSV file. Default is off. If enabled and
+                                        "-o|--result-file <value>" is not provided, the file is named
+                                        "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and stored in the current directory.
+	-o, --out-file      string          Specify the result file name. If not provided and "-w|--to-file" is enabled,
+                                        the file is named "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and stored in
+                                        the current directory.
+	-e, --to-db                         Write results to an SQLite3 database. Default is off. If enabled and
+                                        "-f|--db-file" is not provided, the file is named "ip.db" and stored in
+                                        the current directory.
+		--local-asn                     Retrieve local ASN and city information. Default is off.
+		--resolve-loc                   Attempt to resolve location.
+	-f, --db-file       string          Specify the SQLite3 database file name. If not provided and "-e|--to-db"
+                                        is enabled, the file is named "ip.db" and stored in the current directory.
+	-g, --label         string          Label for the result file name and SQLite3 record. Defaults to the hostname
+                                        from "--hostname" or "-u|--url".
+	-S, --silence                       Enable silence mode.
+	-V, --debug                         Print debug messages. Activates "--debug".
+	-v, --version                       Display version information.
 `
 
 // type arrayFlags []string
@@ -955,7 +940,7 @@ func (s *sourceIPs) add(IPs string, mode int8) error {
 		}
 		s.srcHosts = append(s.srcHosts, &ips)
 	} else {
-		return fmt.Errorf("\"%v\" is neither valid IP/CIDR nor host", ips)
+		return fmt.Errorf("the input \"%v\" is neither a valid IP, CIDR, nor a host", ips)
 	}
 	return nil
 }

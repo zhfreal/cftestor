@@ -817,7 +817,7 @@ func getHostVer(host string) (ver int8) {
 //	     else if the result is ipv4 (To4() is not null) return TypeIPv4; else return TypeIPv6
 func getIPsVer(ips string) (ver int8) {
 	tV := getCIDRVer(ips)
-	if tV == -1 {
+	if tV == TypeIPErr {
 		return getIPVer(ips)
 	} else {
 		return tV

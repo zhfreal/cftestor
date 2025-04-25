@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/big"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -16,7 +17,7 @@ import (
 
 func print_version() {
 	fmt.Println(appArt)
-	fmt.Println(`  CF CDN IP scanner, find best IPs for your Cloudflare CDN applications.
+	fmt.Println(`  CF CDN IP scanner, find best IPs for you.
   https://github.com/zhfreal/cftestor`)
 	fmt.Println()
 	fmt.Printf("Version:    %v\n", version)
@@ -126,7 +127,7 @@ func init() {
 	} else if dtVia == "ssl" || dtVia == "tls" {
 		dtHttps = false
 	} else {
-		println("invalid value found! Please use \"--dt-via <https|tls|ssl>\"!")
+		myLogger.Fatalln("Invalid value for \"--dt-via\". Please use one of: https, tls, or ssl.")
 		os.Exit(1)
 	}
 
@@ -176,7 +177,7 @@ func init() {
 	initRandSeed()
 
 	tMode := int8(0)
-	// set false for ipv4Mode, when just ipv6 flag set to true
+	// set ipv4Mode to false, when just --ipv6 provided
 	v4Flag := flag.Lookup("ipv4")
 	if (!v4Flag.Changed) && ipv6Mode {
 		ipv4Mode = false
@@ -188,7 +189,7 @@ func init() {
 		tMode |= TypeIPv6
 	}
 	if tMode == TypeIPErr {
-		myLogger.Fatalln("we can't disable both ipv4 and ipv6 at the same time!")
+		myLogger.Fatalln("We can't disable both IPv4 and IPv6 at the same time!")
 	}
 
 	// check -I|--interval
@@ -211,8 +212,9 @@ func init() {
 		// it's invalid when ipv4Mode and ipv6Mode is both true or false at the same time and
 		// no specified source IPs or file is provided
 		if (tMode&TypeIPv4) == TypeIPv4 && (tMode&TypeIPv6) == TypeIPv6 {
-			myLogger.Fatalln("\"-4|--ipv4\" and \"-6|--ipv6\" should not be provided at the same time!")
-			os.Exit(1)
+			myLogger.Fatalln("The options \"-4|--ipv4\" and \"-6|--ipv6\" cannot be used together when no specific IPs or file are provided!")
+			// not need to exit, because it's a fatal error
+			//os.Exit(1)
 		}
 		if (tMode & TypeIPv4) == TypeIPv4 {
 			t_cf_ipv4 := CFIPV4FULL
@@ -254,7 +256,39 @@ func init() {
 		if !v6Flag.Changed && !v4Flag.Changed {
 			ipv6Mode = true
 		}
+	}
 
+	// check dtUrl is valid URL and uses HTTPS
+	if !dltOnly && dtHttps {
+		if len(dtUrl) == 0 {
+			myLogger.Fatalf("\"-u|--dt-url %v\" should not be empty!\n", dtUrl)
+		}
+		t_url, err := url.Parse(dtUrl)
+		if err != nil {
+			myLogger.Fatalf("\"-u|--dt-url %v\" is not a valid URL!\n", dtUrl)
+		}
+		if t_url.Scheme != "https" {
+			myLogger.Fatalf("\"-u|--dt-url %v\" should use HTTPS!\n", dtUrl)
+		}
+		if len(dtUrl) > 0 {
+			dtUrl = t_url.String()
+		}
+	}
+	// check dltUrl is valid URL and uses HTTPS
+	if !dtOnly {
+		if len(dltUrl) == 0 {
+			myLogger.Fatalf("\"-d|--dlt-url %v\" should not be empty!\n", dltUrl)
+		}
+		t_url, err := url.Parse(dltUrl)
+		if err != nil {
+			myLogger.Fatalf("\"-d|--dlt-url %v\" is not a valid URL!\n", dltUrl)
+		}
+		if t_url.Scheme != "https" {
+			myLogger.Fatalf("\"-d|--dlt-url %v\" should use HTTPS!\n", dltUrl)
+		}
+		if len(dltUrl) > 0 {
+			dltUrl = t_url.String()
+		}
 	}
 
 	// shuffle srcIPR and srcIPRsCache when do not testAll
@@ -409,7 +443,7 @@ func runWorker() {
 	// showQuitWaiting := false
 
 	if !dltOnly {
-		for i := 0; i < dtWorkerThread; i++ {
+		for range dtWorkerThread {
 			wg.Add(1)
 			if dtHttps {
 				go downloadWorkerNew(dtTaskChan, dtResultChan, &wg, &dtUrl, dtTimeoutDuration, dtCount, true)
@@ -419,7 +453,7 @@ func runWorker() {
 		}
 	}
 	if !dtOnly {
-		for i := 0; i < dltWorkerThread; i++ {
+		for range dltWorkerThread {
 			wg.Add(1)
 			go downloadWorkerNew(dltTaskChan, dltResultChan, &wg, &dltUrl, httpRspTimeoutDuration, dltCount, false)
 		}
@@ -467,20 +501,17 @@ LOOP:
 				// 	})
 				// }
 				// put task
-				t_dt_task_size := dtWorkerThread
-				if t_dt_sources_len < dtWorkerThread {
-					t_dt_task_size = t_dt_sources_len
-				}
+				t_dt_task_size := min(dtWorkerThread, t_dt_sources_len)
 				go func() {
 					max_failure := get_max_failure(true)
-					for i := 0; i < t_dt_task_size; i++ {
-						t := NewTask(dtTaskCache[i], max_failure)
+					for _, taskIP := range dtTaskCache[:t_dt_task_size] {
+						t := NewTask(taskIP, max_failure)
 						dtTaskChan <- t
 					}
 					// dtTaskCache = make([]*string, 0)
 				}()
 				// retrieve from dtResultChan
-				for i := 0; i < t_dt_task_size; i++ {
+				for range t_dt_task_size {
 					dtResult := <-dtResultChan
 					// if ip not test then put it into dltTaskChan
 					dtDoneTasks += 1
@@ -590,14 +621,14 @@ LOOP:
 				}
 				go func() {
 					max_failure := get_max_failure(false)
-					for i := 0; i < t_dlt_task_size; i++ {
-						t := NewTask(dltTaskCache[i], max_failure)
+					for _, taskIP := range dltTaskCache[:t_dlt_task_size] {
+						t := NewTask(taskIP, max_failure)
 						dltTaskChan <- t
 					}
 					// dltTaskCache = make([]*string, 0)
 				}()
 				// retrieve result
-				for i := 0; i < t_dlt_task_size; i++ {
+				for range t_dlt_task_size {
 					out := <-dltResultChan
 					dltDoneTasks += 1
 					var tVerifyResult = calcResult(out, true)
