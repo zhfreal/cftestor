@@ -218,7 +218,7 @@ var (
 	interval, dtEvaluationDelay, dtTimeout int
 	dtStdExp                               float64
 	hostName, dltUrl, dtSource, dtUrl      string
-	dltTimeout, loop                       int
+	dltTimeout, loop, testTimeout          int
 	loopInterval                           int // in seconds
 	dtEvaluationDTPR, dltEvaluationSpeed   float64
 	dtHttps, disableDownload               bool
@@ -333,6 +333,7 @@ Options:
 		--hello-chrome                  Simulate Chrome for TLS/HTTPS.
 		--hello-edge                    Simulate Microsoft Edge for TLS/HTTPS.
 		--hello-safari                  Simulate Safari for TLS/HTTPS.
+    --test-timeout int                  Test timeout in minutes. Default is 30m.
 	-a, --test-all                      Test all IPs until none are left. Default is off.
 	-w, --to-file                       Write results to a CSV file. Default is off. If enabled and
                                         "-o|--result-file <value>" is not provided, the file is named
@@ -728,9 +729,7 @@ func (ipr *ipRange) GetRandomX(num int) (IPList []net.IP) {
 		if m == nil {
 			return
 		}
-		for i := 0; i < len(m); i++ {
-			IPList = append(IPList, m[i])
-		}
+		IPList = append(IPList, m...)
 		// shuffle
 		myRand.Shuffle(len(IPList), func(i, j int) {
 			IPList[i], IPList[j] = IPList[j], IPList[i]
@@ -906,6 +905,12 @@ func (s *sourceIPs) LenInt() int {
 	return t_qty
 }
 
+func (s *sourceIPs) IsEmpty() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.srcIPRsRaw) == 0 && len(s.srcIPRsExtracted) == 0 && len(s.srcHosts) == 0
+}
+
 func (s *sourceIPs) add(IPs string, mode int8) error {
 	ips := strings.TrimSpace(IPs)
 	ips = strings.Split(ips, "#")[0]
@@ -1056,6 +1061,23 @@ func (s *sourceIPs) RetrieveSome(amount int, isRand bool) (targetIPs []*string) 
 	return
 }
 
+func (s *sourceIPs) RetrieveSomeNew(amount int) (targetIPs []*string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var t_target = []*string{}
+	targetIPs = append(targetIPs, s.retrieveHosts(amount)...)
+	t_target = append(t_target, s.retrieveIPsFromIPRNew(amount)...)
+	for _, ipStr := range t_target {
+		for _, port := range s.ports {
+			host := genHostFromIPStrPort(*ipStr, port)
+			if len(host) > 0 {
+				targetIPs = append(targetIPs, &host)
+			}
+		}
+	}
+	return
+}
+
 func (s *sourceIPs) retrieveHosts(amount int) (targetHosts []*string) {
 	if amount <= 0 || len(s.srcHosts) == 0 {
 		return
@@ -1085,6 +1107,35 @@ func (s *sourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*
 		} else {
 			t_ips = append(t_ips, ipr.Extract(amount)...)
 		}
+	}
+	if len(s.srcIPRsExtracted) > 0 {
+		if len(s.srcIPRsExtracted) <= amount {
+			t_ips = append(t_ips, s.srcIPRsExtracted...)
+			s.srcIPRsExtracted = []net.IP{}
+		} else {
+			t_ips = append(t_ips, s.srcIPRsExtracted[0:amount]...)
+			s.srcIPRsExtracted = s.srcIPRsExtracted[amount:]
+		}
+	}
+	for _, t_ip := range t_ips {
+		tIP := t_ip.String()
+		targetIPs = append(targetIPs, &tIP)
+	}
+	// randomize
+	myRand.Shuffle(len(targetIPs), func(m, n int) {
+		targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
+	})
+	return
+}
+
+func (s *sourceIPs) retrieveIPsFromIPRNew(amount int) (targetIPs []*string) {
+	if amount <= 0 || amount < retrieveCount {
+		amount = retrieveCount
+	}
+
+	t_ips := []net.IP{}
+	for _, ipr := range s.srcIPRsRaw {
+		t_ips = append(t_ips, ipr.Extract(amount)...)
 	}
 	if len(s.srcIPRsExtracted) > 0 {
 		if len(s.srcIPRsExtracted) <= amount {

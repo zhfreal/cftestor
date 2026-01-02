@@ -73,6 +73,7 @@ func init() {
 	flag.BoolVar(&tlsHelloChrome, "hello-chrome", false, "work as chrome")
 	flag.BoolVar(&tlsHelloEdge, "hello-edge", false, "work as edge")
 	flag.BoolVar(&tlsHelloSafari, "hello-safari", false, "work as safari")
+	flag.IntVar(&testTimeout, "test-timeout", 30, "Test timeout in minutes.")
 
 	flag.BoolVarP(&storeToFile, "to-file", "w", false, "Write result to csv file, disabled by default.")
 	flag.StringVarP(&resultFile, "out-file", "o", "", "File name of result. ")
@@ -121,12 +122,12 @@ func init() {
 	} else if dtEvaluationDTPR < 0 {
 		dtEvaluationDTPR = 0
 	}
-	dtVia = strings.ToLower(dtVia)
-	if dtVia == "https" {
+	switch strings.ToLower(dtVia) {
+	case "https":
 		dtHttps = true
-	} else if dtVia == "ssl" || dtVia == "tls" {
+	case "ssl", "tls":
 		dtHttps = false
-	} else {
+	default:
 		myLogger.Fatalln("Invalid value for \"--dt-via\". Please use one of: https, tls, or ssl.")
 		os.Exit(1)
 	}
@@ -460,276 +461,311 @@ func runWorker() {
 	}
 	tmpResultMap := make(map[string]VerifyResults)
 	var tmpTestSlice map[string]bool
-	var thisSourceIPs = CopySourceIPs(srcIPs)
-	looper := NewSafeLooperWithInterval(loop, loopInterval*1000)
-	// verifyResultsMap
-LOOP:
+	var thisSourceIPs = srcIPs
+	var t_result_min = resultMin
+	var start_time = time.Now()
+RETRY_LOOP:
 	for {
-		dtDoneTasks := 0
-		// the item in dtTaskCache is a ip string.
-		dtTaskCache := make([]*string, 0)
-		dltDoneTasks := 0
-		// the item in dltTaskCache is a ip string.
-		dltTaskCache := make([]*string, 0)
-		// the key of cachedMap should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
-		cachedMap := make(map[string]VerifyResults)
-		haveEnoughResult := false
-		// reset ResultIPSlice while do LOOP
-		tmpTestSlice = make(map[string]bool)
-	SINGLE_ROUND:
+		looper := NewSafeLooperWithInterval(loop, loopInterval*1000)
+	LOOP:
 		for {
-			// DT
-			if !dltOnly {
-				if len(dtTaskCache) < dtWorkerThread {
-					dtTaskCache = append(dtTaskCache, thisSourceIPs.RetrieveSome(dtWorkerThread, !testAll)...)
-				}
-				// no more sources for testing
-				t_dt_sources_len := len(dtTaskCache)
-				if t_dt_sources_len == 0 {
-					break SINGLE_ROUND
-				}
-				// // print stat
-				// if debug {
-				// 	(overAllStat{
-				// 		dtTasksDone:  dtDoneTasks,
-				// 		dtOnGoing:    0,
-				// 		dtCached:     len(dtTaskCache),
-				// 		dltTasksDone: dltDoneTasks,
-				// 		dltOnGoing:   0,
-				// 		dltCached:    len(dltTaskCache),
-				// 		resultCount:  len(tmpResultMap),
-				// 	})
-				// }
-				// put task
-				t_dt_task_size := min(dtWorkerThread, t_dt_sources_len)
-				go func() {
-					max_failure := get_max_failure(true)
-					for _, taskIP := range dtTaskCache[:t_dt_task_size] {
-						t := NewTask(taskIP, max_failure)
-						dtTaskChan <- t
+			dtDoneTasks := 0
+			// the item in dtTaskCache is a ip string.
+			dtTaskCache := make([]*string, 0)
+			dltDoneTasks := 0
+			// the item in dltTaskCache is a ip string.
+			dltTaskCache := make([]*string, 0)
+			// the key of cachedMap should be: <ipv4:port> or <[ipv6]:port>, should not be just a ip string.
+			cachedMap := make(map[string]VerifyResults)
+			haveEnoughResult := false
+			// reset ResultIPSlice while do LOOP
+			tmpTestSlice = make(map[string]bool)
+		SINGLE_ROUND:
+			for {
+				// DT
+				if !dltOnly {
+					// time now is late then start_time + testTimeout
+					// testTimeout in minutes
+					if time.Since(start_time) >= time.Duration(testTimeout)*time.Minute {
+						break SINGLE_ROUND
 					}
-					// dtTaskCache = make([]*string, 0)
-				}()
-				// retrieve from dtResultChan
-				for range t_dt_task_size {
-					dtResult := <-dtResultChan
-					// if ip not test then put it into dltTaskChan
-					dtDoneTasks += 1
-					var tVerifyResult = calcResult(dtResult, false)
-					if validDTResult(&tVerifyResult) {
-						if !dtOnly { // there are download test ongoing
-							// put ping test result to cachedMap for later
-							cachedMap[*tVerifyResult.ip] = tVerifyResult
-							dltTaskCache = append(dltTaskCache, tVerifyResult.ip)
-							// debug msg, show only in debug mode
+					if len(dtTaskCache) < dtWorkerThread {
+						dtTaskCache = append(dtTaskCache, thisSourceIPs.RetrieveSome(dtWorkerThread, !testAll)...)
+					}
+					// no more sources for testing
+					t_dt_sources_len := len(dtTaskCache)
+					if t_dt_sources_len == 0 {
+						break SINGLE_ROUND
+					}
+					// // print stat
+					// if debug {
+					// 	(overAllStat{
+					// 		dtTasksDone:  dtDoneTasks,
+					// 		dtOnGoing:    0,
+					// 		dtCached:     len(dtTaskCache),
+					// 		dltTasksDone: dltDoneTasks,
+					// 		dltOnGoing:   0,
+					// 		dltCached:    len(dltTaskCache),
+					// 		resultCount:  len(tmpResultMap),
+					// 	})
+					// }
+					// put task
+					t_dt_task_size := min(dtWorkerThread, t_dt_sources_len)
+					go func() {
+						max_failure := get_max_failure(true)
+						for _, taskIP := range dtTaskCache[:t_dt_task_size] {
+							t := NewTask(taskIP, max_failure)
+							dtTaskChan <- t
+						}
+						// dtTaskCache = make([]*string, 0)
+					}()
+					// retrieve from dtResultChan
+					for range t_dt_task_size {
+						dtResult := <-dtResultChan
+						// if ip not test then put it into dltTaskChan
+						dtDoneTasks += 1
+						var tVerifyResult = calcResult(dtResult, false)
+						t_ip := *tVerifyResult.ip
+						if validDTResult(&tVerifyResult) {
+							if !dtOnly { // there are download test ongoing
+								// put ping test result to cachedMap for later
+								cachedMap[t_ip] = tVerifyResult
+								dltTaskCache = append(dltTaskCache, &t_ip)
+								// debug msg, show only in debug mode
+								if debug {
+									displayDetails(false, looper.Status() > -1, []VerifyResults{tVerifyResult})
+								}
+							} else { // Download test disabled
+								// update loc when --resolve-loc is enabled and it is in silent mode and we are not in LOOP
+								if ResolveLoc && silenceMode && looper.Status() == -1 && (tVerifyResult.loc == nil || len(*tVerifyResult.loc) == 0) {
+									loc := getGeoInfoFromCF(tVerifyResult.ip)
+									tVerifyResult.loc = &loc
+								}
+								// combine tmpResultMap with tmpResultMap[t_ip]
+								v, ok := tmpResultMap[t_ip]
+								if ok {
+									tVerifyResult.combine(v)
+								}
+								tmpResultMap[t_ip] = tVerifyResult
+								// non-debug msg
+								displayDetails(false, looper.Status() > -1, []VerifyResults{tVerifyResult})
+								tmpTestSlice[t_ip] = true
+								// we have expected result, break LOOP
+								// TODO: this is a dirty way
+								if !testAll && len(tmpTestSlice) >= t_result_min {
+									haveEnoughResult = true
+								}
+							}
+						} else {
+							// update tmpResultMap[*tVerifyResult.ip] with tVerifyResult while in LOOP mode
+							if looper.InLooping() {
+								v, ok := tmpResultMap[t_ip]
+								if ok {
+									tVerifyResult.combine(v)
+								}
+								tmpResultMap[t_ip] = tVerifyResult
+							}
+							// debug msg
 							if debug {
 								displayDetails(false, looper.Status() > -1, []VerifyResults{tVerifyResult})
 							}
-						} else { // Download test disabled
+						}
+					}
+					// cut out the used source from dtTaskCache
+					if t_dt_task_size < t_dt_sources_len {
+						dtTaskCache = dtTaskCache[t_dt_task_size:]
+					} else {
+						dtTaskCache = make([]*string, 0)
+					}
+					if debug {
+						displayStat(overAllStat{
+							dtTasksDone:  dtDoneTasks,
+							dtOnGoing:    0,
+							dtCached:     len(dtTaskCache),
+							dltTasksDone: dltDoneTasks,
+							dltOnGoing:   0,
+							dltCached:    len(dltTaskCache),
+							resultCount:  len(tmpTestSlice),
+							remain:       thisSourceIPs.LenInt(),
+						})
+					}
+				}
+				//DLT
+				if !dtOnly {
+					// time now is late then start_time + testTimeout
+					// testTimeout in minutes
+					if time.Since(start_time) >= time.Duration(testTimeout)*time.Minute {
+						break SINGLE_ROUND
+					}
+					// no source to do DLT
+					if len(dltTaskCache) <= dltWorkerThread {
+						// DT enabled, just continue to do DT
+						if !dltOnly {
+							if len(dltTaskCache) == 0 {
+								continue
+							}
+						} else {
+							// retrieve source IP
+							dltTaskCache = append(dltTaskCache, thisSourceIPs.RetrieveSome(dltWorkerThread, !testAll)...)
+							if len(dltTaskCache) == 0 {
+								break SINGLE_ROUND
+							}
+						}
+					}
+					t_dlt_sources_len := len(dltTaskCache)
+					// print stat
+					// if debug {
+					// 	displayStat(overAllStat{
+					// 		dtTasksDone:  dtDoneTasks,
+					// 		dtOnGoing:    0,
+					// 		dtCached:     len(dtTaskCache),
+					// 		dltTasksDone: dltDoneTasks,
+					// 		dltOnGoing:   0,
+					// 		dltCached:    t_dlt_sources_len,
+					// 		resultCount:  len(tmpResultMap),
+					// 		remain:       thisSourceIPs.LenInt(),
+					// 	})
+					// }
+					// put task
+					// this round we will test all valid IPs from DT;
+					// if dltOnly, we will just test min(dltWorkerThread, t_dlt_sources_len) IPs;
+					t_dlt_task_size := dltWorkerThread
+					if t_dlt_sources_len < t_dlt_task_size || !dltOnly {
+						t_dlt_task_size = t_dlt_sources_len
+					}
+					go func() {
+						max_failure := get_max_failure(false)
+						for _, taskIP := range dltTaskCache[:t_dlt_task_size] {
+							t := NewTask(taskIP, max_failure)
+							dltTaskChan <- t
+						}
+						// dltTaskCache = make([]*string, 0)
+					}()
+					// retrieve result
+					for range t_dlt_task_size {
+						out := <-dltResultChan
+						dltDoneTasks += 1
+						var tVerifyResult = calcResult(out, true)
+						t_ip := *tVerifyResult.ip
+						if !dltOnly {
+							v := cachedMap[t_ip]
+							// reset TestTime according download test result
+							tVerifyResult.combine(v)
+							cachedMap[t_ip] = tVerifyResult
+						}
+						// tVerifyResult = v
+						// check speed and data size downloaded
+						if validDLTResult(&tVerifyResult) && (dltOnly || (!dltOnly && validDTResult(&tVerifyResult))) {
 							// update loc when --resolve-loc is enabled and it is in silent mode and we are not in LOOP
 							if ResolveLoc && silenceMode && looper.Status() == -1 && (tVerifyResult.loc == nil || len(*tVerifyResult.loc) == 0) {
-								loc := getGeoInfoFromCF(tVerifyResult.ip)
+								loc := getGeoInfoFromCF(&t_ip)
 								tVerifyResult.loc = &loc
 							}
-							// combine tmpResultMap with tmpResultMap[*tVerifyResult.ip]
-							v, ok := tmpResultMap[*tVerifyResult.ip]
-							if !ok {
-								tmpResultMap[*tVerifyResult.ip] = tVerifyResult
-							} else {
+							// combine tmpResultMap with tmpResultMap[t_ip]
+							v, ok := tmpResultMap[t_ip]
+							if ok {
 								tVerifyResult.combine(v)
-								tmpResultMap[*tVerifyResult.ip] = tVerifyResult
 							}
-							// non-debug msg
-							displayDetails(false, looper.Status() > -1, []VerifyResults{tVerifyResult})
-							tmpTestSlice[*tVerifyResult.ip] = true
-							// we have expected result, break LOOP
-							// TODO: this is a dirty way
-							if !testAll && len(tmpTestSlice) >= resultMin {
+							tmpResultMap[t_ip] = tVerifyResult
+							tmpTestSlice[t_ip] = true
+							// we have expected result
+							if !testAll && len(tmpTestSlice) >= t_result_min {
 								haveEnoughResult = true
 							}
-						}
-					} else if debug {
-						// update tmpResultMap[*tVerifyResult.ip] with tVerifyResult while in LOOP mode
-						if looper.InLooping() {
-							v, ok := tmpResultMap[*tVerifyResult.ip]
-							if !ok {
-								tmpResultMap[*tVerifyResult.ip] = tVerifyResult
-							} else {
-								tVerifyResult.combine(v)
-								tmpResultMap[*tVerifyResult.ip] = tVerifyResult
+							displayDetails(true, looper.Status() > -1, []VerifyResults{tVerifyResult})
+						} else {
+							// update tmpResultMap[t_ip] with tVerifyResult while in LOOP mode
+							if looper.InLooping() {
+								v, ok := tmpResultMap[t_ip]
+								if ok {
+									tVerifyResult.combine(v)
+								}
+								tmpResultMap[t_ip] = tVerifyResult
+							}
+							// debug msg
+							if debug {
+								displayDetails(true, looper.Status() > -1, []VerifyResults{tVerifyResult})
 							}
 						}
-						// debug msg
-						displayDetails(false, looper.Status() > -1, []VerifyResults{tVerifyResult})
-					}
-				}
-				// cut out the used source from dtTaskCache
-				if t_dt_task_size < t_dt_sources_len {
-					dtTaskCache = dtTaskCache[t_dt_task_size:]
-				} else {
-					dtTaskCache = make([]*string, 0)
-				}
-				if debug {
-					displayStat(overAllStat{
-						dtTasksDone:  dtDoneTasks,
-						dtOnGoing:    0,
-						dtCached:     len(dtTaskCache),
-						dltTasksDone: dltDoneTasks,
-						dltOnGoing:   0,
-						dltCached:    len(dltTaskCache),
-						resultCount:  len(tmpTestSlice),
-						remain:       thisSourceIPs.LenInt(),
-					})
-				}
-			}
-			//DLT
-			if !dtOnly {
-				// no source to do DLT
-				if len(dltTaskCache) <= dltWorkerThread {
-					// DT enabled, just continue to do DT
-					if !dltOnly {
-						if len(dltTaskCache) == 0 {
-							continue
-						}
-					} else {
-						// retrieve source IP
-						dltTaskCache = append(dltTaskCache, thisSourceIPs.RetrieveSome(dltWorkerThread, !testAll)...)
-						// no source IP, break LOOP
-						if len(dltTaskCache) == 0 {
-							break SINGLE_ROUND
-						}
-					}
-				}
-				t_dlt_sources_len := len(dltTaskCache)
-				// print stat
-				// if debug {
-				// 	displayStat(overAllStat{
-				// 		dtTasksDone:  dtDoneTasks,
-				// 		dtOnGoing:    0,
-				// 		dtCached:     len(dtTaskCache),
-				// 		dltTasksDone: dltDoneTasks,
-				// 		dltOnGoing:   0,
-				// 		dltCached:    t_dlt_sources_len,
-				// 		resultCount:  len(tmpResultMap),
-				// 		remain:       thisSourceIPs.LenInt(),
-				// 	})
-				// }
-				// put task
-				t_dlt_task_size := dltWorkerThread
-				if t_dlt_sources_len < t_dlt_task_size || !dltOnly {
-					t_dlt_task_size = t_dlt_sources_len
-				}
-				go func() {
-					max_failure := get_max_failure(false)
-					for _, taskIP := range dltTaskCache[:t_dlt_task_size] {
-						t := NewTask(taskIP, max_failure)
-						dltTaskChan <- t
-					}
-					// dltTaskCache = make([]*string, 0)
-				}()
-				// retrieve result
-				for range t_dlt_task_size {
-					out := <-dltResultChan
-					dltDoneTasks += 1
-					var tVerifyResult = calcResult(out, true)
-					if !dltOnly {
-						v := cachedMap[*tVerifyResult.ip]
-						// reset TestTime according download test result
-						tVerifyResult.combine(v)
-						cachedMap[*tVerifyResult.ip] = tVerifyResult
-					}
-					// tVerifyResult = v
-					// check speed and data size downloaded
-					if validDLTResult(&tVerifyResult) && (dltOnly || (!dltOnly && validDTResult(&tVerifyResult))) {
-						// update loc when --resolve-loc is enabled and it is in silent mode and we are not in LOOP
-						if ResolveLoc && silenceMode && looper.Status() == -1 && (tVerifyResult.loc == nil || len(*tVerifyResult.loc) == 0) {
-							loc := getGeoInfoFromCF(tVerifyResult.ip)
-							tVerifyResult.loc = &loc
-						}
-						// combine tmpResultMap with tmpResultMap[*tVerifyResult.ip]
-						v, ok := tmpResultMap[*tVerifyResult.ip]
-						if !ok {
-							tmpResultMap[*tVerifyResult.ip] = tVerifyResult
-						} else {
-							tVerifyResult.combine(v)
-							tmpResultMap[*tVerifyResult.ip] = tVerifyResult
-						}
-						tmpTestSlice[*tVerifyResult.ip] = true
-						// we have expected result
-						if !testAll && len(tmpTestSlice) >= resultMin {
-							haveEnoughResult = true
-						}
-						displayDetails(true, looper.Status() > -1, []VerifyResults{tVerifyResult})
-					} else {
-						if debug {
-							displayDetails(true, looper.Status() > -1, []VerifyResults{tVerifyResult})
-						}
-					}
 
+					}
+					// cut out the used source from dltTaskCache
+					if t_dlt_task_size < t_dlt_sources_len {
+						dltTaskCache = dltTaskCache[t_dlt_task_size:]
+					} else {
+						dltTaskCache = make([]*string, 0)
+					}
+					if debug {
+						displayStat(overAllStat{
+							dtTasksDone:  dtDoneTasks,
+							dtOnGoing:    0,
+							dtCached:     len(dtTaskCache),
+							dltTasksDone: dltDoneTasks,
+							dltOnGoing:   0,
+							dltCached:    len(dltTaskCache),
+							resultCount:  len(tmpTestSlice),
+							remain:       thisSourceIPs.LenInt(),
+						})
+					}
 				}
-				// ut out the used source from dltTaskCache
-				if t_dlt_task_size < t_dlt_sources_len {
-					dltTaskCache = dltTaskCache[t_dlt_task_size:]
-				} else {
-					dltTaskCache = make([]*string, 0)
-				}
-				if debug {
-					displayStat(overAllStat{
-						dtTasksDone:  dtDoneTasks,
-						dtOnGoing:    0,
-						dtCached:     len(dtTaskCache),
-						dltTasksDone: dltDoneTasks,
-						dltOnGoing:   0,
-						dltCached:    len(dltTaskCache),
-						resultCount:  len(tmpTestSlice),
-						remain:       thisSourceIPs.LenInt(),
-					})
+				if haveEnoughResult {
+					break SINGLE_ROUND
 				}
 			}
-			if haveEnoughResult {
-				break SINGLE_ROUND
+			// if there is no target IP after initial round, break LOOP
+			if len(tmpResultMap) == 0 {
+				break LOOP
+			}
+			// enter loop round after initial round
+			ok := looper.Loop()
+			if !ok {
+				// looper is not valid or finished, break LOOP
+				break LOOP
+			} else { // looper is ready or in progress
+				// do thisSourceIPs reset and set new source ips before loop
+				tmp_slice := make([]string, 0)
+				for k := range tmpResultMap {
+					tmp_slice = append(tmp_slice, k)
+				}
+				newSourceIPs := NewSourceIPs()
+				newSourceIPs.AddFromSlice(tmp_slice, TypeIPv4|TypeIPv6)
+				newSourceIPs.AddPorts(portStrSlice)
+				thisSourceIPs = newSourceIPs
+				// set t_result_min to len(tmpTestSlice) while we don't do testAll
+				// to perform testing all target in tmpTestSlice
+				if !testAll {
+					t_result_min = len(tmp_slice)
+				}
+				looper_interval := float64(looper.GetInterval()) / 1000.0
+				next_round := looper.GetRound()
+				myLogger.Debugf("sleep %v seconds for loop round %d\n", looper_interval, next_round)
+				looper.Sleep()
 			}
 		}
-		// if there is no target IP after initial round, break LOOP
-		if len(tmpResultMap) == 0 {
-			break LOOP
-		}
-		// enter loop round after initial round
-		ok := looper.Loop()
-		if !ok {
-			// looper is not valid or finished, break LOOP
-			break LOOP
-		} else { // looper is ready or in progress
-			// do thisSourceIPs reset and set new source ips before loop
-			tmp_slice := make([]string, 0)
-			for k := range tmpResultMap {
-				tmp_slice = append(tmp_slice, k)
+		// Validate IPs and populate verifyResultsMap
+		for tIP := range tmpTestSlice {
+			tr := tmpResultMap[tIP]
+			isValid := true
+			if !dltOnly && !validDTResult(&tr) {
+				isValid = false
 			}
-			thisSourceIPs.Reset()
-			thisSourceIPs.AddFromSlice(tmp_slice, TypeIPv4|TypeIPv6)
-			thisSourceIPs.AddPorts(portStrSlice)
-			// set resultMin to len(tmpTestSlice) while we don't do testAll
-			// to perform testing all target in tmpTestSlice
-			if !testAll {
-				resultMin = len(tmp_slice)
+			if !dtOnly && !validDLTResult(&tr) {
+				isValid = false
 			}
-			looper_interval := float64(looper.GetInterval()) / 1000.0
-			next_round := looper.GetRound()
-			myLogger.Debugf("sleep %v seconds for loop round %d\n", looper_interval, next_round)
-			looper.Sleep()
+			if isValid {
+				verifyResultsMap[tIP] = tr
+			}
 		}
-	}
-	for tIP := range tmpTestSlice {
-		tr := tmpResultMap[tIP]
-		isValid := true
-		if !dltOnly && !validDTResult(&tr) {
-			isValid = false
-		}
-		if !dtOnly && !validDLTResult(&tr) {
-			isValid = false
-		}
-		if isValid {
-			verifyResultsMap[tIP] = tmpResultMap[tIP]
+		thisSourceIPs = srcIPs
+		if (!testAll && len(verifyResultsMap) >= resultMin) || thisSourceIPs.IsEmpty() {
+			break RETRY_LOOP
+		} else if time.Since(start_time) >= time.Duration(testTimeout)*time.Minute {
+			break RETRY_LOOP
+		} else {
+			// reset t_result_min
+			t_result_min = resultMin - len(verifyResultsMap)
+			// reset verifyResultsMap
+			verifyResultsMap = make(map[string]VerifyResults)
 		}
 	}
 	// update statistic just before quit controller
