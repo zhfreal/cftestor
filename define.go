@@ -206,153 +206,140 @@ var (
 
 var (
 	maxHostLenBig                           = big.NewInt(maxHostLen)
-	ipFile                                  string
 	version, buildTag, buildDate, buildHash string = "dev", "dev", "dev", "dev"
-	// srcIPRsRaw                              []*ipRange // CIDR slice
-	// srcIPRsExtracted                        []net.IP   // net.IP slice
-	// srcHosts                                []*string  // slice stored host: <ip>:<port>
-	ipStr                                  []string
-	dtCount, dtWorkerThread                int
-	dltDurMax, dltWorkerThread             int
-	dltCount, resultMin                    int
-	interval, dtEvaluationDelay, dtTimeout int
-	dtStdExp                               float64
-	hostName, dltUrl, dtSource, dtUrl      string
-	dltTimeout, loop, testTimeout          int
-	loopInterval                           int // in seconds
-	dtEvaluationDTPR, dltEvaluationSpeed   float64
-	dtHttps, disableDownload               bool
-	dtVia                                  string
-	dtHttpRspReturnCodeExpected            int
-	enableDTEvaluation                     bool
-	ipv4Mode, ipv6Mode, dtOnly, dltOnly    bool
-	tlsClientID                            utls.ClientHelloID = utls.HelloChrome_Auto
-	userAgent                              string             = userAgentChrome
-	storeToFile, storeToDB, testAll, debug bool
-	resolveLocalASNAndCity, enableStdEv    bool
-	resultFile, suffixLabel, dbFile        string
-	myLogger                               MyLogger
-	loggerLevel                            LogLevel
-	httpRspTimeoutDuration                 time.Duration
-	dtTimeoutDuration                      time.Duration
-	dltDurationInTotal                     time.Duration
-	verifyResultsMap                       = make(map[string]VerifyResults)
-	myRand                                 = newRand()
-	srcIPs                                 = NewSourceIPsWithRand(myRand)
-	portStrSlice                           []string
-	// LoopStatus                             *SafeLooper
-	// titleRuntime                            *string
-	// titlePre                                [2][4]string
-	// titleTasksStat                          [2]*string
-	// detailTitleSlice                        []string
-	// resultStrSlice, debugStrSlice           [][]*string
-	// termAll                                 *tcell.Screen
-	// titleStyle                              = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorWhite)
-	// normalStyle                             = tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorWhite)
-	// titleStyleCancel                        = tcell.StyleDefault.Foreground(tcell.ColorBlack.TrueColor()).Background(tcell.ColorGray)
-	// contentStyle                            = tcell.StyleDefault
-	// maxResultsDisplay                       = 10
-	// maxDebugDisplay                         = 10
-	// titleRuntimeRow                         = 0
-	// titlePreRow                             = titleRuntimeRow + 2
-	// titleCancelRow                          = titlePreRow + 3
-	// titleTasksStatRow                       = titleCancelRow + 2
-	// titleResultHintRow                      = titleTasksStatRow + 2
-	// titleResultRow                          = titleResultHintRow + 1
-	// titleDebugHintRow                       = titleResultRow + maxResultsDisplay + 2
-	// titleDebugRow                           = titleDebugHintRow + 1
-	// titleCancel                             = "Press ESC to cancel!"
-	// titleCancelConfirm                      = "Press ENTER to confirm; Any other key to back!"
-	// titleWaitQuit                           = "Waiting for exit..."
-	// titleResultHint                         = "Result:"
-	// titleDebugHint                          = "Debug Msg:"
-	// cancelSigFromTerm                       = false
-	// terminateConfirm                        = false
-	// resultStatIndent                        = 9
-	// dtThreadsNumLen, dltThreadsNumLen       = 0, 0
-	// tcellMode   = false
-	fastMode    = false
-	silenceMode = false
-	ResolveLoc  = false
-	// statInterval                                   = statisticIntervalNT
-	appArt string = `
+	ipStr                                   []string
+	myLogger                                MyLogger
+	loggerLevel                             LogLevel
+	verifyResultsMap                        = make(map[string]VerifyResults)
+	myRand                                  = newRand()
+	srcIPs                                  = NewSourceIPsWithRand(myRand)
+	appArt                                  string = `
   ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
   ░█░░░█▀▀░░█░░█▀▀░▀▀█░░█░░█░█░█▀▄
   ░▀▀▀░▀░░░░▀░░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀
 `
 )
 
+type AppConfig struct {
+	IPFile                      string
+	DTCount                     int
+	DTWorkerThread              int
+	DLTDurMax                   int
+	DLTWorkerThread             int
+	DLTCount                    int
+	ResultMin                   int
+	Interval                    int
+	DTEvaluationDelay           int
+	DTTimeout                   int
+	DTStdExp                    float64
+	HostName                    string
+	DLTUrl                      string
+	DTSource                    string
+	DTUrl                       string
+	DLTTimeout                  int
+	Loop                        int
+	TestTimeout                 int
+	LoopInterval                int
+	DTEvaluationDTPR            float64
+	DLTEvaluationSpeed          float64
+	DTHttps                     bool
+	DisableDownload             bool
+	DTVia                       string
+	DTHttpRspReturnCodeExpected int
+	EnableDTEvaluation          bool
+	IPv4Mode                    bool
+	IPv6Mode                    bool
+	DTOnly                      bool
+	DLTOnly                     bool
+	TLSClientID                 utls.ClientHelloID
+	UserAgent                   string
+	StoreToFile                 bool
+	StoreToDB                   bool
+	TestAll                     bool
+	Debug                       bool
+	ResolveLocalASNAndCity      bool
+	EnableStdEv                 bool
+	ResultFile                  string
+	SuffixLabel                 string
+	DBFile                      string
+	HttpRspTimeoutDuration      time.Duration
+	DTTimeoutDuration           time.Duration
+	DLTDurationInTotal          time.Duration
+	PortStrSlice                []string
+	FastMode                    bool
+	SilenceMode                 bool
+	ResolveLoc                  bool
+	NoCache                     bool
+}
+
+var Config AppConfig = AppConfig{
+	TLSClientID: utls.HelloChrome_Auto,
+	UserAgent:   userAgentChrome,
+}
+
 var help = `Usage: ` + runTime + ` [options]
-Options:
-    -s, --ip            string          Specify IP, CIDR, or host for testing. Examples: "-s 1.0.0.1", "-s 1.0.0.1/32",
-                                        "-s 1.0.0.1/24", "-s 1.1.1.1:2053".
-    -i, --in            string          Specify a file for testing, containing multiple lines. Each line
-                                        represents one IP, CIDR, or host.
-    -p, --port          int             Specify port(s) to test. Can be a single port or a range, e.g.,
-                                        "-p 443-800,1000:1300;8443|8444 -p 10000-12000|13333".
-                                        Ports should support SSL/TLS/HTTPS protocols. Default is 443.
-    -m, --dt-thread     int             Number of concurrent threads for Delay Test (DT). Default is 20 threads.
-    -t, --dt-timeout    int             Timeout for a single DT in milliseconds. Default is 2000ms for SSL mode
-                                        and 5000ms for HTTPS mode. Should not be less than "-k|--evaluate-dt-delay".
-    -c, --dt-count      int             Number of DT attempts per IP. Default is 2.
-        --hostname      string          Hostname for DT testing. Valid when "--dt-only" is off and
-                                        "--dt-via https" is not provided.
-        --dt-via <https|tls|ssl>        Perform DT via HTTPS, TLS, or SSL. Default is HTTPS.
-        --dt-expect-code <status_code>  Expected HTTP status code for DT testing when using '--dt-via https'.
-                                        Default is 200.
-        --dt-url        string          Specify a test URL for DT. Ensure the URL is valid, reachable, and uses HTTPS.
-                                        For custom ports, use "--port" or provide them with IPs using "-s" or "-i".
-        --ev-dt                         Enable DT evaluation. Evaluates delay using "-c|--dt-count <value>".
-                                        Without this, DT stops after the first successful attempt. When enabled,
-                                        results are evaluated using "-k|--evaluate-dt-delay <value>" and
-                                        "-S|--evaluate-dt-dtpr <value>". Default is off.
-    -k, --ev-dt-delay   int             Maximum delay for a single DT in milliseconds. Default is 600ms.
-        --ev-dt-dtpr    float           Minimum DT pass rate as a percentage. Default is 100% (all DTs must pass).
-        --ev-dt-std     float           Expected standard deviation for DT evaluation. If enabled and set to a value
-                                        greater than 0, delays are evaluated against this value.
-    -n, --dlt-thread    int             Number of concurrent threads for Download Test (DLT). Default is 1.
-    -d, --dlt-period    int             Total duration for a single DLT in seconds. Default is 10s.
-    -b, --dlt-count     int             Number of DLT attempts per IP. Default is 1.
-    -u, --dlt-url       string          Specify a test URL for DLT. Ensure the URL is valid, reachable, and uses HTTPS.
-                                        For custom ports, use "--port" or provide them with IPs using "-s" or "-i".
-        --dlt-timeout   int             Timeout for HTTP response during DLT in milliseconds. Default is 5000ms.
-    -I, --interval      int             Interval between tests in milliseconds. Default is 500ms.
-    -l, --speed         float           Minimum download speed filter in KB/s. Default is 6000KB/s.
-    -r, --result        int             Maximum number of qualified IPs. Default is 10. Ignored if "--test-all" is set.
-        --dt-only                       Perform only DT. By default, both DT and DLT are performed.
-        --dlt-only                      Perform only DLT. By default, both DT and DLT are performed.
-        --fast                          Enable fast mode using internal IPs for quick detection. Works only when
-                                        neither "-s/--ip" nor "-i/--in" is provided. Default is off.
-        --loop          int             Number of loop rounds. Default is disabled.
-        --loop-interval int             Interval between loops in seconds. Default is 60s.
-    -4, --ipv4                          Test only IPv4. If no IPs are specified with "-s" or "-i", tests IPv4
-                                        using built-in CloudFlare IPs by default.
-    -6, --ipv6                          Test only IPv6. If no IPs are specified with "-s" or "-i", tests IPv6
-                                        using built-in CloudFlare IPs with this flag.
-        --hello-firefox                 Simulate Firefox for TLS/HTTPS.
-        --hello-chrome                  Simulate Chrome for TLS/HTTPS.
-        --hello-edge                    Simulate Microsoft Edge for TLS/HTTPS.
-        --hello-safari                  Simulate Safari for TLS/HTTPS.
-    --test-timeout int                  Test timeout in minutes. Default is 30m.
-    -a, --test-all                      Test all IPs until none are left. Default is off.
-    -w, --to-file                       Write results to a CSV file. Default is off. If enabled and
-                                        "-o|--result-file <value>" is not provided, the file is named
-                                        "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and stored in the current directory.
-    -o, --out-file      string          Specify the result file name. If not provided and "-w|--to-file" is enabled,
-                                        the file is named "Result_<YYYYMMDDHHMISS>-<HOSTNAME>.csv" and stored in
-                                        the current directory.
-    -e, --to-db                         Write results to an SQLite3 database. Default is off. If enabled and
-                                        "-f|--db-file" is not provided, the file is named "ip.db" and stored in
-                                        the current directory.
-        --local-asn                     Retrieve local ASN and city information. Default is off.
-        --resolve-loc                   Attempt to resolve location.
-    -f, --db-file       string          Specify the SQLite3 database file name. If not provided and "-e|--to-db"
-                                        is enabled, the file is named "ip.db" and stored in the current directory.
-    -g, --label         string          Label for the result file name and SQLite3 record. Defaults to the hostname
-                                        from "--hostname" or "-u|--url".
-    -S, --silence                       Enable silence mode.
-    -V, --debug                         Print debug messages. Activates "--debug".
-    -v, --version                       Display version information.
+
+Core Options:
+    -s, --ip           strings    Specify IP, CIDR, or host for testing. Examples: "-s 1.0.0.1", "-s 1.0.0.1/24",
+                                  "-s 1.1.1.1:2053". Can be provided multiple times.
+    -i, --in           string     Path to a file containing IPs, CIDRs, or hosts (one per line).
+    -p, --port         strings    Specify port(s) to test. Supports single ports, ranges, and lists (e.g.,
+                                  "443", "80-443", "443,8443"). Default: 443.
+    -a, --test-all                Test all provided IPs until none remain. Default: off.
+    -r, --result       int        Maximum number of qualified IPs to find. Default: 10. Ignored if --test-all is set.
+        --fast                    Use a limited set of internal Cloudflare IPs for quick scanning.
+    -4, --ipv4                    Test IPv4 only. Default: on (if no IPs specified).
+    -6, --ipv6                    Test IPv6 only. Default: off.
+
+Delay Test (DT) Options:
+    -m, --dt-thread    int        Number of concurrent DT threads. Default: 20.
+    -t, --dt-timeout   int        Timeout for a single DT in ms. Default: 2000 (SSL) or 5000 (HTTPS).
+    -c, --dt-count     int        Number of DT attempts per IP. Default: 2.
+        --dt-via       string     DT protocol: "https", "tls", or "ssl". Default: https.
+        --dt-url       string     URL to use for HTTPS-based DT. Default: ` + defaultDTUrl + `
+        --dt-expect-code int      Expected HTTP status code for DT. Default: 200.
+        --ev-dt                   Enable DT evaluation (uses all attempts). Default: off.
+    -k, --ev-dt-delay  int        Maximum allowed average delay in ms. Default: 600.
+        --ev-dt-dtpr   float      Minimum required DT pass rate (percentage). Default: 100.0.
+        --ev-dt-std    float      Maximum allowed standard deviation for DT. Default: 30.0 (if enabled).
+
+Download Test (DLT) Options:
+    -n, --dlt-thread   int        Number of concurrent DLT threads. Default: 1.
+    -d, --dlt-period   int        Maximum duration for a single DLT in seconds. Default: 10.
+    -b, --dlt-count    int        Number of DLT attempts per IP. Default: 1.
+    -u, --dlt-url      string     URL to use for DLT. Default: ` + defaultDLTUrl + `
+        --dlt-timeout  int        HTTP response timeout for DLT in ms. Default: 5000.
+    -l, --speed        float      Minimum required download speed in KB/s. Default: 6000.
+    -I, --interval     int        Interval between test attempts in ms. Default: 500.
+        --no-cache                Bypass CDN/Proxy caching by adding "Cache-Control: no-cache" headers.
+
+Mode Options:
+        --dt-only                 Perform Delay Test only.
+        --dlt-only                Perform Download Test only.
+        --loop         int        Number of complete scan cycles (loops) to perform.
+        --loop-interval int       Seconds to wait between loop cycles. Default: 60.
+        --test-timeout int        Total test timeout in minutes. Default: 30.
+
+Fingerprinting Options:
+        --hello-firefox           Simulate Firefox TLS fingerprint.
+        --hello-chrome            Simulate Chrome TLS fingerprint (Default).
+        --hello-edge              Simulate Edge TLS fingerprint.
+        --hello-safari            Simulate Safari TLS fingerprint.
+
+Output & Storage Options:
+    -w, --to-file                 Save results to a CSV file.
+    -o, --out-file     string     Path for the output CSV file.
+    -e, --to-db                   Save results to a SQLite3 database.
+    -f, --db-file      string     Path for the SQLite3 database file.
+    -g, --label        string     Label for records (defaults to hostname).
+        --resolve-loc             Attempt to resolve and display geographic location.
+        --local-asn               Retrieve and store local ASN/City info.
+
+General Options:
+    -S, --silence                 Enable silence mode (minimal output).
+    -V, --debug                   Print detailed debug logs.
+    -v, --version                 Show version information and exit.
+    -h, --help                    Show this help message.
 `
 
 // type arrayFlags []string
@@ -618,92 +605,64 @@ func (ipr *ipRange) String() string {
 }
 
 func (ipr *ipRange) Extract(num int) (IPList []net.IP) {
-	if !ipr.isValid() {
-		return
-	}
-	// num should greater than 0
-	if num <= 0 {
-		return
-	}
-	// no more ip for extracted
-	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
+	if !ipr.isValid() || num <= 0 || ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
 		return
 	}
 	numBig := big.NewInt(int64(num))
-	size := ipr.length()
-	// no enough IPs to extract
-	if size.Cmp(numBig) == -1 {
-		num = int(size.Int64())
+	if ipr.Len.Cmp(numBig) == -1 {
+		num = int(ipr.Len.Int64())
+		numBig = big.NewInt(int64(num))
 	}
-	newIP := ipr.IPStart
-	IPList = append(IPList, newIP)
-	num--
-	for num > 0 {
-		num_in_bytes := makeBytes(uint(1), len(newIP))
-		newIP = ipShift(newIP, num_in_bytes)
-		// some error shown
-		if newIP == nil {
-			return
+
+	for i := 0; i < num; i++ {
+		n := big.NewInt(int64(i))
+		num_in_bytes := fillBytes(n.Bytes(), len(ipr.IPStart))
+		newIP := ipShift(ipr.IPStart, num_in_bytes)
+		if newIP != nil {
+			IPList = append(IPList, newIP)
 		}
-		IPList = append(IPList, newIP)
-		num--
 	}
+
 	// reset IPStart and Extracted
-	// no more IP between newIP and *IPEnd, set Extracted to true
-	if newIP.Equal(ipr.IPEnd) {
+	if numBig.Cmp(ipr.Len) == 0 {
 		ipr.Extracted = true
-		ipr.IPStart = newIP
 		ipr.Len = big.NewInt(0)
+		ipr.IPStart = ipr.IPEnd
 	} else {
-		// reset *IPStart to newIP + 1
-		num_in_bytes := makeBytes(uint(1), len(newIP))
-		ipr.IPStart = ipShift(newIP, num_in_bytes)
+		num_in_bytes := fillBytes(numBig.Bytes(), len(ipr.IPStart))
+		ipr.IPStart = ipShift(ipr.IPStart, num_in_bytes)
 		ipr.Len = ipr.length()
 	}
 	return
 }
 
 func (ipr *ipRange) ExtractReverse(num int) (IPList []net.IP) {
-	if !ipr.isValid() {
-		return
-	}
-	// num should greater than 0
-	if num <= 0 {
-		return
-	}
-	// no more ip for extracted
-	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
+	if !ipr.isValid() || num <= 0 || ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
 		return
 	}
 	numBig := big.NewInt(int64(num))
-	size := ipr.length()
-	// no enough IPs to extract
-	if size.Cmp(numBig) == -1 {
-		return
+	if ipr.Len.Cmp(numBig) == -1 {
+		num = int(ipr.Len.Int64())
+		numBig = big.NewInt(int64(num))
 	}
-	newIP := ipr.IPEnd
-	IPList = append(IPList, newIP)
-	num--
-	for num > 0 {
-		num_in_bytes := makeBytes(uint(1), len(newIP))
-		newIP = ipShiftReverse(newIP, num_in_bytes)
-		// some error shown
-		if newIP == nil {
-			return
+
+	for i := 0; i < num; i++ {
+		n := big.NewInt(int64(i))
+		num_in_bytes := fillBytes(n.Bytes(), len(ipr.IPEnd))
+		newIP := ipShiftReverse(ipr.IPEnd, num_in_bytes)
+		if newIP != nil {
+			IPList = append(IPList, newIP)
 		}
-		IPList = append(IPList, newIP)
-		num--
 	}
-	// reset IPStart and Extracted
-	// no more IP between *IPStart and newIP, set Extracted to true
-	if newIP.Equal(ipr.IPStart) {
+
+	// reset IPEnd and Extracted
+	if numBig.Cmp(ipr.Len) == 0 {
 		ipr.Extracted = true
 		ipr.Len = big.NewInt(0)
-		ipr.IPEnd = newIP
+		ipr.IPEnd = ipr.IPStart
 	} else {
-		// reset *IPEnd to newIP - 1
-		num_in_bytes := makeBytes(uint(1), len(newIP))
-		ipr.IPEnd = ipShiftReverse(newIP, num_in_bytes)
+		num_in_bytes := fillBytes(numBig.Bytes(), len(ipr.IPEnd))
+		ipr.IPEnd = ipShiftReverse(ipr.IPEnd, num_in_bytes)
 		ipr.Len = ipr.length()
 	}
 	return
@@ -826,10 +785,10 @@ func (s *SafeLooper) Ok() bool {
 	return s.status() > 0
 }
 
-func (s *SafeLooper) SetInterval(interval int) {
+func (s *SafeLooper) SetInterval(interv int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.interval = interval
+	s.interval = interv
 }
 
 func (s *SafeLooper) GetInterval() int {
@@ -850,10 +809,10 @@ func (s *SafeLooper) Sleep() {
 	time.Sleep(time.Duration(s.interval) * time.Millisecond)
 }
 
-func (s *SafeLooper) SleepInterval(interval int) {
+func (s *SafeLooper) SleepInterval(interv int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	time.Sleep(time.Duration(interval) * time.Millisecond)
+	time.Sleep(time.Duration(interv) * time.Millisecond)
 }
 
 func NewSafeLooper(t int) *SafeLooper {
@@ -868,9 +827,9 @@ func NewSafeLooper(t int) *SafeLooper {
 	}
 }
 
-func NewSafeLooperWithInterval(t, interval int) *SafeLooper {
+func NewSafeLooperWithInterval(t, interv int) *SafeLooper {
 	s := NewSafeLooper(t)
-	s.SetInterval(interval)
+	s.SetInterval(interv)
 	return s
 }
 
@@ -1047,14 +1006,29 @@ func (s *sourceIPs) AddPorts(srcPorts []string) {
 func (s *sourceIPs) RetrieveSome(amount int, isRand bool) (targetIPs []*string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var t_target = []*string{}
-	targetIPs = append(targetIPs, s.retrieveHosts(amount)...)
-	t_target = append(t_target, s.retrieveIPsFromIPR(amount, isRand)...)
-	for _, ipStr := range t_target {
-		for _, port := range s.ports {
-			host := genHostFromIPStrPort(*ipStr, port)
-			if len(host) > 0 {
-				targetIPs = append(targetIPs, &host)
+
+	// To satisfy the user's need for diversity across ALL sources,
+	// we sample from both hosts and CIDRs.
+	numHosts := len(s.srcHosts)
+	if numHosts > 0 {
+		// Take a portion for hosts, but leave room for CIDRs
+		takeHosts := min(amount/2, numHosts)
+		if takeHosts == 0 {
+			takeHosts = 1
+		}
+		targetIPs = append(targetIPs, s.srcHosts[:takeHosts]...)
+		s.srcHosts = s.srcHosts[takeHosts:]
+	}
+
+	left := amount - len(targetIPs)
+	if left > 0 {
+		t_target := s.retrieveIPsFromIPR(left, isRand)
+		for _, ipStr := range t_target {
+			for _, port := range s.ports {
+				host := genHostFromIPStrPort(*ipStr, port)
+				if len(host) > 0 {
+					targetIPs = append(targetIPs, &host)
+				}
 			}
 		}
 	}
@@ -1062,95 +1036,97 @@ func (s *sourceIPs) RetrieveSome(amount int, isRand bool) (targetIPs []*string) 
 }
 
 func (s *sourceIPs) RetrieveSomeNew(amount int) (targetIPs []*string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var t_target = []*string{}
-	targetIPs = append(targetIPs, s.retrieveHosts(amount)...)
-	t_target = append(t_target, s.retrieveIPsFromIPRNew(amount)...)
-	for _, ipStr := range t_target {
-		for _, port := range s.ports {
-			host := genHostFromIPStrPort(*ipStr, port)
-			if len(host) > 0 {
-				targetIPs = append(targetIPs, &host)
-			}
-		}
-	}
-	return
+	return s.RetrieveSome(amount, false)
 }
 
 func (s *sourceIPs) retrieveHosts(amount int) (targetHosts []*string) {
 	if amount <= 0 || len(s.srcHosts) == 0 {
 		return
 	}
-	t_amount := amount
-	if len(s.srcHosts) < amount {
-		t_amount = len(s.srcHosts)
-	}
+	t_amount := min(amount, len(s.srcHosts))
 	targetHosts = append(targetHosts, s.srcHosts[:t_amount]...)
-	if len(s.srcHosts) <= amount {
-		s.srcHosts = []*string{}
-	} else {
-		s.srcHosts = s.srcHosts[t_amount:]
-	}
+	s.srcHosts = s.srcHosts[t_amount:]
 	return
 }
 
 func (s *sourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*string) {
-	if amount <= 0 || amount < retrieveCount {
-		amount = retrieveCount
+	if amount <= 0 {
+		return
 	}
 
-	t_ips := []net.IP{}
-	for _, ipr := range s.srcIPRsRaw {
-		if isRandom {
-			t_ips = append(t_ips, ipr.GetRandomX(amount)...)
-		} else {
-			t_ips = append(t_ips, ipr.Extract(amount)...)
-		}
+	numRaw := len(s.srcIPRsRaw)
+	hasExtracted := len(s.srcIPRsExtracted) > 0
+	totalGroups := numRaw
+	if hasExtracted {
+		totalGroups++
 	}
-	if len(s.srcIPRsExtracted) > 0 {
-		if len(s.srcIPRsExtracted) <= amount {
-			t_ips = append(t_ips, s.srcIPRsExtracted...)
-			s.srcIPRsExtracted = []net.IP{}
-		} else {
-			t_ips = append(t_ips, s.srcIPRsExtracted[0:amount]...)
-			s.srcIPRsExtracted = s.srcIPRsExtracted[amount:]
-		}
+	if totalGroups == 0 {
+		return nil
 	}
-	for _, t_ip := range t_ips {
-		tIP := t_ip.String()
-		targetIPs = append(targetIPs, &tIP)
+
+	// Calculate a fair share per group to ensure diversity
+	perGroup := amount / totalGroups
+	if perGroup == 0 {
+		perGroup = 1
 	}
-	// randomize
-	myRand.Shuffle(len(targetIPs), func(m, n int) {
-		targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
+
+	// Shuffle indices to ensure fairness across multiple calls
+	indices := make([]int, totalGroups)
+	for i := range indices {
+		indices[i] = i
+	}
+	myRand.Shuffle(len(indices), func(i, j int) {
+		indices[i], indices[j] = indices[j], indices[i]
 	})
-	return
-}
 
-func (s *sourceIPs) retrieveIPsFromIPRNew(amount int) (targetIPs []*string) {
-	if amount <= 0 || amount < retrieveCount {
-		amount = retrieveCount
-	}
+	t_ips := make([]net.IP, 0, amount)
+	for i, idx := range indices {
+		if len(t_ips) >= amount {
+			break
+		}
 
-	t_ips := []net.IP{}
-	for _, ipr := range s.srcIPRsRaw {
-		t_ips = append(t_ips, ipr.Extract(amount)...)
-	}
-	if len(s.srcIPRsExtracted) > 0 {
-		if len(s.srcIPRsExtracted) <= amount {
-			t_ips = append(t_ips, s.srcIPRsExtracted...)
-			s.srcIPRsExtracted = []net.IP{}
+		need := amount - len(t_ips)
+		take := perGroup
+		// On the last group, take whatever is left in the budget
+		if i == len(indices)-1 {
+			take = need
+		}
+		if take > need {
+			take = need
+		}
+
+		if hasExtracted && idx == numRaw {
+			// Pre-extracted pool (small CIDRs)
+			actualTake := min(take, len(s.srcIPRsExtracted))
+			t_ips = append(t_ips, s.srcIPRsExtracted[:actualTake]...)
+			s.srcIPRsExtracted = s.srcIPRsExtracted[actualTake:]
 		} else {
-			t_ips = append(t_ips, s.srcIPRsExtracted[0:amount]...)
-			s.srcIPRsExtracted = s.srcIPRsExtracted[amount:]
+			// Raw CIDR range (large CIDRs)
+			ipr := s.srcIPRsRaw[idx]
+			var extracted []net.IP
+			if isRandom {
+				extracted = ipr.GetRandomX(take)
+			} else {
+				extracted = ipr.Extract(take)
+			}
+			t_ips = append(t_ips, extracted...)
 		}
 	}
+
+	// Cleanup empty ranges
+	for i := 0; i < len(s.srcIPRsRaw); i++ {
+		if s.srcIPRsRaw[i].Len.Cmp(big.NewInt(0)) == 0 {
+			s.srcIPRsRaw = append(s.srcIPRsRaw[:i], s.srcIPRsRaw[i+1:]...)
+			i--
+		}
+	}
+
 	for _, t_ip := range t_ips {
 		tIP := t_ip.String()
 		targetIPs = append(targetIPs, &tIP)
 	}
-	// randomize
+
+	// Shuffle the final batch for extra randomization
 	myRand.Shuffle(len(targetIPs), func(m, n int) {
 		targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
 	})

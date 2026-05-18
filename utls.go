@@ -57,7 +57,8 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 
 	b.startAt = time.Now()
 	var err error
-	b.conn, err = net.DialTimeout("tcp", b.hostWithPort, b.timeout)
+	dialer := net.Dialer{}
+	b.conn, err = dialer.DialContext(req.Context(), "tcp", b.hostWithPort)
 	if err != nil {
 		return nil, fmt.Errorf("tcp net dial fail: %w", err)
 	}
@@ -83,11 +84,12 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 			resp, err = h2_conn.RoundTrip(req)
 		}
 	case "http/1.1", "":
+		// Use a larger buffer for reading the response to improve throughput
 		err = req.Write(b.tlsConn)
 		if err != nil {
 			resp, err = nil, fmt.Errorf("write http1 tls connection fail: %w", err)
 		} else {
-			resp, err = http.ReadResponse(bufio.NewReader(b.tlsConn), req)
+			resp, err = http.ReadResponse(bufio.NewReaderSize(b.tlsConn, 64*1024), req)
 		}
 	default:
 		resp, err = nil, fmt.Errorf("unsupported http version: %s", httpVersion)
@@ -154,18 +156,21 @@ func newHttpClient(helloID utls.ClientHelloID, hostWithPort string, timeout time
 	return client, tr
 }
 
-func performUtlsDial(host string, hostName string, timeout time.Duration, hellID utls.ClientHelloID) bool {
-	dialer := net.Dialer{Timeout: timeout}
-	dialConn, err := dialer.Dial("tcp", host)
+func performUtlsDial(host string, hostNameStr string, timeout time.Duration, hellID utls.ClientHelloID) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	dialer := net.Dialer{}
+	dialConn, err := dialer.DialContext(ctx, "tcp", host)
 	if err != nil {
 		return false
 	}
+
 	conf := &utls.Config{
-		ServerName: hostName,
+		ServerName: hostNameStr,
 	}
 	tlsConn := utls.UClient(dialConn, conf, hellID)
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+
 	err = tlsConn.HandshakeContext(ctx)
 	tlsConn.Close()
 	dialConn.Close()

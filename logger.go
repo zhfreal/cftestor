@@ -264,7 +264,7 @@ func (myLogger *MyLogger) PrintSingleStat(logLvl LogLevel, v []VerifyResults, ov
 	myLogger.PrintOverAllStat(logLvl, ov)
 }
 
-// log when debug or info
+// log when Config.Debug or info
 func (myLogger *MyLogger) PrintDetails(logLvl LogLevel, v []VerifyResults, showSpeed bool) {
 	// no data for print
 	if len(v) == 0 {
@@ -287,13 +287,13 @@ func (myLogger *MyLogger) PrintDetails(logLvl LogLevel, v []VerifyResults, showS
 		}
 		myLogger.Logf(logLvl, "IP:%v%s", t_ip, myLogger.indent)
 		if showSpeed {
-			myLogger.Printf("Speed(KB/s):%.2f%s", lc[i].dls, myLogger.indent)
+			myLogger.Printf("Spd:%.2f%s", lc[i].dls, myLogger.indent)
 		}
-		myLogger.Printf("Delay(ms):%.0f", lc[i].da)
-		myLogger.Printf("%sStab.(%%):%.2f", myLogger.indent, lc[i].dtpr*100)
-		if enableStdEv {
+		myLogger.Printf("Dly:%.0f", lc[i].da)
+		myLogger.Printf("%sStb:%.2f", myLogger.indent, lc[i].dtpr*100)
+		if Config.EnableStdEv {
 			// myLogger.Printf("%sVar.:%.2f", myLogger.indent, lc[i].daVar)
-			myLogger.Printf("%sStd.:%.2f", myLogger.indent, lc[i].daStd)
+			myLogger.Printf("%sStd:%.2f", myLogger.indent, lc[i].daStd)
 		}
 	}
 	myLogger.Println()
@@ -321,25 +321,25 @@ func (myLogger *MyLogger) PrintOverAllStat(logLvl LogLevel, ov overAllStat) {
 	if len(myLogger.indent) == 0 {
 		myLogger.indent = myIndent
 	}
-	myLogger.Logf(logLvl, "==== Result: %d ==== ", ov.resultCount)
+	myLogger.Logf(logLvl, "==== Res: %d ==== ", ov.resultCount)
 	srcCount := ov.remain
-	if !dltOnly {
+	if !Config.DLTOnly {
 		// myLogger.Printf(" | DT - Tested: %d ", ov.dtTasksDone)
 		dtTotal := ov.dtCached + ov.dtTasksDone + ov.dtOnGoing
-		if dtOnly {
+		if Config.DTOnly {
 			dtTotal += srcCount
 		}
 		// myLogger.Printf("Cached: %d", dtCached)
-		myLogger.Printf(" DT: %d/%d ", ov.dtTasksDone, dtTotal)
+		myLogger.Printf(" DT:%d/%d ", ov.dtTasksDone, dtTotal)
 	}
-	if !dtOnly {
+	if !Config.DTOnly {
 		// myLogger.Printf(" DLT - Tested: %d ", ov.dltTasksDone)
 		dltTotal := ov.dltCached + ov.dltTasksDone + ov.dltOnGoing
-		if dltOnly {
+		if Config.DLTOnly {
 			dltTotal += srcCount
 		}
 		// myLogger.Printf("Cached: %d", dltCached)
-		myLogger.Printf(" DLT: %d/%d ", ov.dltTasksDone, dltTotal)
+		myLogger.Printf(" DLT:%d/%d ", ov.dltTasksDone, dltTotal)
 	}
 	myLogger.Println("")
 }

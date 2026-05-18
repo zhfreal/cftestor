@@ -56,8 +56,8 @@ func (a *DBRecord) TableName() string {
 	return TableName
 }
 
-func OpenSqlite(dbFile string) (*gorm.DB, error) {
-	dial := sqlite.Open(dbFile)
+func OpenSqlite(dbFilePath string) (*gorm.DB, error) {
+	dial := sqlite.Open(dbFilePath)
 	return gorm.Open(dial, &gorm.Config{
 		NowFunc: func() time.Time {
 			return time.Now()
