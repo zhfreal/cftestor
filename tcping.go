@@ -117,8 +117,11 @@ func performDownloadRound(host, targetUrl string, httpRspTimeoutDur time.Duratio
 	}
 	tReq.Header.Set("User-Agent", Config.UserAgent)
 	if Config.NoCache {
-		tReq.Header.Set("Cache-Control", "no-cache")
-		tReq.Header.Set("Pragma", "no-cache")
+		// Only apply no-cache for custom user-provided URLs to protect default origin bandwidth.
+		if targetUrl != defaultDTUrl && targetUrl != defaultDLTUrl {
+			tReq.Header.Set("Cache-Control", "no-cache")
+			tReq.Header.Set("Pragma", "no-cache")
+		}
 	}
 
 	t_timeout := httpRspTimeoutDur

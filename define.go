@@ -294,7 +294,7 @@ Core Options:
         --fast                    Use a limited set of internal Cloudflare IPs for quick scanning.
     -4, --ipv4                    Test IPv4 only. Default: on (if no IPs specified).
     -6, --ipv6                    Test IPv6 only. Default: off.
-    -C, --no-cache                Bypass CDN/Proxy caching by adding "Cache-Control: no-cache" headers.
+    -C, --no-cache                Bypass CDN/Proxy caching for custom URLs (ignored for defaults).
 
 Delay Test (DT) Options:
     -m, --dt-thread    int        Number of concurrent DT threads. Default: 20.

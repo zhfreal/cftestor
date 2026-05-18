@@ -25,7 +25,7 @@ IPs that pass both stages are considered "qualified" and are reported to the use
 *   **Real-time Reporting**: Live result updates via terminal as each test completes.
 *   **Reliable Timeouts**: Strict context-based timeout enforcement to prevent worker starvation on slow nodes.
 *   **Multiple Output Formats**: Save results to CSV files or SQLite3 databases for automated processing.
-*   **Cache Control**: Optional `-C`, `--no-cache` flag to bypass CDN/proxy caching for raw performance measurement.
+*   **Cache Control**: Optional `-C`, `--no-cache` flag to bypass CDN/proxy caching for custom test URLs (automatically disabled for default URLs to protect origin bandwidth).
 
 ## Quick Start
 
