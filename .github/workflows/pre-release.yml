@@ -46,6 +46,7 @@ jobs:
       GOAMD64: ${{ matrix.goamd64 }}
       CGO_ENABLED: 0
       BUILDHASH: ${{ github.sha }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Set BUILDDATE and BUILDTAG
