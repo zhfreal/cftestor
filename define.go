@@ -277,16 +277,20 @@ var Config AppConfig = AppConfig{
 	UserAgent:   userAgentChrome,
 }
 
-var help = `Usage: ` + runTime + ` [options]
+var help = appArt + `
+  Find and verify the best Cloudflare CDN edge nodes for your network.
+  https://github.com/zhfreal/cftestor
+
+Usage: cftestor [options]
 
 Core Options:
-    -s, --ip           strings    Specify IP, CIDR, or host for testing. Examples: "-s 1.0.0.1", "-s 1.0.0.1/24",
+    -s, --ip           strings    Specify IP, CIDR, or host. Examples: "-s 1.0.0.1", "-s 1.0.0.1/24",
                                   "-s 1.1.1.1:2053". Can be provided multiple times.
     -i, --in           string     Path to a file containing IPs, CIDRs, or hosts (one per line).
     -p, --port         strings    Specify port(s) to test. Supports single ports, ranges, and lists (e.g.,
                                   "443", "80-443", "443,8443"). Default: 443.
     -a, --test-all                Test all provided IPs until none remain. Default: off.
-    -r, --result       int        Maximum number of qualified IPs to find. Default: 10. Ignored if --test-all is set.
+    -r, --result       int        Maximum number of qualified IPs to find. Default: 10.
         --fast                    Use a limited set of internal Cloudflare IPs for quick scanning.
     -4, --ipv4                    Test IPv4 only. Default: on (if no IPs specified).
     -6, --ipv6                    Test IPv6 only. Default: off.
@@ -297,6 +301,7 @@ Delay Test (DT) Options:
     -c, --dt-count     int        Number of DT attempts per IP. Default: 2.
         --dt-via       string     DT protocol: "https", "tls", or "ssl". Default: https.
         --dt-url       string     URL to use for HTTPS-based DT. Default: ` + defaultDTUrl + `
+        --hostname     string     SNI hostname for SSL/TLS handshake. Default: ` + DefaultTestHost + `
         --dt-expect-code int      Expected HTTP status code for DT. Default: 200.
         --ev-dt                   Enable DT evaluation (uses all attempts). Default: off.
     -k, --ev-dt-delay  int        Maximum allowed average delay in ms. Default: 600.
@@ -311,7 +316,7 @@ Download Test (DLT) Options:
         --dlt-timeout  int        HTTP response timeout for DLT in ms. Default: 5000.
     -l, --speed        float      Minimum required download speed in KB/s. Default: 6000.
     -I, --interval     int        Interval between test attempts in ms. Default: 500.
-        --no-cache                Bypass CDN/Proxy caching by adding "Cache-Control: no-cache" headers.
+    -C, --no-cache                Bypass CDN/Proxy caching by adding "Cache-Control: no-cache" headers.
 
 Mode Options:
         --dt-only                 Perform Delay Test only.

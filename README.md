@@ -25,7 +25,7 @@ IPs that pass both stages are considered "qualified" and are reported to the use
 *   **Real-time Reporting**: Live result updates via terminal as each test completes.
 *   **Reliable Timeouts**: Strict context-based timeout enforcement to prevent worker starvation on slow nodes.
 *   **Multiple Output Formats**: Save results to CSV files or SQLite3 databases for automated processing.
-*   **Cache Control**: Optional `--no-cache` flag to bypass CDN/proxy caching for raw performance measurement.
+*   **Cache Control**: Optional `-C`, `--no-cache` flag to bypass CDN/proxy caching for raw performance measurement.
 
 ## Quick Start
 
@@ -94,7 +94,7 @@ Download Test (DLT) Options:
     -n, --dlt-thread   int        Number of concurrent DLT threads. Default: 1.
     -d, --dlt-period   int        Maximum duration per DLT (seconds). Default: 10.
     -l, --speed        float      Minimum required speed (KB/s). Default: 6000.
-        --no-cache                Bypass CDN/Proxy caching.
+    -C, --no-cache                Bypass CDN/Proxy caching.
 
 Output Options:
     -w, --to-file                 Save results to CSV.

@@ -82,7 +82,7 @@ func init() {
 	flag.StringVarP(&Config.DBFile, "db-file", "f", "", "Sqlite3 db file name.")
 	flag.StringVarP(&Config.SuffixLabel, "label", "g", "", "the label for a part of the result file's name and sqlite3 record.")
 	flag.BoolVar(&Config.ResolveLoc, "resolve-loc", false, "try to resolve location.")
-	flag.BoolVar(&Config.NoCache, "no-cache", false, "disable cdn/proxy caching")
+	flag.BoolVarP(&Config.NoCache, "no-cache", "C", false, "disable cdn/proxy caching")
 
 	flag.BoolVarP(&Config.SilenceMode, "silence", "S", false, "silence mode.")
 	flag.BoolVarP(&Config.Debug, "debug", "V", false, "Print debug message.")
