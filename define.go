@@ -294,6 +294,7 @@ Core Options:
         --fast                    Use a limited set of internal Cloudflare IPs for quick scanning.
     -4, --ipv4                    Test IPv4 only. Default: on (if no IPs specified).
     -6, --ipv6                    Test IPv6 only. Default: off.
+    -C, --no-cache                Bypass CDN/Proxy caching by adding "Cache-Control: no-cache" headers.
 
 Delay Test (DT) Options:
     -m, --dt-thread    int        Number of concurrent DT threads. Default: 20.
@@ -316,7 +317,6 @@ Download Test (DLT) Options:
         --dlt-timeout  int        HTTP response timeout for DLT in ms. Default: 5000.
     -l, --speed        float      Minimum required download speed in KB/s. Default: 6000.
     -I, --interval     int        Interval between test attempts in ms. Default: 500.
-    -C, --no-cache                Bypass CDN/Proxy caching by adding "Cache-Control: no-cache" headers.
 
 Mode Options:
         --dt-only                 Perform Delay Test only.
