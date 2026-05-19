@@ -121,10 +121,9 @@ jobs:
           cd ..
 
       - name: Upload files to GitHub release
-        uses: svenstaro/upload-release-action@v2
+        uses: softprops/action-gh-release@v2
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file_glob: true
-          overwrite: true
-          file: ./dist/cftestor-*
-          tag: ${{ github.ref }}
+          files: ./dist/cftestor-*
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
