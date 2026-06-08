@@ -15,6 +15,7 @@ import (
 type cliOptions struct {
 	Config           AppConfig
 	IPs              []string
+	SourceIPs        []string
 	PrintVersion     bool
 	TLSHelloFirefox  bool
 	TLSHelloChrome   bool
@@ -57,8 +58,9 @@ func DefaultConfig() AppConfig {
 
 func parseCLI(args []string) (cliOptions, error) {
 	opts := cliOptions{
-		Config: DefaultConfig(),
-		IPs:    []string{},
+		Config:    DefaultConfig(),
+		IPs:       []string{},
+		SourceIPs: []string{},
 	}
 	fs := flag.NewFlagSet(runTime, flag.ContinueOnError)
 	fs.Usage = func() {
@@ -68,9 +70,10 @@ func parseCLI(args []string) (cliOptions, error) {
 	if err := fs.Parse(args); err != nil {
 		return opts, err
 	}
-	opts.IPv4Changed = fs.Lookup("ipv4").Changed
-	opts.IPv6Changed = fs.Lookup("ipv6").Changed
-	opts.DTTimeoutChanged = fs.Lookup("dt-timeout").Changed
+	opts.IPs = append(opts.IPs, opts.SourceIPs...)
+	opts.IPv4Changed = flagChanged(fs, "ipv4")
+	opts.IPv6Changed = flagChanged(fs, "ipv6")
+	opts.DTTimeoutChanged = flagChanged(fs, "dt-timeout", "dt-timeout-ms")
 	applyTLSFingerprint(&opts)
 	return opts, nil
 }
@@ -80,33 +83,52 @@ func registerCLIFlags(fs *flag.FlagSet, opts *cliOptions) {
 
 	fs.BoolVar(&cfg.FastMode, "fast", cfg.FastMode, "Use a limited set of internal Cloudflare IPs for quick scanning.")
 	fs.StringSliceVarP(&opts.IPs, "ip", "s", opts.IPs, "IP, CIDR, or host:port candidate to test. Can be provided multiple times.")
+	fs.StringSliceVar(&opts.SourceIPs, "source", opts.SourceIPs, "Alias for --ip.")
 	fs.StringVarP(&cfg.IPFile, "in", "i", cfg.IPFile, "Path to a file containing IPs, CIDRs, or host:port entries.")
+	fs.StringVar(&cfg.IPFile, "source-file", cfg.IPFile, "Alias for --in.")
 
 	fs.IntVarP(&cfg.DTWorkerThread, "dt-thread", "m", cfg.DTWorkerThread, "Number of concurrent Delay Test (DT) workers.")
+	fs.IntVar(&cfg.DTWorkerThread, "dt-workers", cfg.DTWorkerThread, "Alias for --dt-thread.")
 	fs.IntVarP(&cfg.DTTimeout, "dt-timeout", "t", cfg.DTTimeout, "Timeout for a single DT attempt in milliseconds.")
+	fs.IntVar(&cfg.DTTimeout, "dt-timeout-ms", cfg.DTTimeout, "Alias for --dt-timeout.")
 	fs.IntVarP(&cfg.DTCount, "dt-count", "c", cfg.DTCount, "Number of DT attempts per candidate.")
+	fs.IntVar(&cfg.DTCount, "dt-attempts", cfg.DTCount, "Alias for --dt-count.")
 	fs.StringSliceVarP(&cfg.PortStrSlice, "port", "p", cfg.PortStrSlice, "Port(s) for IP/CIDR inputs. Supports single ports, ranges, and lists.")
 	fs.StringVar(&cfg.HostName, "hostname", cfg.HostName, "SNI hostname for TLS/SSL DT.")
+	fs.StringVar(&cfg.HostName, "sni-hostname", cfg.HostName, "Alias for --hostname.")
 	fs.StringVar(&cfg.DTVia, "dt-via", cfg.DTVia, "Delay-test protocol: https, tls, or ssl.")
+	fs.StringVar(&cfg.DTVia, "dt-protocol", cfg.DTVia, "Alias for --dt-via.")
 	fs.IntVar(&cfg.DTHttpRspReturnCodeExpected, "dt-expect-code", cfg.DTHttpRspReturnCodeExpected, "HTTP status code expected for DT test.")
+	fs.IntVar(&cfg.DTHttpRspReturnCodeExpected, "dt-status-code", cfg.DTHttpRspReturnCodeExpected, "Alias for --dt-expect-code.")
 	fs.BoolVar(&cfg.DTHttps, "dt-via-https", cfg.DTHttps, "Deprecated alias for --dt-via https.")
 	fs.StringVar(&cfg.DTUrl, "dt-url", cfg.DTUrl, "URL to use for HTTPS-based DT.")
 
 	fs.IntVarP(&cfg.DLTWorkerThread, "dlt-thread", "n", cfg.DLTWorkerThread, "Number of concurrent Download Test (DLT) workers.")
+	fs.IntVar(&cfg.DLTWorkerThread, "dlt-workers", cfg.DLTWorkerThread, "Alias for --dlt-thread.")
 	fs.IntVarP(&cfg.DLTDurMax, "dlt-period", "d", cfg.DLTDurMax, "Maximum duration for one DLT attempt in seconds.")
+	fs.IntVar(&cfg.DLTDurMax, "dlt-duration", cfg.DLTDurMax, "Alias for --dlt-period.")
 	fs.IntVarP(&cfg.DLTCount, "dlt-count", "b", cfg.DLTCount, "Number of DLT attempts per candidate.")
+	fs.IntVar(&cfg.DLTCount, "dlt-attempts", cfg.DLTCount, "Alias for --dlt-count.")
 	fs.StringVarP(&cfg.DLTUrl, "dlt-url", "u", cfg.DLTUrl, "URL to use for DLT.")
 	fs.IntVar(&cfg.DLTTimeout, "dlt-timeout", cfg.DLTTimeout, "HTTP response timeout for DLT in milliseconds.")
+	fs.IntVar(&cfg.DLTTimeout, "dlt-timeout-ms", cfg.DLTTimeout, "Alias for --dlt-timeout.")
 	fs.IntVarP(&cfg.Interval, "interval", "I", cfg.Interval, "Interval between test attempts in milliseconds.")
+	fs.IntVar(&cfg.Interval, "test-interval-ms", cfg.Interval, "Alias for --interval.")
 
 	fs.BoolVar(&cfg.EnableDTEvaluation, "ev-dt", cfg.EnableDTEvaluation, "Enable DT evaluation using all attempts.")
+	fs.BoolVar(&cfg.EnableDTEvaluation, "dt-evaluate", cfg.EnableDTEvaluation, "Alias for --ev-dt.")
 	fs.IntVarP(&cfg.DTEvaluationDelay, "ev-dt-delay", "k", cfg.DTEvaluationDelay, "Maximum allowed average DT delay in milliseconds.")
+	fs.IntVar(&cfg.DTEvaluationDelay, "dt-max-delay", cfg.DTEvaluationDelay, "Alias for --ev-dt-delay.")
 	fs.Float64Var(&cfg.DTEvaluationDTPR, "ev-dt-dtpr", cfg.DTEvaluationDTPR, "Minimum required DT pass rate percentage.")
+	fs.Float64Var(&cfg.DTEvaluationDTPR, "dt-min-pass-rate", cfg.DTEvaluationDTPR, "Alias for --ev-dt-dtpr.")
 	fs.Float64Var(&cfg.DTStdExp, "ev-dt-std", cfg.DTStdExp, "Maximum allowed DT standard deviation when enabled.")
+	fs.Float64Var(&cfg.DTStdExp, "dt-max-stddev", cfg.DTStdExp, "Alias for --ev-dt-std.")
 	fs.Float64VarP(&cfg.DLTEvaluationSpeed, "speed", "l", cfg.DLTEvaluationSpeed, "Minimum required download speed in KB/s.")
+	fs.Float64Var(&cfg.DLTEvaluationSpeed, "min-speed", cfg.DLTEvaluationSpeed, "Alias for --speed.")
 	fs.IntVar(&cfg.Loop, "loop", cfg.Loop, "Retest qualified candidates for N confirmation cycles; refill from the original pool if fewer than --result remain.")
 	fs.IntVar(&cfg.LoopInterval, "loop-interval", cfg.LoopInterval, "Seconds to wait between loop cycles.")
 	fs.IntVarP(&cfg.ResultMin, "result", "r", cfg.ResultMin, "Target number of final qualified results.")
+	fs.IntVar(&cfg.ResultMin, "result-count", cfg.ResultMin, "Alias for --result.")
 
 	fs.BoolVar(&cfg.DisableDownload, "disable-download", cfg.DisableDownload, "Deprecated, use --dt-only instead.")
 	fs.BoolVar(&cfg.DTOnly, "dt-only", cfg.DTOnly, "Perform Delay Test only.")
@@ -121,17 +143,34 @@ func registerCLIFlags(fs *flag.FlagSet, opts *cliOptions) {
 	fs.IntVar(&cfg.TestTimeout, "test-timeout", cfg.TestTimeout, "Test timeout in minutes.")
 
 	fs.BoolVarP(&cfg.StoreToFile, "to-file", "w", cfg.StoreToFile, "Save results to a CSV file.")
+	fs.BoolVar(&cfg.StoreToFile, "to-csv", cfg.StoreToFile, "Alias for --to-file.")
 	fs.StringVarP(&cfg.ResultFile, "out-file", "o", cfg.ResultFile, "Path for the output CSV file.")
+	fs.StringVar(&cfg.ResultFile, "csv-file", cfg.ResultFile, "Alias for --out-file.")
 	fs.BoolVarP(&cfg.StoreToDB, "to-db", "e", cfg.StoreToDB, "Save results to a SQLite3 database.")
+	fs.BoolVar(&cfg.StoreToDB, "to-sqlite", cfg.StoreToDB, "Alias for --to-db.")
 	fs.BoolVar(&cfg.ResolveLocalASNAndCity, "local-asn", cfg.ResolveLocalASNAndCity, "Retrieve and store local ASN/city info.")
 	fs.StringVarP(&cfg.DBFile, "db-file", "f", cfg.DBFile, "Path for the SQLite3 database file.")
+	fs.StringVar(&cfg.DBFile, "sqlite-file", cfg.DBFile, "Alias for --db-file.")
 	fs.StringVarP(&cfg.SuffixLabel, "label", "g", cfg.SuffixLabel, "Label for output files and database records.")
+	fs.StringVar(&cfg.SuffixLabel, "record-label", cfg.SuffixLabel, "Alias for --label.")
 	fs.BoolVar(&cfg.ResolveLoc, "resolve-loc", cfg.ResolveLoc, "Attempt to resolve and display Cloudflare location.")
+	fs.BoolVar(&cfg.ResolveLoc, "resolve-location", cfg.ResolveLoc, "Alias for --resolve-loc.")
 	fs.BoolVarP(&cfg.NoCache, "no-cache", "C", cfg.NoCache, "Bypass CDN/proxy caching for custom URLs.")
 
 	fs.BoolVarP(&cfg.SilenceMode, "silence", "S", cfg.SilenceMode, "Enable silence mode with minimal output.")
+	fs.BoolVar(&cfg.SilenceMode, "quiet", cfg.SilenceMode, "Alias for --silence.")
 	fs.BoolVarP(&cfg.Debug, "debug", "V", cfg.Debug, "Print debug message.")
 	fs.BoolVarP(&opts.PrintVersion, "version", "v", opts.PrintVersion, "Show version.")
+}
+
+func flagChanged(fs *flag.FlagSet, names ...string) bool {
+	for _, name := range names {
+		f := fs.Lookup(name)
+		if f != nil && f.Changed {
+			return true
+		}
+	}
+	return false
 }
 
 func applyTLSFingerprint(opts *cliOptions) {

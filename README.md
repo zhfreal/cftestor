@@ -149,6 +149,34 @@ Output & Storage Options:
         --resolve-loc             Attempt to resolve and display Cloudflare location.
         --local-asn               Retrieve and store local ASN/city info.
 
+Alias Options:
+        --source                  Alias for --ip.
+        --source-file             Alias for --in.
+        --result-count            Alias for --result.
+        --dt-workers              Alias for --dt-thread.
+        --dt-timeout-ms           Alias for --dt-timeout.
+        --dt-attempts             Alias for --dt-count.
+        --dt-protocol             Alias for --dt-via.
+        --sni-hostname            Alias for --hostname.
+        --dt-status-code          Alias for --dt-expect-code.
+        --dt-evaluate             Alias for --ev-dt.
+        --dt-max-delay            Alias for --ev-dt-delay.
+        --dt-min-pass-rate        Alias for --ev-dt-dtpr.
+        --dt-max-stddev           Alias for --ev-dt-std.
+        --dlt-workers             Alias for --dlt-thread.
+        --dlt-duration            Alias for --dlt-period.
+        --dlt-attempts            Alias for --dlt-count.
+        --dlt-timeout-ms          Alias for --dlt-timeout.
+        --test-interval-ms        Alias for --interval.
+        --min-speed               Alias for --speed.
+        --to-csv                  Alias for --to-file.
+        --csv-file                Alias for --out-file.
+        --to-sqlite               Alias for --to-db.
+        --sqlite-file             Alias for --db-file.
+        --record-label            Alias for --label.
+        --resolve-location        Alias for --resolve-loc.
+        --quiet                   Alias for --silence.
+
 General Options:
     -S, --silence                 Enable silence mode with minimal output.
     -V, --debug                   Print detailed debug logs.
