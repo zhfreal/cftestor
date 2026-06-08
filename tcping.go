@@ -73,7 +73,11 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 	if err != nil {
 		return allResult, ""
 	}
-	new_url := newUrl(*tUrl, port)
+	new_url, err := newUrl(*tUrl, port)
+	if err != nil {
+		myLogger.Errorf("failed to build test URL for %s: %v\n", *host, err)
+		return allResult, ""
+	}
 	t_failure_counter := 0
 
 	for i := 0; i < round; i++ {
@@ -198,7 +202,6 @@ func performDownloadRound(host, targetUrl string, httpRspTimeoutDur time.Duratio
 	currentResult.dLTDataSize = contentRead
 	return currentResult, loc
 }
-
 
 func downloadWorkerNew(chanIn chan *task, chanOut chan singleVerifyResult, wg *sync.WaitGroup, tUrl *string,
 	httpRspTimeoutDur time.Duration, round int, doDTOnly bool) {

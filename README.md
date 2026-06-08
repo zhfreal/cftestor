@@ -1,37 +1,36 @@
 # cftestor: Cloudflare CDN IP Scanner & Verifier
 
-`cftestor` is a high-performance utility designed to find and verify the best-performing Cloudflare CDN edge nodes for your specific network environment. By performing sequential latency and throughput tests, it identifies IPs with the lowest latency and highest download speeds, bypassing ISP throttling and regional routing inefficiencies.
+`cftestor` finds Cloudflare CDN edge candidates that work well from your network by testing connection latency, stability, and download throughput. It can scan built-in Cloudflare ranges, user-provided IP/CIDR sources, or explicit `host:port` targets, then print results or save them to CSV/SQLite.
 
 ## How It Works
 
-`cftestor` uses a two-stage evaluation pipeline to filter candidate IPs:
+`cftestor` uses a two-stage test pipeline:
 
-1.  **Delay Test (DT)**:
-    *   Performs a secure connection test via **SSL/TLS handshake** or **HTTPS GET**.
-    *   Measures the true "Time to Secure Connection," validating both routing speed and the node's availability for public traffic.
-    *   Supports multiple attempts per IP to calculate stability (pass rate) and standard deviation.
+1. **Delay Test (DT)**
+   - Tests candidate reachability and latency with HTTPS, TLS, or SSL.
+   - Runs one or more attempts per candidate.
+   - Can evaluate average delay, pass rate, and standard deviation.
 
-2.  **Download Test (DLT)**:
-    *   For IPs that pass the DT stage, `cftestor` performs a real-world throughput test.
-    *   Downloads a sample file to calculate the actual average speed in KB/s.
-    *   Supports multiple parallel workers to maximize scanning efficiency.
+2. **Download Test (DLT)**
+   - Runs after DT for candidates that passed DT, unless `--dlt-only` is used.
+   - Downloads a sample file and calculates average speed in KB/s.
+   - Can run multiple attempts and concurrent workers.
 
-IPs that pass both stages are considered "qualified" and are reported to the user or stored for future use.
+A candidate is qualified when it passes every enabled stage. `--dt-only` reports candidates that pass DT. `--dlt-only` reports candidates that pass DLT.
 
 ## Features
 
-*   **Diverse Sampling**: Fairly samples from multiple CIDR ranges and individual IP lists simultaneously.
-*   **TLS Fingerprinting**: Simulates various browser fingerprints (Chrome, Firefox, Edge, Safari) to bypass SNI-based filtering.
-*   **Real-time Reporting**: Live result updates via terminal as each test completes.
-*   **Reliable Timeouts**: Strict context-based timeout enforcement to prevent worker starvation on slow nodes.
-*   **Multiple Output Formats**: Save results to CSV files or SQLite3 databases for automated processing.
-*   **Cache Control**: Optional `-C`, `--no-cache` flag to bypass CDN/proxy caching for custom test URLs (automatically disabled for default URLs to protect origin bandwidth).
+- Built-in Cloudflare IPv4/IPv6 source ranges, plus custom IP, CIDR, and `host:port` input.
+- DNS `host:port` targets such as `example.com:443`.
+- TLS fingerprint options for Chrome, Firefox, Edge, and Safari.
+- Live terminal reporting and optional compact silence mode.
+- Loop retesting for candidates that already qualified.
+- CSV and SQLite3 output for later processing.
+- Optional `-C, --no-cache` for custom test URLs.
 
 ## Quick Start
 
 ### Build from Source
-
-Ensure you have [Go](https://go.dev/) installed:
 
 ```bash
 git clone https://github.com/zhfreal/cftestor.git
@@ -41,33 +40,49 @@ go build -o cftestor .
 
 ### Basic Usage
 
-Run with default settings (scans built-in Cloudflare IPv4 ranges):
-
 ```bash
 ./cftestor
 ```
 
-### Advanced Usage Examples
+### Examples
 
-**Find 20 IPs with latency < 200ms and speed > 10MB/s:**
+Find 20 final qualified candidates with average DT delay <= 200 ms and DLT speed >= 10 MB/s:
+
 ```bash
 ./cftestor -k 200 -l 10000 -r 20
 ```
 
-**Perform Delay Test only (fast discovery):**
+Run Delay Test only for fast discovery:
+
 ```bash
 ./cftestor --dt-only -r 50
 ```
 
-**Scan specific CIDR ranges and save to database:**
+Scan custom CIDRs and a DNS host target, then save to SQLite:
+
 ```bash
 ./cftestor -s 104.16.0.0/16 -s 172.64.0.0/13 -s example.com:443 --to-db -f results.db
 ```
 
-**Continuous monitoring (loop every 5 minutes):**
+Retest qualified candidates for three confirmation cycles, refilling from the original source pool if fewer than `-r` remain:
+
 ```bash
-./cftestor --loop 3 --loop-interval 300
+./cftestor --loop 3 --loop-interval 300 -r 10
 ```
+
+Save results to CSV:
+
+```bash
+./cftestor --to-file -o results.csv
+```
+
+## Loop and Result Behavior
+
+`-r, --result` is the target number of final qualified results. `--loop` does not simply repeat the whole scan from scratch. It first retests candidates that already qualified, which is useful for confirming that results still pass over a larger time scale.
+
+If loop retesting removes too many candidates, `cftestor` continues scanning from the original source pool to find replacement candidates. The run stops when it reaches `--result`, exhausts the source pool, or reaches `--test-timeout`.
+
+`--test-all` overrides the result target and keeps testing until no candidates remain.
 
 ## CLI Reference
 
@@ -75,48 +90,89 @@ Run with default settings (scans built-in Cloudflare IPv4 ranges):
 Usage: cftestor [options]
 
 Core Options:
-    -s, --ip           strings    Specify IP, CIDR, or host:port, including DNS names. Can be used multiple times.
+    -s, --ip           strings    Specify IP, CIDR, or host:port. Examples: "-s 1.0.0.1", "-s 1.0.0.1/24",
+                                  "-s 1.1.1.1:2053", "-s example.com:443". Can be provided multiple times.
     -i, --in           string     Path to a file containing IPs, CIDRs, or host:port entries (one per line).
-    -p, --port         strings    Port(s) to test for IP/CIDR inputs (e.g., "443", "80-443"). Default: 443.
-    -a, --test-all                Test all provided IPs until none remain.
-    -r, --result       int        Maximum number of qualified IPs to find. Default: 10.
-        --fast                    Use a limited set of internal IPs for quick scanning.
+    -p, --port         strings    Specify port(s) to test for IP/CIDR inputs. Supports single ports, ranges, and lists
+                                  (e.g., "443", "80-443", "443,8443"). Default: 443.
+    -a, --test-all                Test all provided IPs until none remain. Default: off.
+    -r, --result       int        Target number of final qualified results. Default: 10.
+        --fast                    Use a limited set of internal Cloudflare IPs for quick scanning.
+    -4, --ipv4                    Test IPv4 only. Default: on (if no IPs specified).
+    -6, --ipv6                    Test IPv6 only. Default: off. DNS hosts are resolved by the dialer.
+    -C, --no-cache                Bypass CDN/Proxy caching for custom URLs (ignored for defaults).
 
 Delay Test (DT) Options:
-    -m, --dt-thread    int        Number of concurrent DT threads. Default: 20.
-    -t, --dt-timeout   int        Timeout per DT (ms).
-    -c, --dt-count     int        Number of DT attempts per IP. Default: 4.
-        --dt-via       string     Protocol: "https", "tls", or "ssl". Default: https.
-        --ev-dt                   Enable full evaluation using all attempts.
-    -k, --ev-dt-delay  int        Maximum allowed average delay (ms). Default: 600.
+    -m, --dt-thread    int        Number of concurrent DT workers. Default: 20.
+    -t, --dt-timeout   int        Timeout for a single DT attempt in ms. Default: 2000 (TLS/SSL) or 5000 (HTTPS).
+    -c, --dt-count     int        Number of DT attempts per candidate. Default: 4.
+        --dt-via       string     DT protocol: "https", "tls", or "ssl". Default: https.
+        --dt-via-https            Deprecated alias for --dt-via https.
+        --dt-url       string     URL to use for HTTPS-based DT. Default: https://cf.9999876.xyz/cdn-cgi/trace
+        --hostname     string     SNI hostname for TLS/SSL DT. Default: cf.9999876.xyz
+        --dt-expect-code int      Expected HTTP status code for DT. Default: 200.
+        --ev-dt                   Enable DT evaluation using all attempts. Default: off.
+    -k, --ev-dt-delay  int        Maximum allowed average DT delay in ms. Default: 600.
+        --ev-dt-dtpr   float      Minimum required DT pass rate percentage. Default: 100.0.
+        --ev-dt-std    float      Maximum allowed DT standard deviation. Default: 30.0 (if enabled).
 
 Download Test (DLT) Options:
-    -n, --dlt-thread   int        Number of concurrent DLT threads. Default: 1.
-    -d, --dlt-period   int        Maximum duration per DLT (seconds). Default: 10.
-    -l, --speed        float      Minimum required speed (KB/s). Default: 6000.
-    -C, --no-cache                Bypass CDN/Proxy caching.
+    -n, --dlt-thread   int        Number of concurrent DLT workers. Default: 1.
+    -d, --dlt-period   int        Maximum duration for one DLT attempt in seconds. Default: 10.
+    -b, --dlt-count    int        Number of DLT attempts per candidate. Default: 1.
+    -u, --dlt-url      string     URL to use for DLT. Default: https://cf.9999876.xyz/500mb.dat
+        --dlt-timeout  int        HTTP response timeout for DLT in ms. Default: 5000.
+    -l, --speed        float      Minimum required download speed in KB/s. Default: 6000.
+    -I, --interval     int        Interval between test attempts in ms. Default: 500.
 
-Output Options:
-    -w, --to-file                 Save results to CSV.
-    -e, --to-db                   Save results to SQLite3.
+Mode Options:
+        --dt-only                 Perform Delay Test only.
+        --disable-download        Deprecated alias for --dt-only.
+        --dlt-only                Perform Download Test only.
+        --loop         int        Retest qualified candidates for N confirmation cycles; refill from the original pool
+                                  if fewer than --result remain.
+        --loop-interval int       Seconds to wait between loop cycles. Default: 60.
+        --test-timeout int        Total test timeout in minutes. Default: 30.
+
+Fingerprinting Options:
+        --hello-firefox           Simulate Firefox TLS fingerprint.
+        --hello-chrome            Simulate Chrome TLS fingerprint (default).
+        --hello-edge              Simulate Edge TLS fingerprint.
+        --hello-safari            Simulate Safari TLS fingerprint.
+
+Output & Storage Options:
+    -w, --to-file                 Save results to a CSV file.
+    -o, --out-file     string     Path for the output CSV file.
+    -e, --to-db                   Save results to a SQLite3 database.
+    -f, --db-file      string     Path for the SQLite3 database file.
+    -g, --label        string     Label for output files and database records.
+        --resolve-loc             Attempt to resolve and display Cloudflare location.
+        --local-asn               Retrieve and store local ASN/city info.
+
+General Options:
+    -S, --silence                 Enable silence mode with minimal output.
     -V, --debug                   Print detailed debug logs.
+    -v, --version                 Show version information and exit.
+    -h, --help                    Show this help message.
 ```
+
+## Backward Compatibility
+
+Deprecated flags are still accepted for existing scripts:
+
+- `--disable-download` maps to `--dt-only`.
+- `--dt-via-https` maps to `--dt-via https`.
+
+Prefer the canonical names in new commands and documentation.
 
 ## Database Schema (Table: `CFTD`)
 
-The SQLite3 output includes comprehensive metrics for every qualified IP:
-*   `TestTime`: Timestamp of the verification.
-*   `IP`: The verified edge node address.
-*   `DA`: Average Delay (ms).
-*   `DLS`: Average Download Speed (KB/s).
-*   `LOC`: Geographic location (Colo code).
-*   `DTPR`: Delay Test pass rate (stability).
-
----
+SQLite output stores one row per qualified candidate with timing, pass-rate, speed, source ASN/city, label, and Cloudflare location fields. The CSV output uses the same result fields.
 
 ## Acknowledgments
 
 This project is inspired by and built upon work from:
-*   [CloudflareScanner](https://github.com/Spedoske/CloudflareScanner)
-*   [CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest)
-*   [utls](https://github.com/refraction-networking/utls)
+
+- [CloudflareScanner](https://github.com/Spedoske/CloudflareScanner)
+- [CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest)
+- [utls](https://github.com/refraction-networking/utls)

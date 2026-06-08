@@ -24,7 +24,7 @@ import (
 // DLTPR         float        success rate of DLT
 // DLSA          float        average download speed (KB/s)
 // DLDS          int          total bytes downloaded
-// DLTD          float        total times escaped during download (in second)
+// DLTD          float        elapsed download time in seconds
 const (
 	DBFile    = "ip.db"
 	TableName = "CFTD"

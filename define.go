@@ -287,29 +287,30 @@ Core Options:
     -p, --port         strings    Specify port(s) to test. Supports single ports, ranges, and lists (e.g.,
                                   "443", "80-443", "443,8443"). Default: 443.
     -a, --test-all                Test all provided IPs until none remain. Default: off.
-    -r, --result       int        Maximum number of qualified IPs to find. Default: 10.
+    -r, --result       int        Target number of final qualified results. Default: 10.
         --fast                    Use a limited set of internal Cloudflare IPs for quick scanning.
     -4, --ipv4                    Test IPv4 only. Default: on (if no IPs specified).
     -6, --ipv6                    Test IPv6 only. Default: off. DNS hosts are resolved by the dialer.
     -C, --no-cache                Bypass CDN/Proxy caching for custom URLs (ignored for defaults).
 
 Delay Test (DT) Options:
-    -m, --dt-thread    int        Number of concurrent DT threads. Default: 20.
-    -t, --dt-timeout   int        Timeout for a single DT in ms. Default: 2000 (SSL) or 5000 (HTTPS).
-    -c, --dt-count     int        Number of DT attempts per IP. Default: 4.
+    -m, --dt-thread    int        Number of concurrent DT workers. Default: 20.
+    -t, --dt-timeout   int        Timeout for a single DT attempt in ms. Default: 2000 (TLS/SSL) or 5000 (HTTPS).
+    -c, --dt-count     int        Number of DT attempts per candidate. Default: 4.
         --dt-via       string     DT protocol: "https", "tls", or "ssl". Default: https.
+        --dt-via-https            Deprecated alias for --dt-via https.
         --dt-url       string     URL to use for HTTPS-based DT. Default: ` + defaultDTUrl + `
-        --hostname     string     SNI hostname for SSL/TLS handshake. Default: ` + DefaultTestHost + `
+        --hostname     string     SNI hostname for TLS/SSL DT. Default: ` + DefaultTestHost + `
         --dt-expect-code int      Expected HTTP status code for DT. Default: 200.
-        --ev-dt                   Enable DT evaluation (uses all attempts). Default: off.
-    -k, --ev-dt-delay  int        Maximum allowed average delay in ms. Default: 600.
+        --ev-dt                   Enable DT evaluation using all attempts. Default: off.
+    -k, --ev-dt-delay  int        Maximum allowed average DT delay in ms. Default: 600.
         --ev-dt-dtpr   float      Minimum required DT pass rate (percentage). Default: 100.0.
-        --ev-dt-std    float      Maximum allowed standard deviation for DT. Default: 30.0 (if enabled).
+        --ev-dt-std    float      Maximum allowed DT standard deviation. Default: 30.0 (if enabled).
 
 Download Test (DLT) Options:
-    -n, --dlt-thread   int        Number of concurrent DLT threads. Default: 1.
-    -d, --dlt-period   int        Maximum duration for a single DLT in seconds. Default: 10.
-    -b, --dlt-count    int        Number of DLT attempts per IP. Default: 1.
+    -n, --dlt-thread   int        Number of concurrent DLT workers. Default: 1.
+    -d, --dlt-period   int        Maximum duration for one DLT attempt in seconds. Default: 10.
+    -b, --dlt-count    int        Number of DLT attempts per candidate. Default: 1.
     -u, --dlt-url      string     URL to use for DLT. Default: ` + defaultDLTUrl + `
         --dlt-timeout  int        HTTP response timeout for DLT in ms. Default: 5000.
     -l, --speed        float      Minimum required download speed in KB/s. Default: 6000.
@@ -317,8 +318,10 @@ Download Test (DLT) Options:
 
 Mode Options:
         --dt-only                 Perform Delay Test only.
+        --disable-download        Deprecated alias for --dt-only.
         --dlt-only                Perform Download Test only.
-        --loop         int        Retest qualified candidates for this many confirmation cycles.
+        --loop         int        Retest qualified candidates for N confirmation cycles; refill from the original pool
+                                  if fewer than --result remain.
         --loop-interval int       Seconds to wait between loop cycles. Default: 60.
         --test-timeout int        Total test timeout in minutes. Default: 30.
 
@@ -334,11 +337,11 @@ Output & Storage Options:
     -e, --to-db                   Save results to a SQLite3 database.
     -f, --db-file      string     Path for the SQLite3 database file.
     -g, --label        string     Label for records (defaults to hostname).
-        --resolve-loc             Attempt to resolve and display geographic location.
-        --local-asn               Retrieve and store local ASN/City info.
+        --resolve-loc             Attempt to resolve and display Cloudflare location.
+        --local-asn               Retrieve and store local ASN/city info.
 
 General Options:
-    -S, --silence                 Enable silence mode (minimal output).
+    -S, --silence                 Enable silence mode with minimal output.
     -V, --debug                   Print detailed debug logs.
     -v, --version                 Show version information and exit.
     -h, --help                    Show this help message.
@@ -908,7 +911,7 @@ func (s *sourceIPs) add(IPs string, mode int8) error {
 		}
 		s.srcHosts = append(s.srcHosts, &ips)
 	} else {
-		return fmt.Errorf("the input \"%v\" is neither a valid IP, CIDR, nor a host", ips)
+		return fmt.Errorf("the input %q is not a valid IP, CIDR, or host:port", ips)
 	}
 	return nil
 }
@@ -936,7 +939,7 @@ func (s *sourceIPs) AddFromFile(filename string, mode int8) error {
 	defer s.mu.Unlock()
 	tFile, err := os.Open(filename)
 	if err != nil {
-		return fmt.Errorf("file \"%s\" is not accessible", filename)
+		return fmt.Errorf("file %q is not accessible: %w", filename, err)
 	}
 	scanner := bufio.NewScanner(tFile)
 	scanner.Split(bufio.ScanLines)
@@ -953,58 +956,58 @@ func (s *sourceIPs) AddFromFile(filename string, mode int8) error {
 	return nil
 }
 
-func (s *sourceIPs) AddPorts(srcPorts []string) {
+func (s *sourceIPs) AddPorts(srcPorts []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	port_regex := regexp.MustCompile(`[,;|]+`)
-	port_range_regex := regexp.MustCompile(`\d+[-:]\d+`)
-	port_range_split_regex := regexp.MustCompile(`[-:]`)
+	portRegex := regexp.MustCompile(`[,;|]+`)
+	portRangeRegex := regexp.MustCompile(`^\d+[-:]\d+$`)
+	portRangeSplitRegex := regexp.MustCompile(`[-:]`)
 	if len(srcPorts) > 0 {
 		for _, portStr := range srcPorts {
-			portStr_slice := port_regex.Split(portStr, -1)
-			for _, t_port_str := range portStr_slice {
-				t_port_str = strings.TrimSpace(t_port_str)
-				if len(t_port_str) == 0 {
+			portStrSlice := portRegex.Split(portStr, -1)
+			for _, portValue := range portStrSlice {
+				portValue = strings.TrimSpace(portValue)
+				if len(portValue) == 0 {
 					continue
 				}
-				// it's a range
-				if port_range_regex.MatchString(t_port_str) {
-					t_port_list := port_range_split_regex.Split(t_port_str, -1)
-					if len(t_port_list) != 2 {
-						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+				if portRangeRegex.MatchString(portValue) {
+					portList := portRangeSplitRegex.Split(portValue, -1)
+					if len(portList) != 2 {
+						return invalidPortFlagError(portValue)
 					}
-					t_start_port := t_port_list[0]
-					t_end_port := t_port_list[1]
-					start_port, err := strconv.Atoi(t_start_port)
+					startPort, err := strconv.Atoi(portList[0])
 					if err != nil {
-						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_start_port)
+						return invalidPortFlagError(portList[0])
 					}
-					end_port, err := strconv.Atoi(t_end_port)
+					endPort, err := strconv.Atoi(portList[1])
 					if err != nil {
-						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_end_port)
+						return invalidPortFlagError(portList[1])
 					}
-					if start_port > end_port || start_port < 1 || end_port > 65535 {
-						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+					if startPort > endPort || startPort < 1 || endPort > 65535 {
+						return invalidPortFlagError(portValue)
 					}
-					for i := start_port; i <= end_port; i++ {
+					for i := startPort; i <= endPort; i++ {
 						s.ports = append(s.ports, i)
 					}
-				} else { // it's a single port
-					port, err := strconv.Atoi(t_port_str)
+				} else {
+					port, err := strconv.Atoi(portValue)
 					if err != nil || port < 1 || port > 65535 {
-						myLogger.Fatalf("\"-p|--port %v\" is invalid!\n", t_port_str)
+						return invalidPortFlagError(portValue)
 					}
 					s.ports = append(s.ports, port)
 				}
 			}
 		}
-
 	}
 	if len(s.ports) == 0 {
 		s.ports = append(s.ports, DefaultPort)
 	}
-	// clean ports, make them unique
 	s.ports = uniqueIntSlice(s.ports)
+	return nil
+}
+
+func invalidPortFlagError(value string) error {
+	return fmt.Errorf("invalid value for %q: %q", "-p|--port", value)
 }
 
 func (s *sourceIPs) RetrieveSome(amount int, isRand bool) (targetIPs []*string) {

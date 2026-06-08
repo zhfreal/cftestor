@@ -3,45 +3,47 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
-	"log"
+	"io"
 	"os"
 	"text/tabwriter"
 )
 
-func writeCSVResult(data []DBRecord, filePath string) {
-	var fp = &os.File{}
+func writeCSVResult(data []DBRecord, filePath string) error {
+	var fp *os.File
 	var err error
-	var w = &csv.Writer{}
+	var w *csv.Writer
 	if !fileExists(filePath) {
 		fp, err = os.Create(filePath)
 		if err != nil {
-			log.Fatalf("Create File %v failed with: %v", filePath, err)
+			return fmt.Errorf("failed to create CSV file %q: %w", filePath, err)
 		}
 		wn, wErr := fp.Write(utf8BomBytes)
-		if wn != len(utf8BomBytes) && wErr != nil {
-			log.Fatalf("Write csv File %v failed with: %v", filePath, err)
+		if wErr != nil {
+			return fmt.Errorf("failed to write UTF-8 BOM to CSV file %q: %w", filePath, wErr)
+		}
+		if wn != len(utf8BomBytes) {
+			return fmt.Errorf("failed to write UTF-8 BOM to CSV file %q: %w", filePath, io.ErrShortWrite)
 		}
 		w = csv.NewWriter(fp)
-		err = w.Write(resultCsvHeader)
-		if err != nil {
-			log.Fatalf("Write csv File %v failed with: %v", filePath, err)
+		if err = w.Write(resultCsvHeader); err != nil {
+			return fmt.Errorf("failed to write CSV header to %q: %w", filePath, err)
 		}
 	} else {
 		fp, err = os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, os.FileMode(0644))
 		if err != nil {
-			log.Fatalf("Open File %v failed with: %v", filePath, err)
+			return fmt.Errorf("failed to open CSV file %q: %w", filePath, err)
 		}
 		w = csv.NewWriter(fp)
 	}
 	defer func() { _ = fp.Close() }()
 
 	for _, tD := range data {
-		asn_str, city := "", ""
+		asnStr, city := "", ""
 		if tD.Asn > 0 {
-			asn_str = fmt.Sprintf("AS%v", tD.Asn)
+			asnStr = fmt.Sprintf("AS%v", tD.Asn)
 			city = tD.City
 		}
-		err = w.Write([]string{
+		if err = w.Write([]string{
 			tD.TestTimeStr,
 			tD.IP,
 			fmt.Sprintf("%.2f", tD.DLS),
@@ -56,14 +58,17 @@ func writeCSVResult(data []DBRecord, filePath string) {
 			fmt.Sprintf("%d", tD.DLTPC),
 			fmt.Sprintf("%.2f", tD.DLTPR*100),
 			city,
-			asn_str,
+			asnStr,
 			tD.Loc,
-		})
-		if err != nil {
-			log.Fatalf("Write csv File %v failed with: %v", filePath, err)
+		}); err != nil {
+			return fmt.Errorf("failed to write CSV record to %q: %w", filePath, err)
 		}
 	}
 	w.Flush()
+	if err := w.Error(); err != nil {
+		return fmt.Errorf("failed to flush CSV file %q: %w", filePath, err)
+	}
+	return nil
 }
 
 func genDBRecords(verifyResultsSlice []VerifyResults, getLocalAsnAndCity bool) (dbRecords []DBRecord) {
@@ -151,16 +156,16 @@ func printFinalStat(v []VerifyResults, isDtOnly, inSilence bool) {
 	}
 }
 
-func saveDBRecords(dbRecords []DBRecord, dbFilePath string) {
-	if len(dbRecords) > 0 {
-		db, err := OpenSqlite(dbFilePath)
-		if err != nil {
-			myLogger.Errorln("<saveDBRecords> open sqlite error ", err)
-			return
-		}
-		err = AddCFDTRecords(db, dbRecords)
-		if err != nil {
-			myLogger.Errorln("<saveDBRecords> add CFDT records error ", err)
-		}
+func saveDBRecords(dbRecords []DBRecord, dbFilePath string) error {
+	if len(dbRecords) == 0 {
+		return nil
 	}
+	db, err := OpenSqlite(dbFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to open SQLite database %q: %w", dbFilePath, err)
+	}
+	if err = AddCFDTRecords(db, dbRecords); err != nil {
+		return fmt.Errorf("failed to add CFTD records to SQLite database %q: %w", dbFilePath, err)
+	}
+	return nil
 }

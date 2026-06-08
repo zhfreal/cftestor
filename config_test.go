@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func resetGlobalsForTest() {
 	Config = DefaultConfig()
@@ -91,5 +94,129 @@ func TestLoadSourceIPsAcceptsExplicitIPv6WithoutFamilyFlag(t *testing.T) {
 	}
 	if got := srcIPs.LenInt(); got != 1 {
 		t.Fatalf("srcIPs.LenInt() = %d, want 1", got)
+	}
+}
+
+func TestDeprecatedFlagsStillMapToCanonicalBehavior(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want func(t *testing.T)
+	}{
+		{
+			name: "disable download maps to dt only",
+			args: []string{"--silence", "--disable-download", "-s", "1.1.1.1"},
+			want: func(t *testing.T) {
+				if !Config.DTOnly {
+					t.Fatal("expected --disable-download to enable DT-only mode")
+				}
+			},
+		},
+		{
+			name: "dt via https alias maps protocol",
+			args: []string{"--silence", "--dt-via-https", "--dt-only", "-s", "1.1.1.1"},
+			want: func(t *testing.T) {
+				if Config.DTVia != "https" || !Config.DTHttps {
+					t.Fatalf("expected HTTPS DT mode, got DTVia=%q DTHttps=%v", Config.DTVia, Config.DTHttps)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetGlobalsForTest()
+			shouldExit, _, err := configureApp(tt.args)
+			if shouldExit || err != nil {
+				t.Fatalf("configureApp(%v) = shouldExit %v, err %v", tt.args, shouldExit, err)
+			}
+			tt.want(t)
+		})
+	}
+}
+
+func TestNormalizeDTViaLowercasesProtocol(t *testing.T) {
+	resetGlobalsForTest()
+	Config.DTVia = "TLS"
+	if err := normalizeDTVia(); err != nil {
+		t.Fatalf("normalizeDTVia returned error: %v", err)
+	}
+	if Config.DTVia != "tls" || Config.DTHttps {
+		t.Fatalf("normalizeDTVia did not normalize TLS mode, DTVia=%q DTHttps=%v", Config.DTVia, Config.DTHttps)
+	}
+}
+
+func TestValidationMessagesMatchThresholds(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{name: "result", args: []string{"--silence", "-s", "1.1.1.1", "--result", "0"}, wantErr: "must be greater than 0"},
+		{name: "port", args: []string{"--silence", "-s", "1.1.1.1", "--port", "0"}, wantErr: "invalid value for \"-p|--port\""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetGlobalsForTest()
+			shouldExit, _, err := configureApp(tt.args)
+			if !shouldExit || err == nil {
+				t.Fatalf("configureApp(%v) = shouldExit %v, err %v; want error", tt.args, shouldExit, err)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error %q does not contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestSourceIPsRejectsBareDNSHostWithHostPortMessage(t *testing.T) {
+	sources := NewSourceIPs()
+	err := sources.AddFromSlice([]string{"example.com"}, TypeIPv4|TypeIPv6)
+	if err == nil {
+		t.Fatal("expected bare DNS host without port to be rejected")
+	}
+	if !strings.Contains(err.Error(), "host:port") {
+		t.Fatalf("error %q does not mention host:port", err.Error())
+	}
+}
+
+func TestAddPortsReturnsErrorsAndDeduplicates(t *testing.T) {
+	sources := NewSourceIPs()
+	if err := sources.AddPorts([]string{"443,8443", "8443"}); err != nil {
+		t.Fatalf("AddPorts returned error: %v", err)
+	}
+	if len(sources.ports) != 2 || sources.ports[0] != 443 || sources.ports[1] != 8443 {
+		t.Fatalf("ports = %#v, want [443 8443]", sources.ports)
+	}
+
+	badSources := NewSourceIPs()
+	if err := badSources.AddPorts([]string{"65536"}); err == nil {
+		t.Fatal("expected invalid port to return error")
+	}
+}
+
+func TestURLHelpersReturnErrorsInsteadOfExiting(t *testing.T) {
+	host, port, err := parseUrl("https://example.com/path")
+	if err != nil {
+		t.Fatalf("parseUrl returned error: %v", err)
+	}
+	if host != "example.com" || port != 443 {
+		t.Fatalf("parseUrl returned (%q, %d), want (example.com, 443)", host, port)
+	}
+
+	got, err := newUrl("https://example.com/path", "8443")
+	if err != nil {
+		t.Fatalf("newUrl returned error: %v", err)
+	}
+	if got != "https://example.com:8443/path" {
+		t.Fatalf("newUrl returned %q", got)
+	}
+
+	if _, _, err := parseUrl("not a url"); err == nil {
+		t.Fatal("expected invalid parseUrl input to return error")
+	}
+	if _, err := newUrl("https://example.com/path", "0"); err == nil {
+		t.Fatal("expected invalid newUrl port to return error")
 	}
 }

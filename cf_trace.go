@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,7 +18,7 @@ func getGeoInfoFromCF(ipStr *string) (loc string) {
 	t_port := -1
 	t_url, t_err := url.Parse(baseUrl)
 	if t_err != nil {
-		myLogger.Errorln("<getGeoInfoFromCF> invalid base url ", baseUrl)
+		myLogger.Errorf("invalid Cloudflare trace base URL %q: %v\n", baseUrl, t_err)
 		return
 	}
 	if isValidIP(*ipStr) {
@@ -28,24 +27,25 @@ func getGeoInfoFromCF(ipStr *string) (loc string) {
 		} else if t_url.Scheme == "https" {
 			t_port = 443
 		} else {
-			myLogger.Errorln("<getGeoInfoFromCF> invalid base url ", baseUrl)
+			myLogger.Errorf("invalid Cloudflare trace base URL %q: unsupported scheme %q\n", baseUrl, t_url.Scheme)
 			return
 		}
 	} else if isValidHost(*ipStr) {
 		ok := true
 		ok, t_ip, t_port = splitHost(*ipStr)
 		if !ok {
-			myLogger.Errorln("<getGeoInfoFromCF> invalid host ", *ipStr)
+			myLogger.Errorf("invalid host:port for Cloudflare trace lookup: %q\n", *ipStr)
 			return
 		}
 	} else {
-		myLogger.Errorln("<getGeoInfoFromCF> invalid ip ", *ipStr)
+		myLogger.Errorf("invalid IP or host:port for Cloudflare trace lookup: %q\n", *ipStr)
 		return
 	}
 	t_url.Host = net.JoinHostPort(t_url.Hostname(), fmt.Sprint(t_port))
 	tReq, err := http.NewRequest("GET", t_url.String(), nil)
 	if err != nil {
-		log.Fatal(err)
+		myLogger.Errorf("failed to create Cloudflare trace request: %v\n", err)
+		return
 	}
 	fullAddress := net.JoinHostPort(t_ip, fmt.Sprint(t_port))
 	var client = http.Client{
@@ -59,14 +59,15 @@ func getGeoInfoFromCF(ipStr *string) (loc string) {
 	response, err := client.Do(tReq)
 	// connection is failed(network error), won't continue
 	if err != nil || response == nil {
-		myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
+		myLogger.Errorf("failed to request Cloudflare trace location: %v\n", err)
 		time.Sleep(time.Duration(Config.Interval) * time.Millisecond)
 		return
 	}
+	defer response.Body.Close()
 	// read response.Body as string
 	loc, err = get_loc_from_cf_resp(response.Body)
 	if err != nil {
-		myLogger.Error(fmt.Sprintf("An error occurred while read response.Body: %v\n", err))
+		myLogger.Errorf("failed to read Cloudflare trace response body: %v\n", err)
 		return
 	}
 	return
@@ -75,7 +76,7 @@ func getGeoInfoFromCF(ipStr *string) (loc string) {
 func getCFCDNCgiTraceUrl() (baseurl string) {
 	t_cf_url, t_err := url.Parse(baseCfCDNCgiTraceUrl)
 	if t_err != nil {
-		myLogger.Errorln("<getCFCgiCDNTraceUrl> invalid base url ", baseCfCDNCgiTraceUrl)
+		myLogger.Errorf("invalid default Cloudflare trace URL %q: %v\n", baseCfCDNCgiTraceUrl, t_err)
 		baseurl = "https://ww1.zhfreal.top/cdn-cgi/trace"
 		return
 	}
@@ -83,7 +84,7 @@ func getCFCDNCgiTraceUrl() (baseurl string) {
 		if Config.DTHttps {
 			t_url, t_err := url.Parse(Config.DTUrl)
 			if t_err != nil {
-				myLogger.Warningln("<getCFCgiCDNTraceUrl> invalid dt url ", Config.DTUrl)
+				myLogger.Warningf("invalid --dt-url for Cloudflare trace lookup %q: %v\n", Config.DTUrl, t_err)
 				baseurl = baseCfCDNCgiTraceUrl
 				return
 			}
@@ -94,7 +95,7 @@ func getCFCDNCgiTraceUrl() (baseurl string) {
 	} else {
 		t_url, t_err := url.Parse(Config.DLTUrl)
 		if t_err != nil {
-			myLogger.Warningln("<getCFCgiCDNTraceUrl> invalid dt url ", Config.DTUrl)
+			myLogger.Warningf("invalid --dlt-url for Cloudflare trace lookup %q: %v\n", Config.DLTUrl, t_err)
 			baseurl = baseCfCDNCgiTraceUrl
 			return
 		}

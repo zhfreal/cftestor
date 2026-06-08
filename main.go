@@ -272,8 +272,14 @@ RETRY_LOOP:
 					tmp_slice = append(tmp_slice, k)
 				}
 				newSourceIPs := NewSourceIPs()
-				newSourceIPs.AddFromSlice(tmp_slice, TypeIPv4|TypeIPv6)
-				newSourceIPs.AddPorts(Config.PortStrSlice)
+				if err := newSourceIPs.AddFromSlice(tmp_slice, TypeIPv4|TypeIPv6); err != nil {
+					myLogger.Errorf("failed to prepare loop candidates: %v\n", err)
+					break LOOP
+				}
+				if err := newSourceIPs.AddPorts(Config.PortStrSlice); err != nil {
+					myLogger.Errorf("failed to add configured ports for loop retest: %v\n", err)
+					break LOOP
+				}
 				thisSourceIPs = newSourceIPs
 				if !Config.TestAll {
 					t_result_min = len(tmp_slice)
@@ -316,7 +322,7 @@ RETRY_LOOP:
 func main() {
 	shouldExit, exitCode, err := configureApp(os.Args[1:])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 	}
 	if shouldExit {
 		os.Exit(exitCode)
@@ -339,21 +345,27 @@ func main() {
 			// write to csv file
 			if Config.StoreToFile {
 				if !Config.SilenceMode {
-					myLogger.Print("Write to csv " + Config.ResultFile)
+					myLogger.Print("Writing CSV results to " + Config.ResultFile)
 				}
-				writeCSVResult(records, Config.ResultFile)
+				if err := writeCSVResult(records, Config.ResultFile); err != nil {
+					fmt.Fprintf(os.Stderr, "error: %v\n", err)
+					os.Exit(1)
+				}
 				if !Config.SilenceMode {
-					myLogger.Println("  Done!")
+					myLogger.Println("  Done")
 				}
 			}
 			// write to db
 			if Config.StoreToDB {
 				if !Config.SilenceMode {
-					myLogger.Print("Write to sqlite3 db file " + Config.DBFile)
+					myLogger.Print("Writing SQLite results to " + Config.DBFile)
 				}
-				saveDBRecords(records, Config.DBFile)
+				if err := saveDBRecords(records, Config.DBFile); err != nil {
+					fmt.Fprintf(os.Stderr, "error: %v\n", err)
+					os.Exit(1)
+				}
 				if !Config.SilenceMode {
-					myLogger.Println("  Done!")
+					myLogger.Println("  Done")
 				}
 			}
 		}

@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -35,53 +34,59 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
-func parseUrl(urlStr string) (tHostName string, tPort int) {
+func parseUrl(urlStr string) (tHostName string, tPort int, err error) {
 	urlStr = strings.TrimSpace(urlStr)
 	if len(urlStr) == 0 {
 		urlStr = defaultDLTUrl
 	}
 	u, err := url.ParseRequestURI(urlStr)
 	if err != nil || u == nil || len(u.Host) == 0 {
-		myLogger.Fatal(fmt.Sprintf("url is not valid: %s\n", urlStr))
+		return "", 0, fmt.Errorf("invalid URL %q", urlStr)
 	}
-	tHost := strings.Split(u.Host, ":")
-	tHostName = tHost[0]
-	if len(tHost) > 1 {
-		tPort, err = strconv.Atoi(tHost[1])
-		if err != nil {
-			myLogger.Fatal(fmt.Sprintf("url is not valid: %s\n", urlStr))
-		}
-	} else {
-		if u.Scheme == "http" {
-			tPort = 80
-		} else if u.Scheme == "https" {
-			tPort = 443
-		}
+	tHostName = u.Hostname()
+	if len(tHostName) == 0 {
+		return "", 0, fmt.Errorf("invalid URL %q: missing host", urlStr)
 	}
-	return
+	if port := u.Port(); len(port) > 0 {
+		tPort, err = strconv.Atoi(port)
+		if err != nil || tPort <= 0 || tPort > 65535 {
+			return "", 0, fmt.Errorf("invalid URL %q: invalid port %q", urlStr, port)
+		}
+		return tHostName, tPort, nil
+	}
+	switch u.Scheme {
+	case "http":
+		tPort = 80
+	case "https":
+		tPort = 443
+	default:
+		return "", 0, fmt.Errorf("invalid URL %q: scheme must be http or https when no port is provided", urlStr)
+	}
+	return tHostName, tPort, nil
 }
 
-func newUrl(urlStr, port string) string {
+func newUrl(urlStr, port string) (string, error) {
 	urlStr = strings.TrimSpace(urlStr)
 	if len(urlStr) == 0 {
 		urlStr = defaultDLTUrl
 	}
+	newPort, err := strconv.Atoi(port)
+	if err != nil || newPort <= 0 || newPort > 65535 {
+		return "", fmt.Errorf("invalid target port %q", port)
+	}
 	u, err := url.ParseRequestURI(urlStr)
 	if err != nil || u == nil || len(u.Host) == 0 {
-		myLogger.Fatal(fmt.Sprintf("url is not valid: %s\n", urlStr))
+		return "", fmt.Errorf("invalid URL %q", urlStr)
 	}
-	host, old_port, err := net.SplitHostPort(u.Host)
-	newHost := ""
-	if err != nil {
-		newHost = net.JoinHostPort(u.Host, port)
-	} else {
-		if old_port == port {
-			return urlStr
-		}
-		newHost = net.JoinHostPort(host, port)
+	host := u.Hostname()
+	if len(host) == 0 {
+		return "", fmt.Errorf("invalid URL %q: missing host", urlStr)
 	}
-	u.Host = newHost
-	return u.String()
+	if u.Port() == port {
+		return u.String(), nil
+	}
+	u.Host = net.JoinHostPort(host, port)
+	return u.String(), nil
 }
 
 func initRandSeed() {
@@ -98,7 +103,8 @@ func getGeoInfoFromIncolumitas(ipStr string) (ASN int, city, country string) {
 	t_url.RawQuery = params.Encode()
 	tReq, err := http.NewRequest("GET", t_url.String(), nil)
 	if err != nil {
-		log.Fatal(err)
+		myLogger.Errorf("failed to create Incolumitas request: %v\n", err)
+		return
 	}
 	var client = http.Client{
 		Transport:     nil,
@@ -110,14 +116,15 @@ func getGeoInfoFromIncolumitas(ipStr string) (ASN int, city, country string) {
 	response, err := client.Do(tReq)
 	// connection is failed(network error), won't continue
 	if err != nil || response == nil {
-		myLogger.Error(fmt.Sprintf("An error occurred while request ASN and city info from cloudflare: %v\n", err))
+		myLogger.Errorf("failed to request ASN and city info from Incolumitas: %v\n", err)
 		time.Sleep(time.Duration(Config.Interval) * time.Millisecond)
 		return
 	}
+	defer response.Body.Close()
 	// read response.Body as string
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		myLogger.Error(fmt.Sprintf("An error occurred while read response.Body: %v\n", err))
+		myLogger.Errorf("failed to read Incolumitas response body: %v\n", err)
 		return
 	}
 	// decode body []byte into string
@@ -125,7 +132,7 @@ func getGeoInfoFromIncolumitas(ipStr string) (ASN int, city, country string) {
 	asn := gjson.Get(bodyStr, "asn.asn")
 	if asn.Exists() {
 		if ASN, err = strconv.Atoi(asn.String()); err != nil {
-			myLogger.Error(fmt.Sprintf("An error occurred while convert ASN for header: %T, %v", asn.String(), asn.String()))
+			myLogger.Errorf("failed to parse ASN from Incolumitas response: %T, %v\n", asn.String(), asn.String())
 		}
 	}
 	city = gjson.Get(bodyStr, "location.city").String()
@@ -140,7 +147,7 @@ func GetDialContextByAddr(addrPort string) func(ctx context.Context, network, ad
 	}
 }
 
-// calcResult will calculate the statistic results of DT and DLT for a IP
+// calcResult calculates the DT and DLT statistics for one candidate.
 func calcResult(out singleVerifyResult, statDownload bool) VerifyResults {
 	// initialize VerifyResults
 	var tVerifyResult = VerifyResults{}
@@ -393,7 +400,8 @@ func confirm(s string, tries int) bool {
 		fmt.Printf("%s [y/yes/N/no]: ", s)
 		rsp, err := reader.ReadString('\n')
 		if err != nil {
-			myLogger.Fatal(err)
+			myLogger.Errorf("failed to read confirmation: %v\n", err)
+			return false
 		}
 		rsp = strings.ToLower(strings.TrimSpace(rsp))
 		if rsp == "y" || rsp == "yes" {
