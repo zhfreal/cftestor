@@ -89,6 +89,51 @@ func newUrl(urlStr, port string) (string, error) {
 	return u.String(), nil
 }
 
+func shouldApplyNoCache(sourceURL string) bool {
+	return Config.NoCache && !isDefaultTestURL(sourceURL)
+}
+
+func isDefaultTestURL(sourceURL string) bool {
+	return equivalentURL(sourceURL, defaultDTUrl) || equivalentURL(sourceURL, defaultDLTUrl)
+}
+
+func equivalentURL(a, b string) bool {
+	aURL, err := url.Parse(strings.TrimSpace(a))
+	if err != nil || aURL == nil {
+		return false
+	}
+	bURL, err := url.Parse(strings.TrimSpace(b))
+	if err != nil || bURL == nil {
+		return false
+	}
+	return strings.EqualFold(aURL.Scheme, bURL.Scheme) &&
+		strings.EqualFold(strings.TrimSuffix(aURL.Hostname(), "."), strings.TrimSuffix(bURL.Hostname(), ".")) &&
+		effectiveURLPort(aURL) == effectiveURLPort(bURL) &&
+		normalizedURLPath(aURL) == normalizedURLPath(bURL) &&
+		aURL.Query().Encode() == bURL.Query().Encode()
+}
+
+func effectiveURLPort(u *url.URL) string {
+	if port := u.Port(); len(port) > 0 {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
+}
+
+func normalizedURLPath(u *url.URL) string {
+	if len(u.EscapedPath()) == 0 {
+		return "/"
+	}
+	return u.EscapedPath()
+}
+
 func initRandSeed() {
 	myRand.Seed(time.Now().UnixNano())
 }

@@ -108,8 +108,8 @@ Delay Test (DT) Options:
     -c, --dt-count     int        Number of DT attempts per candidate. Default: 4.
         --dt-via       string     DT protocol: "https", "tls", or "ssl". Default: https.
         --dt-via-https            Deprecated alias for --dt-via https.
-        --dt-url       string     URL to use for HTTPS-based DT. Default: https://cf.9999876.xyz/cdn-cgi/trace
-        --hostname     string     SNI hostname for TLS/SSL DT. Default: cf.9999876.xyz
+        --dt-url       string     URL to use for HTTPS-based DT. Default: https://speed.cloudflare.com/__down?bytes=0
+        --hostname     string     SNI hostname for TLS/SSL DT. Default: speed.cloudflare.com
         --dt-expect-code int      Expected HTTP status code for DT. Default: 200.
         --ev-dt                   Enable DT evaluation using all attempts. Default: off.
     -k, --ev-dt-delay  int        Maximum allowed average DT delay in ms. Default: 600.
@@ -120,7 +120,7 @@ Download Test (DLT) Options:
     -n, --dlt-thread   int        Number of concurrent DLT workers. Default: 1.
     -d, --dlt-period   int        Maximum duration for one DLT attempt in seconds. Default: 10.
     -b, --dlt-count    int        Number of DLT attempts per candidate. Default: 1.
-    -u, --dlt-url      string     URL to use for DLT. Default: https://cf.9999876.xyz/500mb.dat
+    -u, --dlt-url      string     URL to use for DLT. Default: https://speed.cloudflare.com/__down?bytes=250000000
         --dlt-timeout  int        HTTP response timeout for DLT in ms. Default: 5000.
     -l, --speed        float      Minimum required download speed in KB/s. Default: 6000.
     -I, --interval     int        Interval between test attempts in ms. Default: 500.

@@ -78,10 +78,11 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 		myLogger.Errorf("failed to build test URL for %s: %v\n", *host, err)
 		return allResult, ""
 	}
+	applyNoCache := shouldApplyNoCache(*tUrl)
 	t_failure_counter := 0
 
 	for i := 0; i < round; i++ {
-		currentResult, rLoc := performDownloadRound(*host, new_url, httpRspTimeoutDur, doDTOnly)
+		currentResult, rLoc := performDownloadRound(*host, new_url, httpRspTimeoutDur, doDTOnly, applyNoCache)
 
 		if !currentResult.dTPassed || (!doDTOnly && currentResult.dLTWasDone && !currentResult.dLTPassed) {
 			t_failure_counter++
@@ -111,7 +112,7 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 	return allResult, loc
 }
 
-func performDownloadRound(host, targetUrl string, httpRspTimeoutDur time.Duration, doDTOnly bool) (singleResult, string) {
+func performDownloadRound(host, targetUrl string, httpRspTimeoutDur time.Duration, doDTOnly, applyNoCache bool) (singleResult, string) {
 	var currentResult = singleResult{false, 0, 0, false, false, 0, 0}
 	var loc = ""
 
@@ -120,12 +121,9 @@ func performDownloadRound(host, targetUrl string, httpRspTimeoutDur time.Duratio
 		return currentResult, ""
 	}
 	tReq.Header.Set("User-Agent", Config.UserAgent)
-	if Config.NoCache {
-		// Only apply no-cache for custom user-provided URLs to protect default origin bandwidth.
-		if targetUrl != defaultDTUrl && targetUrl != defaultDLTUrl {
-			tReq.Header.Set("Cache-Control", "no-cache")
-			tReq.Header.Set("Pragma", "no-cache")
-		}
+	if applyNoCache {
+		tReq.Header.Set("Cache-Control", "no-cache")
+		tReq.Header.Set("Pragma", "no-cache")
 	}
 
 	t_timeout := httpRspTimeoutDur

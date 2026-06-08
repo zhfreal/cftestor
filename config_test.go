@@ -220,3 +220,41 @@ func TestURLHelpersReturnErrorsInsteadOfExiting(t *testing.T) {
 		t.Fatal("expected invalid newUrl port to return error")
 	}
 }
+
+func TestDefaultURLsUseCloudflareSpeedtest(t *testing.T) {
+	if defaultDTUrl != "https://speed.cloudflare.com/__down?bytes=0" {
+		t.Fatalf("defaultDTUrl = %q", defaultDTUrl)
+	}
+	if defaultDLTUrl != "https://speed.cloudflare.com/__down?bytes=250000000" {
+		t.Fatalf("defaultDLTUrl = %q", defaultDLTUrl)
+	}
+	if DefaultTestHost != "speed.cloudflare.com" {
+		t.Fatalf("DefaultTestHost = %q", DefaultTestHost)
+	}
+}
+
+func TestNoCacheIgnoresDefaultURLsWithEquivalentPorts(t *testing.T) {
+	resetGlobalsForTest()
+	Config.NoCache = true
+
+	defaults := []string{
+		defaultDTUrl,
+		defaultDLTUrl,
+		"https://speed.cloudflare.com:443/__down?bytes=0",
+		"https://speed.cloudflare.com:443/__down?bytes=250000000",
+	}
+	for _, sourceURL := range defaults {
+		if shouldApplyNoCache(sourceURL) {
+			t.Fatalf("shouldApplyNoCache(%q) = true, want false", sourceURL)
+		}
+	}
+
+	if !shouldApplyNoCache("https://example.com/__down?bytes=250000000") {
+		t.Fatal("custom URL should apply no-cache when Config.NoCache is true")
+	}
+
+	Config.NoCache = false
+	if shouldApplyNoCache("https://example.com/__down?bytes=250000000") {
+		t.Fatal("custom URL should not apply no-cache when Config.NoCache is false")
+	}
+}

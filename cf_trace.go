@@ -77,7 +77,7 @@ func getCFCDNCgiTraceUrl() (baseurl string) {
 	t_cf_url, t_err := url.Parse(baseCfCDNCgiTraceUrl)
 	if t_err != nil {
 		myLogger.Errorf("invalid default Cloudflare trace URL %q: %v\n", baseCfCDNCgiTraceUrl, t_err)
-		baseurl = "https://ww1.zhfreal.top/cdn-cgi/trace"
+		baseurl = baseCfCDNCgiTraceUrl
 		return
 	}
 	if Config.DTOnly {

@@ -26,15 +26,15 @@ const (
 	downloadBufferSize      = 1024 * 64         // in byte
 	fileDefaultSize         = 1024 * 1024 * 300 // in byte
 	downloadSizeMin         = 1024 * 1024       // in byte
-	defaultDLTUrl           = "https://cf.9999876.xyz/500mb.dat"
-	defaultDTUrl            = "https://cf.9999876.xyz/cdn-cgi/trace"
+	defaultDLTUrl           = "https://speed.cloudflare.com/__down?bytes=250000000"
+	defaultDTUrl            = "https://speed.cloudflare.com/__down?bytes=0"
 	userAgentChrome         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 	userAgentFirefox        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
 	userAgentEdge           = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 	userAgentSafari         = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15"
 
 	defaultDBFile        = "ip.db"
-	DefaultTestHost      = "cf.9999876.xyz"
+	DefaultTestHost      = "speed.cloudflare.com"
 	maxHostLen           = 1 << 12
 	dtsSSL               = "SSL"
 	dtsHTTPS             = "HTTPS"
@@ -200,8 +200,7 @@ var (
 		"ASN(Src)",
 		"Location(CF)",
 	}
-	// cfURL = "https://speed.cloudflare.com/__down"
-	baseCfCDNCgiTraceUrl = "https://ww1.zhfreal.top/cdn-cgi/trace"
+	baseCfCDNCgiTraceUrl = "https://speed.cloudflare.com/cdn-cgi/trace"
 )
 
 var (
