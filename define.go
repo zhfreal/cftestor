@@ -272,10 +272,7 @@ type AppConfig struct {
 	NoCache                     bool
 }
 
-var Config AppConfig = AppConfig{
-	TLSClientID: utls.HelloChrome_Auto,
-	UserAgent:   userAgentChrome,
-}
+var Config AppConfig = DefaultConfig()
 
 var help = appArt + `
   Find and verify the best Cloudflare CDN edge nodes for your network.
@@ -299,7 +296,7 @@ Core Options:
 Delay Test (DT) Options:
     -m, --dt-thread    int        Number of concurrent DT threads. Default: 20.
     -t, --dt-timeout   int        Timeout for a single DT in ms. Default: 2000 (SSL) or 5000 (HTTPS).
-    -c, --dt-count     int        Number of DT attempts per IP. Default: 2.
+    -c, --dt-count     int        Number of DT attempts per IP. Default: 4.
         --dt-via       string     DT protocol: "https", "tls", or "ssl". Default: https.
         --dt-url       string     URL to use for HTTPS-based DT. Default: ` + defaultDTUrl + `
         --hostname     string     SNI hostname for SSL/TLS handshake. Default: ` + DefaultTestHost + `
@@ -321,7 +318,7 @@ Download Test (DLT) Options:
 Mode Options:
         --dt-only                 Perform Delay Test only.
         --dlt-only                Perform Download Test only.
-        --loop         int        Number of complete scan cycles (loops) to perform.
+        --loop         int        Retest qualified candidates for this many confirmation cycles.
         --loop-interval int       Seconds to wait between loop cycles. Default: 60.
         --test-timeout int        Total test timeout in minutes. Default: 30.
 

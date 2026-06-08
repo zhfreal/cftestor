@@ -66,7 +66,7 @@ Run with default settings (scans built-in Cloudflare IPv4 ranges):
 
 **Continuous monitoring (loop every 5 minutes):**
 ```bash
-./cftestor --loop -1 --loop-interval 300
+./cftestor --loop 3 --loop-interval 300
 ```
 
 ## CLI Reference
@@ -85,7 +85,7 @@ Core Options:
 Delay Test (DT) Options:
     -m, --dt-thread    int        Number of concurrent DT threads. Default: 20.
     -t, --dt-timeout   int        Timeout per DT (ms).
-    -c, --dt-count     int        Number of DT attempts per IP. Default: 2.
+    -c, --dt-count     int        Number of DT attempts per IP. Default: 4.
         --dt-via       string     Protocol: "https", "tls", or "ssl". Default: https.
         --ev-dt                   Enable full evaluation using all attempts.
     -k, --ev-dt-delay  int        Maximum allowed average delay (ms). Default: 600.
