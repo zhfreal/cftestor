@@ -1,14 +1,68 @@
-.idea
+# IDE and editor settings
+.idea/
 .vscode/
-dist
-*.sh
-*.exe
+.fleet/
+.zed/
+.nova/
+.history/
+*.iml
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+
+# OS and filesystem metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+
+# Build outputs and binaries
+/bin/
+/build/
+/dist/
+dist/
 cftestor
+cftestor.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go test, debug, and profiling artifacts
+*.test
+*.out
+*.prof
+*.pprof
+*.coverprofile
+coverage/
+coverage.out
+__debug*
+__debug_bin*
+debug
+debug.exe
+.dlv/
+
+# Runtime output and local data
 *.db
-*.txt
+*.sqlite
+*.sqlite3
 *.csv
+*.txt
+*.log
+*.tmp
+*.temp
+*.pid
 *.json
 *.xml
 *.bat
 *.py
-__debug*
+*.sh
+
+# Temporary/cache directories
+/tmp/
+/temp/
+.cache/
+.cache-go-build/
