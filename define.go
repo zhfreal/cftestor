@@ -205,14 +205,14 @@ var (
 )
 
 var (
-	maxHostLenBig                           = big.NewInt(maxHostLen)
+	maxHostLenBig                                  = big.NewInt(maxHostLen)
 	version, buildTag, buildDate, buildHash string = "dev", "dev", "dev", "dev"
 	ipStr                                   []string
 	myLogger                                MyLogger
 	loggerLevel                             LogLevel
-	verifyResultsMap                        = make(map[string]VerifyResults)
-	myRand                                  = newRand()
-	srcIPs                                  = NewSourceIPsWithRand(myRand)
+	verifyResultsMap                               = make(map[string]VerifyResults)
+	myRand                                         = newRand()
+	srcIPs                                         = NewSourceIPsWithRand(myRand)
 	appArt                                  string = `
   ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
   ░█░░░█▀▀░░█░░█▀▀░▀▀█░░█░░█░█░█▀▄
@@ -284,16 +284,16 @@ var help = appArt + `
 Usage: cftestor [options]
 
 Core Options:
-    -s, --ip           strings    Specify IP, CIDR, or host. Examples: "-s 1.0.0.1", "-s 1.0.0.1/24",
-                                  "-s 1.1.1.1:2053". Can be provided multiple times.
-    -i, --in           string     Path to a file containing IPs, CIDRs, or hosts (one per line).
+    -s, --ip           strings    Specify IP, CIDR, or host:port. Examples: "-s 1.0.0.1", "-s 1.0.0.1/24",
+                                  "-s 1.1.1.1:2053", "-s example.com:443". Can be provided multiple times.
+    -i, --in           string     Path to a file containing IPs, CIDRs, or host:port entries (one per line).
     -p, --port         strings    Specify port(s) to test. Supports single ports, ranges, and lists (e.g.,
                                   "443", "80-443", "443,8443"). Default: 443.
     -a, --test-all                Test all provided IPs until none remain. Default: off.
     -r, --result       int        Maximum number of qualified IPs to find. Default: 10.
         --fast                    Use a limited set of internal Cloudflare IPs for quick scanning.
     -4, --ipv4                    Test IPv4 only. Default: on (if no IPs specified).
-    -6, --ipv6                    Test IPv6 only. Default: off.
+    -6, --ipv6                    Test IPv6 only. Default: off. DNS hosts are resolved by the dialer.
     -C, --no-cache                Bypass CDN/Proxy caching for custom URLs (ignored for defaults).
 
 Delay Test (DT) Options:
@@ -903,8 +903,10 @@ func (s *sourceIPs) add(IPs string, mode int8) error {
 		if tV == TypeIPErr {
 			return fmt.Errorf("\"%v\" is invalid", ips)
 		}
-		// when IPs is not the target version, return without any error
-		if (tV & mode) != tV {
+		// DNS hosts are family-agnostic until resolved by the dialer, so keep them
+		// for either IPv4 or IPv6 scans. IP literal hosts still obey the mode filter.
+		isDNSHost := tV == (TypeIPv4 | TypeIPv6)
+		if !isDNSHost && (tV&mode) != tV {
 			return nil
 		}
 		s.srcHosts = append(s.srcHosts, &ips)

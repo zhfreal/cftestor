@@ -263,11 +263,18 @@ func isValidHost(host string) bool {
 }
 
 func getHostVer(host string) (ver int8) {
-	tIP, _, err := net.SplitHostPort(host)
+	tHost, _, err := net.SplitHostPort(host)
 	if err != nil {
 		return TypeIPErr
 	}
-	return getIPVer(tIP)
+	tVer := getIPVer(tHost)
+	if tVer != TypeIPErr {
+		return tVer
+	}
+	if isValidDNSHost(tHost) {
+		return TypeIPv4 | TypeIPv6
+	}
+	return TypeIPErr
 }
 
 func getIPsVer(ips string) (ver int8) {
@@ -306,12 +313,12 @@ func splitHost(host string) (bool, string, int) {
 	if len(host) == 0 {
 		return false, "", -1
 	}
-	ip, port, err := net.SplitHostPort(host)
+	tHost, port, err := net.SplitHostPort(host)
 	if err != nil {
 		return false, "", -1
 	}
-	// invalid ip in host
-	if !isValidIPs(ip) {
+	// invalid host name or IP in host
+	if !isValidIPs(tHost) && !isValidDNSHost(tHost) {
 		return false, "", -1
 	}
 	// invalid port
@@ -322,7 +329,51 @@ func splitHost(host string) (bool, string, int) {
 	if t_port <= 0 || t_port > 65535 {
 		return false, "", -1
 	}
-	return true, ip, t_port
+	return true, tHost, t_port
+}
+
+func isValidDNSHost(host string) bool {
+	host = strings.TrimSpace(strings.TrimSuffix(host, "."))
+	if len(host) == 0 || len(host) > 253 {
+		return false
+	}
+	if looksLikeIPv4Literal(host) {
+		return false
+	}
+	labels := strings.Split(host, ".")
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 {
+			return false
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+				continue
+			}
+			return false
+		}
+	}
+	return true
+}
+
+func looksLikeIPv4Literal(host string) bool {
+	parts := strings.Split(host, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, part := range parts {
+		if len(part) == 0 {
+			return false
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func genHostFromIPStrPort(ip string, port int) (connStr string) {
@@ -355,7 +406,6 @@ func confirm(s string, tries int) bool {
 	}
 	return false
 }
-
 
 func newRand() *rand.Rand {
 	return rand.New(rand.NewSource(time.Now().UnixNano()))

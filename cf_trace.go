@@ -47,7 +47,7 @@ func getGeoInfoFromCF(ipStr *string) (loc string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fullAddress := genHostFromIPStrPort(t_ip, t_port)
+	fullAddress := net.JoinHostPort(t_ip, fmt.Sprint(t_port))
 	var client = http.Client{
 		Transport: &http.Transport{
 			DialContext: GetDialContextByAddr(fullAddress),

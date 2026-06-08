@@ -33,8 +33,8 @@ func init() {
 
 	// version = "dev"
 	flag.BoolVar(&Config.FastMode, "fast", false, "Fast mode")
-	flag.StringSliceVarP(&ipStr, "ip", "s", []string{}, "Specific IP or CIDR for test.")
-	flag.StringVarP(&Config.IPFile, "in", "i", "", "Specific file of IPs and CIDRs for test.")
+	flag.StringSliceVarP(&ipStr, "ip", "s", []string{}, "Specific IP, CIDR, or host:port for test.")
+	flag.StringVarP(&Config.IPFile, "in", "i", "", "Specific file of IPs, CIDRs, or host:port entries for test.")
 
 	flag.IntVarP(&Config.DTWorkerThread, "dt-thread", "m", 20, "Number of concurrent threads for Delay Test(DT).")
 	flag.IntVarP(&Config.DTTimeout, "dt-timeout", "t", 2000, "Timeout for single DT(ms).")

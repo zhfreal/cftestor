@@ -61,7 +61,7 @@ Run with default settings (scans built-in Cloudflare IPv4 ranges):
 
 **Scan specific CIDR ranges and save to database:**
 ```bash
-./cftestor -s 104.16.0.0/16 -s 172.64.0.0/13 --to-db -f results.db
+./cftestor -s 104.16.0.0/16 -s 172.64.0.0/13 -s example.com:443 --to-db -f results.db
 ```
 
 **Continuous monitoring (loop every 5 minutes):**
@@ -75,9 +75,9 @@ Run with default settings (scans built-in Cloudflare IPv4 ranges):
 Usage: cftestor [options]
 
 Core Options:
-    -s, --ip           strings    Specify IP, CIDR, or host. Can be used multiple times.
-    -i, --in           string     Path to a file containing IPs/CIDRs (one per line).
-    -p, --port         strings    Port(s) to test (e.g., "443", "80-443"). Default: 443.
+    -s, --ip           strings    Specify IP, CIDR, or host:port, including DNS names. Can be used multiple times.
+    -i, --in           string     Path to a file containing IPs, CIDRs, or host:port entries (one per line).
+    -p, --port         strings    Port(s) to test for IP/CIDR inputs (e.g., "443", "80-443"). Default: 443.
     -a, --test-all                Test all provided IPs until none remain.
     -r, --result       int        Maximum number of qualified IPs to find. Default: 10.
         --fast                    Use a limited set of internal IPs for quick scanning.
