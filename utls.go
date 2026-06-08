@@ -57,8 +57,7 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 
 	b.startAt = time.Now()
 	var err error
-	dialer := net.Dialer{}
-	b.conn, err = dialer.DialContext(req.Context(), "tcp", b.hostWithPort)
+	b.conn, err = outboundDialContext(req.Context(), "tcp", b.hostWithPort)
 	if err != nil {
 		return nil, fmt.Errorf("tcp net dial fail: %w", err)
 	}
@@ -160,8 +159,7 @@ func performUtlsDial(host string, hostNameStr string, timeout time.Duration, hel
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	dialer := net.Dialer{}
-	dialConn, err := dialer.DialContext(ctx, "tcp", host)
+	dialConn, err := outboundDialContext(ctx, "tcp", host)
 	if err != nil {
 		return false
 	}

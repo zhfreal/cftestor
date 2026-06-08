@@ -102,6 +102,11 @@ Core Options:
     -6, --ipv6                    Test IPv6 only. Default: off. DNS hosts are resolved by the dialer.
     -C, --no-cache                Bypass CDN/Proxy caching for custom URLs (ignored for defaults).
 
+Network Options:
+        --mark        string      Set Linux socket fwmark for outbound packets. Supports decimal and hex.
+        --xmark       string      Alias for --mark.
+        --interface   string      Bind outbound packets to an interface name, interface index, or local source IP.
+
 Delay Test (DT) Options:
     -m, --dt-thread    int        Number of concurrent DT workers. Default: 20.
     -t, --dt-timeout   int        Timeout for a single DT attempt in ms. Default: 2000 (TLS/SSL) or 5000 (HTTPS).
@@ -192,6 +197,12 @@ Deprecated flags are still accepted for existing scripts:
 - `--dt-via-https` maps to `--dt-via https`.
 
 Prefer the canonical names in new commands and documentation.
+
+## Outbound Socket Controls
+
+`--mark` and `--xmark` set the same outbound mark value. Values may be decimal (`123`) or hex (`0x7b`). Socket marks are Linux-only and may require root or `CAP_NET_ADMIN`.
+
+`--interface` accepts a local source IP, interface name, or numeric interface index. Source-IP binding is portable. Interface name/index binding uses OS-specific socket support: Linux uses `SO_BINDTODEVICE`; Windows uses `IP_UNICAST_IF` / `IPV6_UNICAST_IF`; macOS and Solaris use `IP_BOUND_IF` / `IPV6_BOUND_IF`; FreeBSD, OpenBSD, NetBSD, and DragonFly BSD fall back to binding a source address from the selected interface.
 
 ## Database Schema (Table: `CFTD`)
 

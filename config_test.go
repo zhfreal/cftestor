@@ -1,9 +1,141 @@
 package main
 
 import (
+	"net"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+func firstLocalTestIP(t *testing.T) (net.IP, string) {
+	t.Helper()
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatalf("net.Interfaces returned error: %v", err)
+	}
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch a := addr.(type) {
+			case *net.IPNet:
+				ip = a.IP
+			case *net.IPAddr:
+				ip = a.IP
+			}
+			if ip == nil || ip.IsUnspecified() {
+				continue
+			}
+			if v4 := ip.To4(); v4 != nil {
+				return v4, ""
+			}
+			return ip, iface.Name
+		}
+	}
+	t.Fatal("no local interface address available for test")
+	return nil, ""
+}
+
+func firstLocalTestInterface(t *testing.T) net.Interface {
+	t.Helper()
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatalf("net.Interfaces returned error: %v", err)
+	}
+	for _, iface := range ifaces {
+		if iface.Index > 0 {
+			return iface
+		}
+	}
+	t.Fatal("no local interface available for test")
+	return net.Interface{}
+}
+
+func TestParseOutboundMarkAcceptsDecimalAndHex(t *testing.T) {
+	tests := []struct {
+		input string
+		want  uint32
+	}{
+		{input: "123", want: 123},
+		{input: "0x7b", want: 123},
+		{input: "0X7B", want: 123},
+		{input: "0xffffffff", want: 0xffffffff},
+	}
+	for _, tt := range tests {
+		got, err := parseOutboundMark("--mark", tt.input)
+		if err != nil {
+			t.Fatalf("parseOutboundMark(%q) returned error: %v", tt.input, err)
+		}
+		if got != tt.want {
+			t.Fatalf("parseOutboundMark(%q) = %d, want %d", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestParseOutboundMarkRejectsInvalidValues(t *testing.T) {
+	for _, input := range []string{"", "-1", "abc", "0x100000000"} {
+		if _, err := parseOutboundMark("--mark", input); err == nil {
+			t.Fatalf("parseOutboundMark(%q) returned nil error", input)
+		}
+	}
+}
+
+func TestConfigureAppRejectsConflictingOutboundMarks(t *testing.T) {
+	resetGlobalsForTest()
+	shouldExit, _, err := configureApp([]string{"--quiet", "--dt-only", "--source", "1.1.1.1", "--mark", "1", "--xmark", "2"})
+	if !shouldExit || err == nil {
+		t.Fatalf("configureApp returned shouldExit %v, err %v; want conflicting mark error", shouldExit, err)
+	}
+	if !strings.Contains(err.Error(), "cannot set different mark values") {
+		t.Fatalf("error %q does not mention conflicting mark values", err.Error())
+	}
+}
+
+func TestConfigureAppAcceptsOutboundMarkAliasesOnLinux(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("socket marks are Linux-only")
+	}
+	resetGlobalsForTest()
+	shouldExit, _, err := configureApp([]string{"--quiet", "--dt-only", "--source", "1.1.1.1", "--mark", "123", "--xmark", "0x7b"})
+	if shouldExit || err != nil {
+		t.Fatalf("configureApp returned shouldExit %v, err %v", shouldExit, err)
+	}
+	if !Config.OutboundMarkSet || Config.OutboundMark != 123 {
+		t.Fatalf("OutboundMarkSet=%v OutboundMark=%d, want set mark 123", Config.OutboundMarkSet, Config.OutboundMark)
+	}
+}
+
+func TestConfigureAppAcceptsOutboundSourceIP(t *testing.T) {
+	ip, zone := firstLocalTestIP(t)
+	arg := ip.String()
+	if zone != "" && ip.To4() == nil && ip.IsLinkLocalUnicast() {
+		arg += "%" + zone
+	}
+	resetGlobalsForTest()
+	shouldExit, _, err := configureApp([]string{"--quiet", "--dt-only", "--source", "1.1.1.1", "--interface", arg})
+	if shouldExit || err != nil {
+		t.Fatalf("configureApp returned shouldExit %v, err %v", shouldExit, err)
+	}
+	if Config.OutboundSourceIP == nil || !Config.OutboundSourceIP.Equal(ip) {
+		t.Fatalf("OutboundSourceIP=%v, want %v", Config.OutboundSourceIP, ip)
+	}
+}
+
+func TestPrepareOutboundInterfaceAcceptsIndex(t *testing.T) {
+	iface := firstLocalTestInterface(t)
+	resetGlobalsForTest()
+	Config.OutboundInterface = strconv.Itoa(iface.Index)
+	if err := prepareOutboundInterface(); err != nil {
+		t.Fatalf("prepareOutboundInterface returned error: %v", err)
+	}
+	if Config.OutboundInterfaceIndex != iface.Index || Config.OutboundInterfaceName != iface.Name {
+		t.Fatalf("resolved interface = (%d, %q), want (%d, %q)", Config.OutboundInterfaceIndex, Config.OutboundInterfaceName, iface.Index, iface.Name)
+	}
+}
 
 func resetGlobalsForTest() {
 	Config = DefaultConfig()

@@ -269,6 +269,13 @@ type AppConfig struct {
 	SilenceMode                 bool
 	ResolveLoc                  bool
 	NoCache                     bool
+	OutboundMark                uint32
+	OutboundMarkSet             bool
+	OutboundInterface           string
+	OutboundInterfaceName       string
+	OutboundInterfaceIndex      int
+	OutboundSourceIP            net.IP
+	OutboundSourceZone          string
 }
 
 var Config AppConfig = DefaultConfig()
@@ -291,6 +298,11 @@ Core Options:
     -4, --ipv4                    Test IPv4 only. Default: on (if no IPs specified).
     -6, --ipv6                    Test IPv6 only. Default: off. DNS hosts are resolved by the dialer.
     -C, --no-cache                Bypass CDN/Proxy caching for custom URLs (ignored for defaults).
+
+Network Options:
+        --mark        string      Set Linux socket fwmark for outbound packets. Supports decimal and hex.
+        --xmark       string      Alias for --mark.
+        --interface   string      Bind outbound packets to an interface name, interface index, or local source IP.
 
 Delay Test (DT) Options:
     -m, --dt-thread    int        Number of concurrent DT workers. Default: 20.

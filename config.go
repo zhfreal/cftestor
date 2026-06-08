@@ -16,6 +16,8 @@ type cliOptions struct {
 	Config           AppConfig
 	IPs              []string
 	SourceIPs        []string
+	Mark             string
+	XMark            string
 	PrintVersion     bool
 	TLSHelloFirefox  bool
 	TLSHelloChrome   bool
@@ -24,6 +26,8 @@ type cliOptions struct {
 	IPv4Changed      bool
 	IPv6Changed      bool
 	DTTimeoutChanged bool
+	MarkChanged      bool
+	XMarkChanged     bool
 }
 
 func DefaultConfig() AppConfig {
@@ -74,6 +78,8 @@ func parseCLI(args []string) (cliOptions, error) {
 	opts.IPv4Changed = flagChanged(fs, "ipv4")
 	opts.IPv6Changed = flagChanged(fs, "ipv6")
 	opts.DTTimeoutChanged = flagChanged(fs, "dt-timeout", "dt-timeout-ms")
+	opts.MarkChanged = flagChanged(fs, "mark")
+	opts.XMarkChanged = flagChanged(fs, "xmark")
 	applyTLSFingerprint(&opts)
 	return opts, nil
 }
@@ -136,6 +142,9 @@ func registerCLIFlags(fs *flag.FlagSet, opts *cliOptions) {
 	fs.BoolVarP(&cfg.IPv4Mode, "ipv4", "4", cfg.IPv4Mode, "Test IPv4 only.")
 	fs.BoolVarP(&cfg.IPv6Mode, "ipv6", "6", cfg.IPv6Mode, "Test IPv6 only.")
 	fs.BoolVarP(&cfg.TestAll, "test-all", "a", cfg.TestAll, "Test all IPs until no more IP left.")
+	fs.StringVar(&opts.Mark, "mark", opts.Mark, "Set Linux socket fwmark for outbound packets. Supports decimal and hex.")
+	fs.StringVar(&opts.XMark, "xmark", opts.XMark, "Alias for --mark.")
+	fs.StringVar(&cfg.OutboundInterface, "interface", cfg.OutboundInterface, "Bind outbound packets to an interface name, interface index, or local source IP.")
 	fs.BoolVar(&opts.TLSHelloFirefox, "hello-firefox", opts.TLSHelloFirefox, "Simulate Firefox TLS fingerprint.")
 	fs.BoolVar(&opts.TLSHelloChrome, "hello-chrome", opts.TLSHelloChrome, "Simulate Chrome TLS fingerprint.")
 	fs.BoolVar(&opts.TLSHelloEdge, "hello-edge", opts.TLSHelloEdge, "Simulate Edge TLS fingerprint.")
@@ -269,6 +278,9 @@ func prepareRuntime(opts *cliOptions) (bool, int, error) {
 		return true, 1, err
 	}
 	trimConfigStrings()
+	if err := prepareOutboundOptions(opts); err != nil {
+		return true, 1, err
+	}
 
 	if err := loadSourceIPs(tMode, opts.IPv4Changed, opts.IPv6Changed); err != nil {
 		return true, 1, err
@@ -325,6 +337,7 @@ func trimConfigStrings() {
 	Config.DTUrl = strings.TrimSpace(Config.DTUrl)
 	Config.DLTUrl = strings.TrimSpace(Config.DLTUrl)
 	Config.DBFile = strings.TrimSpace(Config.DBFile)
+	Config.OutboundInterface = strings.TrimSpace(Config.OutboundInterface)
 }
 
 func loadSourceIPs(tMode int8, ipv4Changed, ipv6Changed bool) error {

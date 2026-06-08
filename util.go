@@ -187,8 +187,7 @@ func getGeoInfoFromIncolumitas(ipStr string) (ASN int, city, country string) {
 
 func GetDialContextByAddr(addrPort string) func(ctx context.Context, network, address string) (net.Conn, error) {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		c, e := (&net.Dialer{}).DialContext(ctx, network, addrPort)
-		return c, e
+		return outboundDialContext(ctx, network, addrPort)
 	}
 }
 
