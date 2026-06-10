@@ -16,12 +16,24 @@ import (
 	"github.com/miekg/dns"
 )
 
+const (
+	// DNS settings
+	DefaultDNSTimeout    = 3 * time.Second
+	DefaultDNSServer     = "1.1.1.1:53"
+	DefaultDoHMaxIdle    = 100
+	DefaultDoHIdleTimeout = 90 * time.Second
+
+	// Resolution target and performance limits
+	TrancoDomainsLimit   = 10000
+	DNSConcurrencyLimit  = 100
+)
+
 var dohClient = &http.Client{
-	Timeout: 3 * time.Second,
+	Timeout: DefaultDNSTimeout,
 	Transport: &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 100,
-		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConns:        DefaultDoHMaxIdle,
+		MaxIdleConnsPerHost: DefaultDoHMaxIdle,
+		IdleConnTimeout:     DefaultDoHIdleTimeout,
 	},
 }
 
@@ -147,7 +159,7 @@ func resolveDomain(qname string, qtype uint16, netType, server string) (*dns.Msg
 
 	c := new(dns.Client)
 	c.Net = netType
-	c.Timeout = 3 * time.Second
+	c.Timeout = DefaultDNSTimeout
 	if netType == "tcp-tls" {
 		c.TLSConfig = &tls.Config{InsecureSkipVerify: false}
 	}
@@ -161,7 +173,7 @@ func FetchDynamicIPv6(dnsServerStr string) ([]string, error) {
 		myLogger.Warningf("Failed to fetch BGP prefixes: %v\n", err)
 	}
 
-	domains, err := fetchTrancoDomains(10000)
+	domains, err := fetchTrancoDomains(TrancoDomainsLimit)
 	if err != nil {
 		myLogger.Warningf("Failed to fetch Tranco domains: %v\n", err)
 	}
@@ -170,7 +182,7 @@ func FetchDynamicIPv6(dnsServerStr string) ([]string, error) {
 	netType := "udp"
 	serverAddr := dnsServerStr
 	if serverAddr == "" {
-		serverAddr = "1.1.1.1:53"
+		serverAddr = DefaultDNSServer
 	}
 
 	if strings.HasPrefix(serverAddr, "udp://") {
@@ -205,7 +217,7 @@ func FetchDynamicIPv6(dnsServerStr string) ([]string, error) {
 	myLogger.Infoln("Resolving domains to map Cloudflare IPv6 allocations...")
 
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 100) // 100 concurrent workers
+	sem := make(chan struct{}, DNSConcurrencyLimit) // DNSConcurrencyLimit concurrent workers
 
 	var mu sync.Mutex
 	mappedCIDRs := make(map[string]bool)
