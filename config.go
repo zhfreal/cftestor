@@ -57,6 +57,7 @@ func DefaultConfig() AppConfig {
 		TLSClientID:                 utls.HelloChrome_Auto,
 		UserAgent:                   userAgentChrome,
 		PortStrSlice:                []string{},
+		DNSServer:                   "1.1.1.1:53",
 	}
 }
 
@@ -141,6 +142,8 @@ func registerCLIFlags(fs *flag.FlagSet, opts *cliOptions) {
 	fs.BoolVar(&cfg.DLTOnly, "dlt-only", cfg.DLTOnly, "Perform Download Test only.")
 	fs.BoolVarP(&cfg.IPv4Mode, "ipv4", "4", cfg.IPv4Mode, "Test IPv4 only.")
 	fs.BoolVarP(&cfg.IPv6Mode, "ipv6", "6", cfg.IPv6Mode, "Test IPv6 only.")
+	fs.StringVar(&cfg.FetchIPv6File, "fetch-ipv6", cfg.FetchIPv6File, "Fetch active Cloudflare IPv6 CIDRs dynamically, save to file, and exit.")
+	fs.StringVar(&cfg.DNSServer, "dns", cfg.DNSServer, "Custom DNS server for dynamic fetching (e.g. 1.1.1.1:53, tls://1.1.1.1, https://1.1.1.1/dns-query)")
 	fs.BoolVarP(&cfg.TestAll, "test-all", "a", cfg.TestAll, "Test all IPs until no more IP left.")
 	fs.StringVar(&opts.Mark, "mark", opts.Mark, "Set Linux socket fwmark for outbound packets. Supports decimal and hex.")
 	fs.StringVar(&opts.XMark, "xmark", opts.XMark, "Alias for --mark.")
@@ -282,6 +285,21 @@ func prepareRuntime(opts *cliOptions) (bool, int, error) {
 		return true, 1, err
 	}
 
+	if len(Config.FetchIPv6File) > 0 {
+		myLogger.Infof("Starting dynamic IPv6 fetch...")
+		cidrs, err := FetchDynamicIPv6(Config.DNSServer)
+		if err != nil {
+			myLogger.Errorf("Fetch failed: %v", err)
+			return true, 1, err
+		}
+		if err := writeStringsToFile(Config.FetchIPv6File, cidrs); err != nil {
+			myLogger.Errorf("Failed to save fetched IPs: %v", err)
+			return true, 1, err
+		}
+		myLogger.Infof("Successfully saved %d IPv6 CIDRs to %s", len(cidrs), Config.FetchIPv6File)
+		return true, 0, nil
+	}
+
 	if err := loadSourceIPs(tMode, opts.IPv4Changed, opts.IPv6Changed); err != nil {
 		return true, 1, err
 	}
@@ -355,7 +373,14 @@ func loadSourceIPs(tMode int8, ipv4Changed, ipv6Changed bool) error {
 		}
 		tCFIPv6 := CFIPV6FULL
 		if Config.FastMode {
-			tCFIPv6 = CFIPV6
+			myLogger.Infoln("Fast mode enabled for IPv6: dynamically fetching optimized active IPv6 CIDRs...")
+			cidrs, err := FetchDynamicIPv6(Config.DNSServer)
+			if err != nil {
+				myLogger.Warningf("Dynamic fetch failed, falling back to full ranges: %v", err)
+				tCFIPv6 = CFIPV6FULL
+			} else if len(cidrs) > 0 {
+				tCFIPv6 = cidrs
+			}
 		}
 		return srcIPs.AddFromSlice(tCFIPv6, TypeIPv6)
 	}

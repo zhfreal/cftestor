@@ -3,7 +3,7 @@ package main
 import (
 	"time"
 
-	"github.com/glebarez/sqlite"
+	"github.com/ncruces/go-sqlite3/gormlite"
 	"gorm.io/gorm"
 )
 
@@ -57,7 +57,7 @@ func (a *DBRecord) TableName() string {
 }
 
 func OpenSqlite(dbFilePath string) (*gorm.DB, error) {
-	dial := sqlite.Open(dbFilePath)
+	dial := gormlite.Open(dbFilePath)
 	return gorm.Open(dial, &gorm.Config{
 		NowFunc: func() time.Time {
 			return time.Now()

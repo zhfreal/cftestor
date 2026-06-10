@@ -276,6 +276,8 @@ type AppConfig struct {
 	OutboundInterfaceIndex      int
 	OutboundSourceIP            net.IP
 	OutboundSourceZone          string
+	FetchIPv6File               string
+	DNSServer                   string
 }
 
 var Config AppConfig = DefaultConfig()
