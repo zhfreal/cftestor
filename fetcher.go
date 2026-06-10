@@ -16,6 +16,15 @@ import (
 	"github.com/miekg/dns"
 )
 
+var dohClient = &http.Client{
+	Timeout: 3 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     90 * time.Second,
+	},
+}
+
 type ripeStatResponse struct {
 	Data struct {
 		Prefixes []struct {
@@ -119,8 +128,7 @@ func resolveDomain(qname string, qtype uint16, netType, server string) (*dns.Msg
 		}
 		req.Header.Set("Content-Type", "application/dns-message")
 		req.Header.Set("Accept", "application/dns-message")
-		client := &http.Client{Timeout: 3 * time.Second}
-		resp, err := client.Do(req)
+		resp, err := dohClient.Do(req)
 		if err != nil {
 			return nil, err
 		}
