@@ -314,6 +314,9 @@ func ConfigureApp(args []string) (CliOptions, bool, int, error) {
 	}
 
 	InitLoggerFromConfig()
+	if opts.PrintVersion {
+		return opts, true, 0, nil
+	}
 	if err := prepareRuntime(&opts); err != nil {
 		return opts, true, 1, err
 	}

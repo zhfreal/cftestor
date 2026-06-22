@@ -455,12 +455,14 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 	}
+	if opts.PrintVersion {
+		if !config.Config.SilenceMode {
+			print_version()
+		}
+		os.Exit(0)
+	}
 	if shouldExit {
 		os.Exit(exitCode)
-	}
-
-	if !config.Config.SilenceMode {
-		print_version()
 	}
 
 	if err := outbound.PrepareOutboundOptions(&opts); err != nil {
