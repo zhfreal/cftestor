@@ -1,4 +1,4 @@
-package main
+package fetcher
 
 import (
 	"archive/zip"
@@ -14,20 +14,19 @@ import (
 	"sync"
 	"time"
 
+	"cftestor/internal/logger"
 	"github.com/miekg/dns"
 )
 
 const (
-	// DNS settings
-	DefaultDNSTimeout    = 3 * time.Second
-	DefaultDNSServer     = "1.1.1.1:53"
-	DefaultDoHMaxIdle    = 100
+	DefaultDNSTimeout     = 3 * time.Second
+	DefaultDNSServer      = "1.1.1.1:53"
+	DefaultDoHMaxIdle     = 100
 	DefaultDoHIdleTimeout = 90 * time.Second
 )
 
 var (
-	// Resolution target and performance limits
-	DNSConcurrencyLimit  = 100
+	DNSConcurrencyLimit = 100
 )
 
 var dohClient = &http.Client{
@@ -81,7 +80,7 @@ func (list IPNetList) Contains(ip net.IP) bool {
 }
 
 func fetchRawBGPPrefixes() ([]string, error) {
-	myLogger.Infoln("Fetching BGP prefixes from RIPEstat...")
+	logger.Log.Infoln("Fetching BGP prefixes from RIPEstat...")
 	resp, err := http.Get("https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS13335")
 	if err != nil {
 		return nil, err
@@ -116,7 +115,6 @@ func fetchBGPPrefixes(ipVersion int) ([]string, error) {
 		if ipVersion == 6 && isV6 {
 			prefixes = append(prefixes, p)
 		} else if ipVersion == 4 && !isV6 {
-			// For IPv4, filter out subnets smaller than /16 (prefix length < 16)
 			parts := strings.Split(p, "/")
 			if len(parts) == 2 {
 				maskSize, err := strconv.Atoi(parts[1])
@@ -127,12 +125,12 @@ func fetchBGPPrefixes(ipVersion int) ([]string, error) {
 			prefixes = append(prefixes, p)
 		}
 	}
-	myLogger.Infof("Found %d BGP IPv%d prefixes.", len(prefixes), ipVersion)
+	logger.Log.Infof("Found %d BGP IPv%d prefixes.", len(prefixes), ipVersion)
 	return prefixes, nil
 }
 
 func fetchTrancoDomains(limit int) ([]string, error) {
-	myLogger.Infoln("Fetching top domains from Tranco...")
+	logger.Log.Infoln("Fetching top domains from Tranco...")
 	resp, err := http.Get("https://tranco-list.eu/top-1m.csv.zip")
 	if err != nil {
 		return nil, err
@@ -181,14 +179,12 @@ func fetchTrancoDomains(limit int) ([]string, error) {
 	return domains, nil
 }
 
-// resolveDomain performs a DNS query using various methods (UDP, TCP, DoT, DoH)
 func resolveDomain(qname string, qtype uint16, netType, server string) (*dns.Msg, error) {
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(qname), qtype)
 	m.RecursionDesired = true
 
 	if netType == "https" {
-		// DoH
 		packed, err := m.Pack()
 		if err != nil {
 			return nil, err
@@ -259,8 +255,7 @@ func parseDNSServer(dnsServerStr string) (string, string) {
 	} else if strings.HasPrefix(serverAddr, "https://") {
 		netType = "https"
 	} else {
-		// no scheme, default UDP with TCP fallback
-		netType = "udp-tcp" // custom string to indicate fallback
+		netType = "udp-tcp"
 		if !strings.Contains(serverAddr, ":") {
 			serverAddr += ":53"
 		}
@@ -279,25 +274,24 @@ func resolveDomainWithFallback(qname string, qtype uint16, netType, serverAddr s
 	return resolveDomain(qname, qtype, netType, serverAddr)
 }
 
-func FetchCloudflareDomains(dnsServerStr string) ([]string, error) {
+func FetchCloudflareDomains(dnsServerStr string, trancoLimit int) ([]string, error) {
 	bgpPrefixes, err := fetchRawBGPPrefixes()
 	if err != nil {
-		myLogger.Warningf("Failed to fetch BGP prefixes for domain check: %v\n", err)
+		logger.Log.Warningf("Failed to fetch BGP prefixes for domain check: %v\n", err)
 	}
 	bgpIPNets := parseCIDRs(bgpPrefixes)
 
-	domains, err := fetchTrancoDomains(Config.TrancoLimit)
+	domains, err := fetchTrancoDomains(trancoLimit)
 	if err != nil {
-		myLogger.Warningf("Failed to fetch Tranco domains: %v\n", err)
+		logger.Log.Warningf("Failed to fetch Tranco domains: %v\n", err)
 	}
 
-	// Prepend seed domains to guarantee Cloudflare-served domains are resolved
 	allDomains := append([]string{}, seedCFDomains...)
 	allDomains = append(allDomains, domains...)
 
 	netType, serverAddr := parseDNSServer(dnsServerStr)
 
-	myLogger.Infoln("Checking which top domains are served by Cloudflare CDN...")
+	logger.Log.Infoln("Checking which top domains are served by Cloudflare CDN...")
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, DNSConcurrencyLimit)
@@ -314,7 +308,6 @@ func FetchCloudflareDomains(dnsServerStr string) ([]string, error) {
 
 			isCF := false
 
-			// Check A record (IPv4)
 			rA, err := resolveDomainWithFallback(d, dns.TypeA, netType, serverAddr)
 			if err == nil && rA != nil {
 				for _, ans := range rA.Answer {
@@ -327,7 +320,6 @@ func FetchCloudflareDomains(dnsServerStr string) ([]string, error) {
 				}
 			}
 
-			// If not found in A, check AAAA record (IPv6)
 			if !isCF {
 				rAAAA, err := resolveDomainWithFallback(d, dns.TypeAAAA, netType, serverAddr)
 				if err == nil && rAAAA != nil {
@@ -357,24 +349,24 @@ func FetchCloudflareDomains(dnsServerStr string) ([]string, error) {
 		results = append(results, d)
 	}
 
-	myLogger.Infof("Found %d verified Cloudflare CDN served domains.", len(results))
+	logger.Log.Infof("Found %d verified Cloudflare CDN served domains.", len(results))
 	return results, nil
 }
 
-func FetchDynamicIPv4(dnsServerStr string) ([]string, error) {
+func FetchDynamicIPv4(dnsServerStr string, trancoLimit int) ([]string, error) {
 	bgpPrefixes, err := fetchBGPPrefixes(4)
 	if err != nil {
-		myLogger.Warningf("Failed to fetch BGP prefixes: %v\n", err)
+		logger.Log.Warningf("Failed to fetch BGP prefixes: %v\n", err)
 	}
 
-	cfDomains, err := FetchCloudflareDomains(dnsServerStr)
+	cfDomains, err := FetchCloudflareDomains(dnsServerStr, trancoLimit)
 	if err != nil {
 		return bgpPrefixes, err
 	}
 
 	netType, serverAddr := parseDNSServer(dnsServerStr)
 
-	myLogger.Infoln("Resolving domains to map Cloudflare IPv4 allocations...")
+	logger.Log.Infoln("Resolving domains to map Cloudflare IPv4 allocations...")
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, DNSConcurrencyLimit)
@@ -414,7 +406,6 @@ func FetchDynamicIPv4(dnsServerStr string) ([]string, error) {
 		finalMap[p] = true
 	}
 	for p := range mappedCIDRs {
-		// Filter out subnets smaller than /16 for IPv4
 		parts := strings.Split(p, "/")
 		if len(parts) == 2 {
 			maskSize, err := strconv.Atoi(parts[1])
@@ -430,25 +421,25 @@ func FetchDynamicIPv4(dnsServerStr string) ([]string, error) {
 		results = append(results, p)
 	}
 
-	myLogger.Infof("Dynamically fetched %d valid Cloudflare IPv4 CIDRs.", len(results))
+	logger.Log.Infof("Dynamically fetched %d valid Cloudflare IPv4 CIDRs.", len(results))
 
 	return results, nil
 }
 
-func FetchDynamicIPv6(dnsServerStr string) ([]string, error) {
+func FetchDynamicIPv6(dnsServerStr string, trancoLimit int) ([]string, error) {
 	bgpPrefixes, err := fetchBGPPrefixes(6)
 	if err != nil {
-		myLogger.Warningf("Failed to fetch BGP prefixes: %v\n", err)
+		logger.Log.Warningf("Failed to fetch BGP prefixes: %v\n", err)
 	}
 
-	cfDomains, err := FetchCloudflareDomains(dnsServerStr)
+	cfDomains, err := FetchCloudflareDomains(dnsServerStr, trancoLimit)
 	if err != nil {
 		return bgpPrefixes, err
 	}
 
 	netType, serverAddr := parseDNSServer(dnsServerStr)
 
-	myLogger.Infoln("Resolving domains to map Cloudflare IPv6 allocations...")
+	logger.Log.Infoln("Resolving domains to map Cloudflare IPv6 allocations...")
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, DNSConcurrencyLimit)
@@ -496,7 +487,7 @@ func FetchDynamicIPv6(dnsServerStr string) ([]string, error) {
 		results = append(results, p)
 	}
 
-	myLogger.Infof("Dynamically fetched %d valid Cloudflare IPv6 CIDRs.", len(results))
+	logger.Log.Infof("Dynamically fetched %d valid Cloudflare IPv6 CIDRs.", len(results))
 
 	return results, nil
 }

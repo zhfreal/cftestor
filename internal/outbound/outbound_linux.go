@@ -1,11 +1,12 @@
 //go:build linux
 
-package main
+package outbound
 
 import (
 	"fmt"
 	"syscall"
 
+	"cftestor/internal/config"
 	"golang.org/x/sys/unix"
 )
 
@@ -20,15 +21,15 @@ func outboundInterfaceUsesSourceFallback() bool {
 func applyOutboundSocketOptions(network, address string, c syscall.RawConn) error {
 	var controlErr error
 	err := c.Control(func(fd uintptr) {
-		if Config.OutboundMarkSet {
-			if err := unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, int(Config.OutboundMark)); err != nil {
+		if config.Config.OutboundMarkSet {
+			if err := unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, int(config.Config.OutboundMark)); err != nil {
 				controlErr = fmt.Errorf("set SO_MARK: %w", err)
 				return
 			}
 		}
-		if Config.OutboundInterfaceIndex > 0 {
-			if err := unix.BindToDevice(int(fd), Config.OutboundInterfaceName); err != nil {
-				controlErr = fmt.Errorf("bind socket to interface %q: %w", Config.OutboundInterfaceName, err)
+		if config.Config.OutboundInterfaceIndex > 0 {
+			if err := unix.BindToDevice(int(fd), config.Config.OutboundInterfaceName); err != nil {
+				controlErr = fmt.Errorf("bind socket to interface %q: %w", config.Config.OutboundInterfaceName, err)
 				return
 			}
 		}

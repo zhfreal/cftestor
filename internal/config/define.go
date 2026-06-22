@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"bufio"
@@ -13,33 +13,34 @@ import (
 	"sync"
 	"time"
 
+	"cftestor/internal/utils"
 	utls "github.com/refraction-networking/utls"
 )
 
 const (
-	workerStopSignal        = "0"
-	workOnGoing         int = 1
-	controllerInterval      = 100               // in millisecond
-	statisticIntervalT      = 1000              // in millisecond, valid in tcell mode
-	statisticIntervalNT     = 10000             // in millisecond, valid in non-tcell mode
-	quitWaitingTime         = 3                 // in second
-	downloadBufferSize      = 1024 * 64         // in byte
-	fileDefaultSize         = 1024 * 1024 * 300 // in byte
-	downloadSizeMin         = 1024 * 1024       // in byte
-	defaultDLTUrl           = "https://speed.cloudflare.com/__down?bytes=250000000"
-	defaultDTUrl            = "https://speed.cloudflare.com/__down?bytes=0"
-	userAgentChrome         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-	userAgentFirefox        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
-	userAgentEdge           = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-	userAgentSafari         = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15"
+	WorkerStopSignal        = "0"
+	WorkOnGoing         int = 1
+	ControllerInterval      = 100               // in millisecond
+	StatisticIntervalT      = 1000              // in millisecond, valid in tcell mode
+	StatisticIntervalNT     = 10000             // in millisecond, valid in non-tcell mode
+	QuitWaitingTime         = 3                 // in second
+	DownloadBufferSize      = 1024 * 64         // in byte
+	FileDefaultSize         = 1024 * 1024 * 300 // in byte
+	DownloadSizeMin         = 1024 * 1024       // in byte
+	DefaultDLTUrl           = "https://speed.cloudflare.com/__down?bytes=250000000"
+	DefaultDTUrl            = "https://speed.cloudflare.com/__down?bytes=0"
+	UserAgentChrome         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+	UserAgentFirefox        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
+	UserAgentEdge           = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+	UserAgentSafari         = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15"
 
-	defaultDBFile        = "ip.db"
+	DefaultDBFile        = "ip.db"
 	DefaultTestHost      = "speed.cloudflare.com"
-	maxHostLen           = 1 << 12
-	dtsSSL               = "SSL"
-	dtsHTTPS             = "HTTPS"
-	runTime              = "cftestor"
-	retrieveCount   int  = 32
+	MaxHostLen           = 1 << 12
+	DtsSSL               = "SSL"
+	DtsHTTPS             = "HTTPS"
+	RunTime              = "cftestor"
+	RetrieveCount   int  = 32
 	TypeIPv4        int8 = 1
 	TypeIPv6        int8 = 1 << 1
 	TypeIPErr       int8 = 0
@@ -181,8 +182,8 @@ var (
 		"2a06:98c0::/29",
 		"2c0f:f248::/32",
 	}
-	utf8BomBytes    = []byte{0xEF, 0xBB, 0xBF}
-	resultCsvHeader = []string{
+	UTF8BomBytes    = []byte{0xEF, 0xBB, 0xBF}
+	ResultCsvHeader = []string{
 		"TestTime",
 		"IP",
 		"DLSpeed(DLS,KB/s)",
@@ -200,19 +201,17 @@ var (
 		"ASN(Src)",
 		"Location(CF)",
 	}
-	baseCfCDNCgiTraceUrl = "https://speed.cloudflare.com/cdn-cgi/trace"
+	BaseCfCDNCgiTraceUrl = "https://speed.cloudflare.com/cdn-cgi/trace"
 )
 
 var (
-	maxHostLenBig                                  = big.NewInt(maxHostLen)
-	version, buildTag, buildDate, buildHash string = "dev", "dev", "dev", "dev"
-	ipStr                                   []string
-	myLogger                                MyLogger
-	loggerLevel                             LogLevel
-	verifyResultsMap                               = make(map[string]VerifyResults)
-	myRand                                         = newRand()
-	srcIPs                                         = NewSourceIPsWithRand(myRand)
-	appArt                                  string = `
+	MaxHostLenBig                            = big.NewInt(MaxHostLen)
+	Version, BuildTag, BuildDate, BuildHash string = "dev", "dev", "dev", "dev"
+	IPStr                                   []string
+	VerifyResultsMap                               = make(map[string]VerifyResults)
+	MyRand                                         = utils.NewRand()
+	SrcIPs                                         = NewSourceIPsWithRand(MyRand)
+	AppArt                                  string = `
   ░█▀▀░█▀▀░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▄
   ░█░░░█▀▀░░█░░█▀▀░▀▀█░░█░░█░█░█▀▄
   ░▀▀▀░▀░░░░▀░░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀
@@ -285,7 +284,7 @@ type AppConfig struct {
 
 var Config AppConfig = DefaultConfig()
 
-var help = appArt + `
+var Help = AppArt + `
   Find and verify the best Cloudflare CDN edge nodes for your network.
   https://github.com/zhfreal/cftestor
 
@@ -319,7 +318,7 @@ Delay Test (DT) Options:
     -c, --dt-count     int        Number of DT attempts per candidate. Default: 4.
         --dt-via       string     DT protocol: "https", "tls", or "ssl". Default: https.
         --dt-via-https            Deprecated alias for --dt-via https.
-        --dt-url       string     URL to use for HTTPS-based DT. Default: ` + defaultDTUrl + `
+        --dt-url       string     URL to use for HTTPS-based DT. Default: ` + DefaultDTUrl + `
         --hostname     string     SNI hostname for TLS/SSL DT. Default: ` + DefaultTestHost + `
         --dt-expect-code int      Expected HTTP status code for DT. Default: 200.
         --ev-dt                   Enable DT evaluation using all attempts. Default: off.
@@ -331,7 +330,7 @@ Download Test (DLT) Options:
     -n, --dlt-thread   int        Number of concurrent DLT workers. Default: 1.
     -d, --dlt-period   int        Maximum duration for one DLT attempt in seconds. Default: 10.
     -b, --dlt-count    int        Number of DLT attempts per candidate. Default: 1.
-    -u, --dlt-url      string     URL to use for DLT. Default: ` + defaultDLTUrl + `
+    -u, --dlt-url      string     URL to use for DLT. Default: ` + DefaultDLTUrl + `
         --dlt-timeout  int        HTTP response timeout for DLT in ms. Default: 5000.
     -l, --speed        float      Minimum required download speed in KB/s. Default: 6000.
     -I, --interval     int        Interval between test attempts in ms. Default: 500.
@@ -395,383 +394,114 @@ General Options:
     -h, --help                    Show this help message.
 `
 
-// type arrayFlags []string
-
-// func (i *arrayFlags) String() string {
-//     return fmt.Sprintf("%v", *i)
-// }
-
-// func (i *arrayFlags) Set(value string) error {
-//     *i = append(*i, value)
-//     return nil
-// }
-
-// func (i *arrayFlags) Type() string {
-//     return "[]string"
-// }
-
-type singleResult struct {
-	dTPassed      bool          // Delay Test (DT) passed (yes) or not (no)
-	dTDuration    time.Duration // DT time escaped
-	httpReqRspDur time.Duration // pure time escaped between http request send and response after tls negotiation
-	dLTWasDone    bool          // Download Test (DLT) was done or not
-	dLTPassed     bool          // DLT passed or not
-	dLTDuration   time.Duration // DLT escaped times
-	dLTDataSize   int64         // DLT download data size, in byte
+type SingleResult struct {
+	DTPassed      bool
+	DTDuration    time.Duration
+	HttpReqRspDur time.Duration
+	DLTWasDone    bool
+	DLTPassed     bool
+	DLTDuration   time.Duration
+	DLTDataSize   int64
 }
 
-type singleVerifyResult struct {
-	testTime    time.Time
-	host        string
-	loc         string
-	resultSlice []singleResult
+type SingleVerifyResult struct {
+	TestTime    time.Time
+	Host        string
+	Loc         string
+	ResultSlice []SingleResult
 }
 
 type VerifyResults struct {
-	testTime time.Time // test time
-	ip       *string   // should be <ipv4:port> or <[ipv6]:port>, not just a ip string.
-	loc      *string
-	dtc      int       // Delay Test(DT) tried count
-	dtpc     int       // DT passed count
-	dtpr     float64   // DT passed rate, in decimal
-	da       float64   // average delay, in ms
-	daVar    float64   // variance of average delay
-	daStd    float64   // standard deviation of average delay
-	dmi      float64   // minimal delay, in ms
-	dmx      float64   // max delay, in ms
-	dltc     int       // Download Test(DLT) tried count
-	dltpc    int       // DLT passed count
-	dltpr    float64   // DLT passed rate, in decimal
-	dls      float64   // DLT average speed, in KB/s
-	dlds     int64     // DLT download data size, in byte
-	dltd     float64   // DLT escaped times, in second
-	dtDList  []float64 // Delay Test(DT) duration list in milliseconds
+	TestTime time.Time
+	IP       *string
+	Loc      *string
+	Dtc      int
+	Dtpc     int
+	Dtpr     float64
+	Da       float64
+	DaVar    float64
+	DaStd    float64
+	Dmi      float64
+	Dmx      float64
+	Dltc     int
+	Dltpc    int
+	Dltpr    float64
+	Dls      float64
+	Dlds     int64
+	Dltd     float64
+	DtDList  []float64
 }
 
-// combine b into a
-// this function will combine the delay test results of b into a.
-// It will add the tried count, passed count, and update the passed rate.
-// It will also update the average delay, minimal delay, and max delay.
-func (a *VerifyResults) combine(b VerifyResults) {
-	if a.ip == nil || b.ip == nil || *a.ip != *b.ip {
+func (a *VerifyResults) Combine(b VerifyResults) {
+	if a.IP == nil || b.IP == nil || *a.IP != *b.IP {
 		return
 	}
-	if a.testTime.Before(b.testTime) {
-		a.testTime = b.testTime
+	if a.TestTime.Before(b.TestTime) {
+		a.TestTime = b.TestTime
 	}
-	if b.loc != nil && len(*b.loc) != 0 && (a.loc == nil || len(*a.loc) == 0) {
-		a.loc = b.loc
+	if b.Loc != nil && len(*b.Loc) != 0 && (a.Loc == nil || len(*a.Loc) == 0) {
+		a.Loc = b.Loc
 	}
-	a.dtc += b.dtc
-	a.dtpc += b.dtpc
-	if a.dtc > 0 {
-		a.dtpr = float64(a.dtpc) / float64(a.dtc)
+	a.Dtc += b.Dtc
+	a.Dtpc += b.Dtpc
+	if a.Dtc > 0 {
+		a.Dtpr = float64(a.Dtpc) / float64(a.Dtc)
 	}
-	a.dtDList = append(a.dtDList, b.dtDList...)
-	// remove 0 time form a.dtDList
-	for i := 0; i < len(a.dtDList); i++ {
-		if a.dtDList[i] == 0 {
-			a.dtDList = append(a.dtDList[:i], a.dtDList[i+1:]...)
+	a.DtDList = append(a.DtDList, b.DtDList...)
+	for i := 0; i < len(a.DtDList); i++ {
+		if a.DtDList[i] == 0 {
+			a.DtDList = append(a.DtDList[:i], a.DtDList[i+1:]...)
 			i--
 		}
 	}
 	totalDelay := 0.0
-	for _, v := range a.dtDList {
+	for _, v := range a.DtDList {
 		totalDelay += v
 	}
-	if a.dtpc > 0 && len(a.dtDList) > 0 {
-		a.da = totalDelay / float64(len(a.dtDList))
+	if a.Dtpc > 0 && len(a.DtDList) > 0 {
+		a.Da = totalDelay / float64(len(a.DtDList))
 	}
-	a.daStd = std(a.dtDList)
-	a.daVar = variance(a.dtDList)
-	if a.dmi > b.dmi && b.dtpc > 0 {
-		a.dmi = b.dmi
+	a.DaStd = utils.Std(a.DtDList)
+	a.DaVar = utils.Variance(a.DtDList)
+	if a.Dmi > b.Dmi && b.Dtpc > 0 {
+		a.Dmi = b.Dmi
 	}
-	if a.dmx < b.dmx && b.dtpc > 0 {
-		a.dmx = b.dmx
+	if a.Dmx < b.Dmx && b.Dtpc > 0 {
+		a.Dmx = b.Dmx
 	}
-	a.dltc += b.dltc
-	a.dltpc += b.dltpc
-	if a.dltc > 0 {
-		a.dltpr = float64(a.dltpc) / float64(a.dltc)
+	a.Dltc += b.Dltc
+	a.Dltpc += b.Dltpc
+	if a.Dltc > 0 {
+		a.Dltpr = float64(a.Dltpc) / float64(a.Dltc)
 	}
-	a.dlds += b.dlds
-	a.dltd += b.dltd
-	if a.dltpc > 0 && a.dltd > 0 {
-		a.dls = float64(a.dlds) / float64(a.dltd) / 1000
+	a.Dlds += b.Dlds
+	a.Dltd += b.Dltd
+	if a.Dltpc > 0 && a.Dltd > 0 {
+		a.Dls = float64(a.Dlds) / float64(a.Dltd) / 1000
 	}
 }
 
-// do deep copy from original VerifyResults obj into brand new one
-// func (a *VerifyResults) copy() VerifyResults {
-//     tIp := *a.ip
-//     tLoc := *a.loc
-//     tDtDList := make([]float64, len(a.dtDList))
-//     copy(tDtDList, a.dtDList)
-//     return VerifyResults{
-//         testTime: a.testTime,
-//         ip:       &tIp,
-//         loc:      &tLoc,
-//         dtc:      a.dtc,
-//         dtpc:     a.dtpc,
-//         dtpr:     a.dtpr,
-//         da:       a.da,
-//         daVar:    a.daVar,
-//         daStd:    a.daStd,
-//         dmi:      a.dmi,
-//         dmx:      a.dmx,
-//         dltc:     a.dltc,
-//         dltpc:    a.dltpc,
-//         dltpr:    a.dltpr,
-//         dls:      a.dls,
-//         dlds:     a.dlds,
-//         dltd:     a.dltd,
-//         dtDList:  tDtDList,
-//     }
+type ResultSpeedSorter []VerifyResults
 
-// }
+func (a ResultSpeedSorter) Len() int           { return len(a) }
+func (a ResultSpeedSorter) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ResultSpeedSorter) Less(i, j int) bool { return a[i].Dls < a[j].Dls }
 
-type resultSpeedSorter []VerifyResults
-
-func (a resultSpeedSorter) Len() int           { return len(a) }
-func (a resultSpeedSorter) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a resultSpeedSorter) Less(i, j int) bool { return a[i].dls < a[j].dls }
-
-type overAllStat struct {
-	dtTasksDone  int
-	dtOnGoing    int
-	dtCached     int
-	dltTasksDone int
-	dltOnGoing   int
-	dltCached    int
-	resultCount  int
-	remain       int
-}
-
-type ipRange struct {
-	IPStart   net.IP
-	IPEnd     net.IP
-	Len       *big.Int
-	Extracted bool
-}
-
-func (ipr *ipRange) isValid() bool {
-	if ipr == nil || ipr.IPStart == nil || ipr.IPEnd == nil || ipr.Extracted {
-		return false
-	}
-	if len(ipr.IPStart) != len(ipr.IPEnd) {
-		return false
-	} else if len(ipr.IPStart) != net.IPv4len && len(ipr.IPStart) != net.IPv6len {
-		return false
-	} else {
-		for i := 0; i < len(ipr.IPStart); i++ {
-			if (ipr.IPStart)[i] > (ipr.IPEnd)[i] {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func (ipr *ipRange) IsValid() bool {
-	return ipr.isValid()
-}
-
-func (ipr *ipRange) length() *big.Int {
-	if !ipr.isValid() {
-		return big.NewInt(0)
-	}
-	var newLenBytes = make([]byte, len(ipr.IPEnd), cap(ipr.IPEnd))
-	reduce := 0
-	for i := len(ipr.IPStart) - 1; i >= 0; i-- {
-		m := (ipr.IPStart)[i]
-		n := (ipr.IPEnd)[i]
-		newValue := int(n) - int(m) - reduce
-		// n < m + reduce, borrow from i - 1
-		if newValue < 0 {
-			reduce = 1
-			newValue += int(1 << 8)
-		} else {
-			// reset reduce
-			reduce = 0
-		}
-		newLenBytes[i] = byte(newValue)
-	}
-	newLen := big.NewInt(0).SetBytes(newLenBytes)
-	// add 1 more
-	newLen = newLen.Add(newLen, big.NewInt(1))
-	return newLen
-}
-
-func (ipr *ipRange) Length() *big.Int {
-	return ipr.length()
-}
-
-func (ipr *ipRange) isV4() bool {
-	if !ipr.isValid() {
-		return false
-	}
-	return len(ipr.IPStart) == net.IPv4len
-}
-
-func (ipr *ipRange) isV6() bool {
-	if !ipr.isValid() {
-		return false
-	}
-	return len(ipr.IPStart) == net.IPv6len
-}
-
-func (ipr *ipRange) IsV4() bool {
-	return ipr.isV4()
-}
-
-func (ipr *ipRange) IsV6() bool {
-	return ipr.isV6()
-}
-
-func (ipr *ipRange) init(StartIP net.IP, EndIP net.IP) *ipRange {
-	t_s_startIP := StartIP
-	if t_s_startIP.To4() != nil {
-		t_s_startIP = t_s_startIP.To4()
-	}
-	t_s_endIP := EndIP
-	if t_s_endIP.To4() != nil {
-		t_s_endIP = t_s_endIP.To4()
-	}
-	ipr.IPStart = t_s_startIP
-	ipr.IPEnd = t_s_endIP
-
-	ipr.Extracted = false
-	if ipr.isValid() {
-		ipr.Len = ipr.length()
-		return ipr
-	}
-	return nil
-}
-
-func (ipr *ipRange) String() string {
-	if !ipr.isValid() {
-		return "null"
-	}
-	return fmt.Sprintf("Start With: %s; End With: %s; Length: %s; Extracted: %t",
-		(ipr.IPStart).String(), (ipr.IPEnd).String(), (ipr.length()).String(), ipr.Extracted)
-}
-
-func (ipr *ipRange) Extract(num int) (IPList []net.IP) {
-	if !ipr.isValid() || num <= 0 || ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
-		return
-	}
-	numBig := big.NewInt(int64(num))
-	if ipr.Len.Cmp(numBig) == -1 {
-		num = int(ipr.Len.Int64())
-		numBig = big.NewInt(int64(num))
-	}
-
-	for i := 0; i < num; i++ {
-		n := big.NewInt(int64(i))
-		num_in_bytes := fillBytes(n.Bytes(), len(ipr.IPStart))
-		newIP := ipShift(ipr.IPStart, num_in_bytes)
-		if newIP != nil {
-			IPList = append(IPList, newIP)
-		}
-	}
-
-	// reset IPStart and Extracted
-	if numBig.Cmp(ipr.Len) == 0 {
-		ipr.Extracted = true
-		ipr.Len = big.NewInt(0)
-		ipr.IPStart = ipr.IPEnd
-	} else {
-		num_in_bytes := fillBytes(numBig.Bytes(), len(ipr.IPStart))
-		ipr.IPStart = ipShift(ipr.IPStart, num_in_bytes)
-		ipr.Len = ipr.length()
-	}
-	return
-}
-
-func (ipr *ipRange) ExtractReverse(num int) (IPList []net.IP) {
-	if !ipr.isValid() || num <= 0 || ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
-		return
-	}
-	numBig := big.NewInt(int64(num))
-	if ipr.Len.Cmp(numBig) == -1 {
-		num = int(ipr.Len.Int64())
-		numBig = big.NewInt(int64(num))
-	}
-
-	for i := 0; i < num; i++ {
-		n := big.NewInt(int64(i))
-		num_in_bytes := fillBytes(n.Bytes(), len(ipr.IPEnd))
-		newIP := ipShiftReverse(ipr.IPEnd, num_in_bytes)
-		if newIP != nil {
-			IPList = append(IPList, newIP)
-		}
-	}
-
-	// reset IPEnd and Extracted
-	if numBig.Cmp(ipr.Len) == 0 {
-		ipr.Extracted = true
-		ipr.Len = big.NewInt(0)
-		ipr.IPEnd = ipr.IPStart
-	} else {
-		num_in_bytes := fillBytes(numBig.Bytes(), len(ipr.IPEnd))
-		ipr.IPEnd = ipShiftReverse(ipr.IPEnd, num_in_bytes)
-		ipr.Len = ipr.length()
-	}
-	return
-}
-
-func (ipr *ipRange) ExtractAll() (IPList []net.IP) {
-	// we limit the max result length to MaxHostLen (currently, 65536), if it's to big, return nil
-	// or it's don't have any IPS to extract, return nil
-	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 || ipr.Len.Cmp(big.NewInt(maxHostLen)) == 1 {
-		return
-	}
-	return ipr.Extract(int(ipr.Len.Int64()))
-}
-
-func (ipr *ipRange) GetRandomX(num int) (IPList []net.IP) {
-	// or it's don't have any IPS to extract, return nil
-	if ipr.Extracted || ipr.Len.Cmp(big.NewInt(0)) == 0 {
-		return
-	}
-	// we extract all while ipr don't have enough ips for extracted
-	if big.NewInt(int64(num)).Cmp(ipr.Len) >= 0 {
-		m := ipr.ExtractAll()
-		if m == nil {
-			return
-		}
-		IPList = append(IPList, m...)
-		// shuffle
-		myRand.Shuffle(len(IPList), func(i, j int) {
-			IPList[i], IPList[j] = IPList[j], IPList[i]
-		})
-		// we done here
-		return
-	}
-	// get randomly
-	i := 0
-	for i < num {
-		n := big.NewInt(0)
-		n = n.Rand(myRand, ipr.Len)
-		num_in_bytes := fillBytes(n.Bytes(), len(ipr.IPStart))
-		newIP := ipShift(ipr.IPStart, num_in_bytes)
-		if newIP != nil {
-			IPList = append(IPList, newIP)
-			i++
-		}
-	}
-	return
+type OverAllStat struct {
+	DtTasksDone  int
+	DtOnGoing    int
+	DtCached     int
+	DltTasksDone int
+	DltOnGoing   int
+	DltCached    int
+	ResultCount  int
+	Remain       int
 }
 
 type SafeLooper struct {
 	mu sync.Mutex
-	// t: target loop rounds, t <= 0 means disabled
-	// c: current loop round, when t > 0 and c == 0 means loop is valid but not start yet
-	// when t > 0 and c >= 1 and c<= t means loop is running, and in round c
-	// when t > 0 and c > t means loop is done
 	t, c     int
-	interval int // interval in milliseconds
+	interval int
 }
 
 func (s *SafeLooper) Valid() bool {
@@ -811,8 +541,6 @@ func (s *SafeLooper) Finished() bool {
 	return s.status() == 2
 }
 
-// Status returns -1 if the SafeLooper is not valid, 0 if it has just been Enabled,
-// 1 if it is looping and 2 if it has finished looping.
 func (s *SafeLooper) status() int {
 	if s.t <= 0 {
 		return -1
@@ -886,16 +614,16 @@ func NewSafeLooperWithInterval(t, interv int) *SafeLooper {
 	return s
 }
 
-type sourceIPs struct {
+type SourceIPs struct {
 	mu               sync.Mutex
 	srcHosts         []*string
-	srcIPRsRaw       []*ipRange
+	srcIPRsRaw       []*utils.IPRange
 	srcIPRsExtracted []net.IP
-	ports            []int
+	Ports            []int
 	tRnd             *rand.Rand
 }
 
-func (s *sourceIPs) Len() *big.Int {
+func (s *SourceIPs) Len() *big.Int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t_qty := big.NewInt(0)
@@ -907,7 +635,7 @@ func (s *sourceIPs) Len() *big.Int {
 	return t_qty
 }
 
-func (s *sourceIPs) LenInt() int {
+func (s *SourceIPs) LenInt() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t_qty := 0
@@ -917,42 +645,37 @@ func (s *sourceIPs) LenInt() int {
 	return t_qty
 }
 
-func (s *sourceIPs) IsEmpty() bool {
+func (s *SourceIPs) IsEmpty() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.srcIPRsRaw) == 0 && len(s.srcIPRsExtracted) == 0 && len(s.srcHosts) == 0
 }
 
-func (s *sourceIPs) add(IPs string, mode int8) error {
+func (s *SourceIPs) add(IPs string, mode int8) error {
 	ips := strings.TrimSpace(IPs)
 	ips = strings.Split(ips, "#")[0]
-	if isValidIPs(ips) {
-		tV := getIPsVer(ips)
+	if utils.IsValidIPs(ips) {
+		tV := utils.GetIPsVer(ips)
 		if tV == TypeIPErr {
 			return fmt.Errorf("\"%v\" is invalid", ips)
 		}
-		// when IPs is not the target version, return without any error
 		if (tV & mode) != tV {
 			return nil
 		}
-		ipr := NewIPRangeFromCIDR(&ips)
+		ipr := utils.NewIPRangeFromCIDR(&ips)
 		if ipr == nil {
 			return fmt.Errorf("\"%v\" is invalid", ips)
 		}
-		// when it do not testAll and ipr is not bigger than maxHostLenBig, extract to to cache
-		if ipr.Len.Cmp(maxHostLenBig) < 1 {
-			s.srcIPRsExtracted = append(s.srcIPRsExtracted, ipr.ExtractAll()...)
+		if ipr.Len.Cmp(MaxHostLenBig) < 1 {
+			s.srcIPRsExtracted = append(s.srcIPRsExtracted, ipr.ExtractAll(MaxHostLen)...)
 		} else {
-			// when it do not perform tealAll or not bigger than maxHostLenBig, just put it to srcIPRs
 			s.srcIPRsRaw = append(s.srcIPRsRaw, ipr)
 		}
-	} else if isValidHost(ips) {
-		tV := getHostVer(ips)
+	} else if utils.IsValidHost(ips) {
+		tV := utils.GetHostVer(ips)
 		if tV == TypeIPErr {
 			return fmt.Errorf("\"%v\" is invalid", ips)
 		}
-		// DNS hosts are family-agnostic until resolved by the dialer, so keep them
-		// for either IPv4 or IPv6 scans. IP literal hosts still obey the mode filter.
 		isDNSHost := tV == (TypeIPv4 | TypeIPv6)
 		if !isDNSHost && (tV&mode) != tV {
 			return nil
@@ -964,13 +687,13 @@ func (s *sourceIPs) add(IPs string, mode int8) error {
 	return nil
 }
 
-func (s *sourceIPs) Add(IPs string, mode int8) error {
+func (s *SourceIPs) Add(IPs string, mode int8) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.add(IPs, mode)
 }
 
-func (s *sourceIPs) AddFromSlice(ipsSlice []string, mode int8) error {
+func (s *SourceIPs) AddFromSlice(ipsSlice []string, mode int8) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, ips := range ipsSlice {
@@ -982,13 +705,14 @@ func (s *sourceIPs) AddFromSlice(ipsSlice []string, mode int8) error {
 	return nil
 }
 
-func (s *sourceIPs) AddFromFile(filename string, mode int8) error {
+func (s *SourceIPs) AddFromFile(filename string, mode int8) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	tFile, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("file %q is not accessible: %w", filename, err)
 	}
+	defer tFile.Close()
 	scanner := bufio.NewScanner(tFile)
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
@@ -1004,7 +728,7 @@ func (s *sourceIPs) AddFromFile(filename string, mode int8) error {
 	return nil
 }
 
-func (s *sourceIPs) AddPorts(srcPorts []string) error {
+func (s *SourceIPs) AddPorts(srcPorts []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	portRegex := regexp.MustCompile(`[,;|]+`)
@@ -1035,22 +759,22 @@ func (s *sourceIPs) AddPorts(srcPorts []string) error {
 						return invalidPortFlagError(portValue)
 					}
 					for i := startPort; i <= endPort; i++ {
-						s.ports = append(s.ports, i)
+						s.Ports = append(s.Ports, i)
 					}
 				} else {
 					port, err := strconv.Atoi(portValue)
 					if err != nil || port < 1 || port > 65535 {
 						return invalidPortFlagError(portValue)
 					}
-					s.ports = append(s.ports, port)
+					s.Ports = append(s.Ports, port)
 				}
 			}
 		}
 	}
-	if len(s.ports) == 0 {
-		s.ports = append(s.ports, DefaultPort)
+	if len(s.Ports) == 0 {
+		s.Ports = append(s.Ports, DefaultPort)
 	}
-	s.ports = uniqueIntSlice(s.ports)
+	s.Ports = utils.UniqueIntSlice(s.Ports)
 	return nil
 }
 
@@ -1058,16 +782,13 @@ func invalidPortFlagError(value string) error {
 	return fmt.Errorf("invalid value for %q: %q", "-p|--port", value)
 }
 
-func (s *sourceIPs) RetrieveSome(amount int, isRand bool) (targetIPs []*string) {
+func (s *SourceIPs) RetrieveSome(amount int, isRand bool) (targetIPs []*string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// To satisfy the user's need for diversity across ALL sources,
-	// we sample from both hosts and CIDRs.
 	numHosts := len(s.srcHosts)
 	if numHosts > 0 {
-		// Take a portion for hosts, but leave room for CIDRs
-		takeHosts := min(amount/2, numHosts)
+		takeHosts := utils.MinInt(amount/2, numHosts)
 		if takeHosts == 0 {
 			takeHosts = 1
 		}
@@ -1079,8 +800,8 @@ func (s *sourceIPs) RetrieveSome(amount int, isRand bool) (targetIPs []*string) 
 	if left > 0 {
 		t_target := s.retrieveIPsFromIPR(left, isRand)
 		for _, ipStr := range t_target {
-			for _, port := range s.ports {
-				host := genHostFromIPStrPort(*ipStr, port)
+			for _, port := range s.Ports {
+				host := utils.GenHostFromIPStrPort(*ipStr, port)
 				if len(host) > 0 {
 					targetIPs = append(targetIPs, &host)
 				}
@@ -1090,21 +811,21 @@ func (s *sourceIPs) RetrieveSome(amount int, isRand bool) (targetIPs []*string) 
 	return
 }
 
-func (s *sourceIPs) RetrieveSomeNew(amount int) (targetIPs []*string) {
+func (s *SourceIPs) RetrieveSomeNew(amount int) (targetIPs []*string) {
 	return s.RetrieveSome(amount, false)
 }
 
-func (s *sourceIPs) retrieveHosts(amount int) (targetHosts []*string) {
+func (s *SourceIPs) retrieveHosts(amount int) (targetHosts []*string) {
 	if amount <= 0 || len(s.srcHosts) == 0 {
 		return
 	}
-	t_amount := min(amount, len(s.srcHosts))
+	t_amount := utils.MinInt(amount, len(s.srcHosts))
 	targetHosts = append(targetHosts, s.srcHosts[:t_amount]...)
 	s.srcHosts = s.srcHosts[t_amount:]
 	return
 }
 
-func (s *sourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*string) {
+func (s *SourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*string) {
 	if amount <= 0 {
 		return
 	}
@@ -1119,18 +840,16 @@ func (s *sourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*
 		return nil
 	}
 
-	// Calculate a fair share per group to ensure diversity
 	perGroup := amount / totalGroups
 	if perGroup == 0 {
 		perGroup = 1
 	}
 
-	// Shuffle indices to ensure fairness across multiple calls
 	indices := make([]int, totalGroups)
 	for i := range indices {
 		indices[i] = i
 	}
-	myRand.Shuffle(len(indices), func(i, j int) {
+	MyRand.Shuffle(len(indices), func(i, j int) {
 		indices[i], indices[j] = indices[j], indices[i]
 	})
 
@@ -1142,7 +861,6 @@ func (s *sourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*
 
 		need := amount - len(t_ips)
 		take := perGroup
-		// On the last group, take whatever is left in the budget
 		if i == len(indices)-1 {
 			take = need
 		}
@@ -1151,16 +869,14 @@ func (s *sourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*
 		}
 
 		if hasExtracted && idx == numRaw {
-			// Pre-extracted pool (small CIDRs)
-			actualTake := min(take, len(s.srcIPRsExtracted))
+			actualTake := utils.MinInt(take, len(s.srcIPRsExtracted))
 			t_ips = append(t_ips, s.srcIPRsExtracted[:actualTake]...)
 			s.srcIPRsExtracted = s.srcIPRsExtracted[actualTake:]
 		} else {
-			// Raw CIDR range (large CIDRs)
 			ipr := s.srcIPRsRaw[idx]
 			var extracted []net.IP
 			if isRandom {
-				extracted = ipr.GetRandomX(take)
+				extracted = ipr.GetRandomX(MyRand, take)
 			} else {
 				extracted = ipr.Extract(take)
 			}
@@ -1168,7 +884,6 @@ func (s *sourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*
 		}
 	}
 
-	// Cleanup empty ranges
 	for i := 0; i < len(s.srcIPRsRaw); i++ {
 		if s.srcIPRsRaw[i].Len.Cmp(big.NewInt(0)) == 0 {
 			s.srcIPRsRaw = append(s.srcIPRsRaw[:i], s.srcIPRsRaw[i+1:]...)
@@ -1181,86 +896,83 @@ func (s *sourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*
 		targetIPs = append(targetIPs, &tIP)
 	}
 
-	// Shuffle the final batch for extra randomization
-	myRand.Shuffle(len(targetIPs), func(m, n int) {
+	MyRand.Shuffle(len(targetIPs), func(m, n int) {
 		targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
 	})
 	return
 }
 
-func (s *sourceIPs) Shuffle() {
+func (s *SourceIPs) Shuffle() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	myRand.Shuffle(len(s.srcHosts), func(m, n int) {
+	s.mu.Unlock()
+	MyRand.Shuffle(len(s.srcHosts), func(m, n int) {
 		s.srcHosts[m], s.srcHosts[n] = s.srcHosts[n], s.srcHosts[m]
 	})
-	myRand.Shuffle(len(s.srcIPRsRaw), func(m, n int) {
+	MyRand.Shuffle(len(s.srcIPRsRaw), func(m, n int) {
 		s.srcIPRsRaw[m], s.srcIPRsRaw[n] = s.srcIPRsRaw[n], s.srcIPRsRaw[m]
 	})
-	myRand.Shuffle(len(s.srcIPRsExtracted), func(m, n int) {
+	MyRand.Shuffle(len(s.srcIPRsExtracted), func(m, n int) {
 		s.srcIPRsExtracted[m], s.srcIPRsExtracted[n] = s.srcIPRsExtracted[n], s.srcIPRsExtracted[m]
 	})
 }
 
-func (s *sourceIPs) SetRand(mRnd *rand.Rand) {
+func (s *SourceIPs) SetRand(mRnd *rand.Rand) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tRnd = mRnd
 }
 
-// After reset, all will be empty, so you should using Add(), AddFromSlice(), AddFromFile(), and AddPorts
-// to initialize
-func (s *sourceIPs) Reset() {
+func (s *SourceIPs) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.srcHosts = []*string{}
-	s.srcIPRsRaw = []*ipRange{}
+	s.srcIPRsRaw = []*utils.IPRange{}
 	s.srcIPRsExtracted = []net.IP{}
-	s.ports = []int{}
+	s.Ports = []int{}
 }
 
-func NewSourceIPs() *sourceIPs {
-	return &sourceIPs{
+func NewSourceIPs() *SourceIPs {
+	return &SourceIPs{
 		srcHosts:         make([]*string, 0),
-		srcIPRsRaw:       make([]*ipRange, 0),
+		srcIPRsRaw:       make([]*utils.IPRange, 0),
 		srcIPRsExtracted: make([]net.IP, 0),
-		ports:            []int{},
-		tRnd:             newRand(),
+		Ports:            []int{},
+		tRnd:             utils.NewRand(),
 	}
 }
 
-func NewSourceIPsWithRand(tRnd *rand.Rand) *sourceIPs {
+func NewSourceIPsWithRand(tRnd *rand.Rand) *SourceIPs {
 	mSrc := NewSourceIPs()
 	mSrc.SetRand(tRnd)
 	return mSrc
 }
 
-func CopySourceIPs(src *sourceIPs) *sourceIPs {
+func CopySourceIPs(src *SourceIPs) *SourceIPs {
 	mSrc := NewSourceIPs()
 	mSrc.srcHosts = append(mSrc.srcHosts, src.srcHosts...)
 	mSrc.srcIPRsRaw = append(mSrc.srcIPRsRaw, src.srcIPRsRaw...)
 	mSrc.srcIPRsExtracted = append(mSrc.srcIPRsExtracted, src.srcIPRsExtracted...)
-	mSrc.ports = append(mSrc.ports, src.ports...)
-	mSrc.tRnd = newRand()
+	mSrc.Ports = append(mSrc.Ports, src.Ports...)
+	mSrc.tRnd = utils.NewRand()
 	return mSrc
 }
 
-type task struct {
-	host        *string
-	max_failure int
+type Task struct {
+	Host        *string
+	Max_failure int
 }
 
-func (t *task) GetHost() *string {
-	return t.host
+func (t *Task) GetHost() *string {
+	return t.Host
 }
 
-func (t *task) GetMaxFailure() int {
-	return t.max_failure
+func (t *Task) GetMaxFailure() int {
+	return t.Max_failure
 }
 
-func NewTask(host *string, max_failure int) *task {
-	return &task{
-		host:        host,
-		max_failure: max_failure,
+func NewTask(host *string, max_failure int) *Task {
+	return &Task{
+		Host:        host,
+		Max_failure: max_failure,
 	}
 }

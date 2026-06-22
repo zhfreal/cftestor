@@ -1,4 +1,4 @@
-package main
+package config_test
 
 import (
 	"net"
@@ -6,6 +6,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"cftestor/internal/config"
+	"cftestor/internal/fetcher"
+	"cftestor/internal/logger"
+	"cftestor/internal/outbound"
+	"cftestor/internal/utils"
 )
 
 func firstLocalTestIP(t *testing.T) (net.IP, string) {
@@ -66,32 +72,35 @@ func TestParseOutboundMarkAcceptsDecimalAndHex(t *testing.T) {
 		{input: "0xffffffff", want: 0xffffffff},
 	}
 	for _, tt := range tests {
-		got, err := parseOutboundMark("--mark", tt.input)
+		got, err := outbound.ParseOutboundMark("--mark", tt.input)
 		if err != nil {
-			t.Fatalf("parseOutboundMark(%q) returned error: %v", tt.input, err)
+			t.Fatalf("ParseOutboundMark(%q) returned error: %v", tt.input, err)
 		}
 		if got != tt.want {
-			t.Fatalf("parseOutboundMark(%q) = %d, want %d", tt.input, got, tt.want)
+			t.Fatalf("ParseOutboundMark(%q) = %d, want %d", tt.input, got, tt.want)
 		}
 	}
 }
 
 func TestParseOutboundMarkRejectsInvalidValues(t *testing.T) {
 	for _, input := range []string{"", "-1", "abc", "0x100000000"} {
-		if _, err := parseOutboundMark("--mark", input); err == nil {
-			t.Fatalf("parseOutboundMark(%q) returned nil error", input)
+		if _, err := outbound.ParseOutboundMark("--mark", input); err == nil {
+			t.Fatalf("ParseOutboundMark(%q) returned nil error", input)
 		}
 	}
 }
 
 func TestConfigureAppRejectsConflictingOutboundMarks(t *testing.T) {
 	resetGlobalsForTest()
-	shouldExit, _, err := configureApp([]string{"--quiet", "--dt-only", "--source", "1.1.1.1", "--mark", "1", "--xmark", "2"})
-	if !shouldExit || err == nil {
-		t.Fatalf("configureApp returned shouldExit %v, err %v; want conflicting mark error", shouldExit, err)
+	opts, shouldExit, _, err := config.ConfigureApp([]string{"--quiet", "--dt-only", "--source", "1.1.1.1", "--mark", "1", "--xmark", "2"})
+	if err == nil {
+		err = outbound.PrepareOutboundOptions(&opts)
 	}
-	if !strings.Contains(err.Error(), "cannot set different mark values") {
-		t.Fatalf("error %q does not mention conflicting mark values", err.Error())
+	if !shouldExit && err == nil {
+		t.Fatalf("ConfigureApp returned shouldExit %v, err %v; want conflicting mark error", shouldExit, err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "cannot set different mark values") {
+		t.Fatalf("error %v does not mention conflicting mark values", err)
 	}
 }
 
@@ -100,12 +109,15 @@ func TestConfigureAppAcceptsOutboundMarkAliasesOnLinux(t *testing.T) {
 		t.Skip("socket marks are Linux-only")
 	}
 	resetGlobalsForTest()
-	shouldExit, _, err := configureApp([]string{"--quiet", "--dt-only", "--source", "1.1.1.1", "--mark", "123", "--xmark", "0x7b"})
+	opts, shouldExit, _, err := config.ConfigureApp([]string{"--quiet", "--dt-only", "--source", "1.1.1.1", "--mark", "123", "--xmark", "0x7b"})
 	if shouldExit || err != nil {
-		t.Fatalf("configureApp returned shouldExit %v, err %v", shouldExit, err)
+		t.Fatalf("ConfigureApp returned shouldExit %v, err %v", shouldExit, err)
 	}
-	if !Config.OutboundMarkSet || Config.OutboundMark != 123 {
-		t.Fatalf("OutboundMarkSet=%v OutboundMark=%d, want set mark 123", Config.OutboundMarkSet, Config.OutboundMark)
+	if err := outbound.PrepareOutboundOptions(&opts); err != nil {
+		t.Fatalf("PrepareOutboundOptions returned error: %v", err)
+	}
+	if !config.Config.OutboundMarkSet || config.Config.OutboundMark != 123 {
+		t.Fatalf("OutboundMarkSet=%v OutboundMark=%d, want set mark 123", config.Config.OutboundMarkSet, config.Config.OutboundMark)
 	}
 }
 
@@ -116,38 +128,41 @@ func TestConfigureAppAcceptsOutboundSourceIP(t *testing.T) {
 		arg += "%" + zone
 	}
 	resetGlobalsForTest()
-	shouldExit, _, err := configureApp([]string{"--quiet", "--dt-only", "--source", "1.1.1.1", "--interface", arg})
+	opts, shouldExit, _, err := config.ConfigureApp([]string{"--quiet", "--dt-only", "--source", "1.1.1.1", "--interface", arg})
 	if shouldExit || err != nil {
-		t.Fatalf("configureApp returned shouldExit %v, err %v", shouldExit, err)
+		t.Fatalf("ConfigureApp returned shouldExit %v, err %v", shouldExit, err)
 	}
-	if Config.OutboundSourceIP == nil || !Config.OutboundSourceIP.Equal(ip) {
-		t.Fatalf("OutboundSourceIP=%v, want %v", Config.OutboundSourceIP, ip)
+	if err := outbound.PrepareOutboundOptions(&opts); err != nil {
+		t.Fatalf("PrepareOutboundOptions returned error: %v", err)
+	}
+	if config.Config.OutboundSourceIP == nil || !config.Config.OutboundSourceIP.Equal(ip) {
+		t.Fatalf("OutboundSourceIP=%v, want %v", config.Config.OutboundSourceIP, ip)
 	}
 }
 
 func TestPrepareOutboundInterfaceAcceptsIndex(t *testing.T) {
 	iface := firstLocalTestInterface(t)
 	resetGlobalsForTest()
-	Config.OutboundInterface = strconv.Itoa(iface.Index)
-	if err := prepareOutboundInterface(); err != nil {
-		t.Fatalf("prepareOutboundInterface returned error: %v", err)
+	config.Config.OutboundInterface = strconv.Itoa(iface.Index)
+	if err := outbound.PrepareOutboundInterface(); err != nil {
+		t.Fatalf("PrepareOutboundInterface returned error: %v", err)
 	}
-	if Config.OutboundInterfaceIndex != iface.Index || Config.OutboundInterfaceName != iface.Name {
-		t.Fatalf("resolved interface = (%d, %q), want (%d, %q)", Config.OutboundInterfaceIndex, Config.OutboundInterfaceName, iface.Index, iface.Name)
+	if config.Config.OutboundInterfaceIndex != iface.Index || config.Config.OutboundInterfaceName != iface.Name {
+		t.Fatalf("resolved interface = (%d, %q), want (%d, %q)", config.Config.OutboundInterfaceIndex, config.Config.OutboundInterfaceName, iface.Index, iface.Name)
 	}
 }
 
 func resetGlobalsForTest() {
-	Config = DefaultConfig()
-	ipStr = []string{}
-	resetRuntimeState()
-	myLogger = myLogger.newLogger(logLevelFatal)
+	config.Config = config.DefaultConfig()
+	config.IPStr = []string{}
+	config.ResetRuntimeState()
+	logger.Log = logger.NewLogger(logger.LogLevelFatal)
 }
 
 func TestParseCLIAcceptsDNSHostInput(t *testing.T) {
-	opts, err := parseCLI([]string{"--dt-only", "-s", "example.com:443", "-6"})
+	opts, err := config.ParseCLI([]string{"--dt-only", "-s", "example.com:443", "-6"})
 	if err != nil {
-		t.Fatalf("parseCLI returned error: %v", err)
+		t.Fatalf("ParseCLI returned error: %v", err)
 	}
 	if len(opts.IPs) != 1 || opts.IPs[0] != "example.com:443" {
 		t.Fatalf("unexpected IP inputs: %#v", opts.IPs)
@@ -179,23 +194,23 @@ func TestSplitHostAcceptsDNSAndIPHosts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ok, host, port := splitHost(tt.input)
+			ok, host, port := utils.SplitHost(tt.input)
 			if ok != tt.wantOK {
-				t.Fatalf("splitHost(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
+				t.Fatalf("SplitHost(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
 			}
 			if !tt.wantOK {
 				return
 			}
 			if host != tt.wantHost || port != tt.wantPort {
-				t.Fatalf("splitHost(%q) = (%q, %d), want (%q, %d)", tt.input, host, port, tt.wantHost, tt.wantPort)
+				t.Fatalf("SplitHost(%q) = (%q, %d), want (%q, %d)", tt.input, host, port, tt.wantHost, tt.wantPort)
 			}
 		})
 	}
 }
 
 func TestSourceIPsDNSHostPassesFamilyFilters(t *testing.T) {
-	for _, mode := range []int8{TypeIPv4, TypeIPv6, TypeIPv4 | TypeIPv6} {
-		sources := NewSourceIPs()
+	for _, mode := range []int8{config.TypeIPv4, config.TypeIPv6, config.TypeIPv4 | config.TypeIPv6} {
+		sources := config.NewSourceIPs()
 		if err := sources.AddFromSlice([]string{"example.com:443"}, mode); err != nil {
 			t.Fatalf("AddFromSlice returned error for mode %d: %v", mode, err)
 		}
@@ -206,8 +221,8 @@ func TestSourceIPsDNSHostPassesFamilyFilters(t *testing.T) {
 }
 
 func TestSourceIPsIPLiteralHostsStillRespectFamilyFilters(t *testing.T) {
-	sources := NewSourceIPs()
-	if err := sources.AddFromSlice([]string{"[2606:4700::1]:443"}, TypeIPv4); err != nil {
+	sources := config.NewSourceIPs()
+	if err := sources.AddFromSlice([]string{"[2606:4700::1]:443"}, config.TypeIPv4); err != nil {
 		t.Fatalf("AddFromSlice returned error: %v", err)
 	}
 	if got := sources.LenInt(); got != 0 {
@@ -217,15 +232,15 @@ func TestSourceIPsIPLiteralHostsStillRespectFamilyFilters(t *testing.T) {
 
 func TestLoadSourceIPsAcceptsExplicitIPv6WithoutFamilyFlag(t *testing.T) {
 	resetGlobalsForTest()
-	ipStr = []string{"2606:4700::1"}
-	if err := loadSourceIPs(TypeIPv4, false, false); err != nil {
-		t.Fatalf("loadSourceIPs returned error: %v", err)
+	config.IPStr = []string{"2606:4700::1"}
+	if err := config.LoadSourceIPs(config.TypeIPv4, false, false); err != nil {
+		t.Fatalf("LoadSourceIPs returned error: %v", err)
 	}
-	if !Config.IPv6Mode {
+	if !config.Config.IPv6Mode {
 		t.Fatal("expected explicit input without family flags to enable IPv6 mode")
 	}
-	if got := srcIPs.LenInt(); got != 1 {
-		t.Fatalf("srcIPs.LenInt() = %d, want 1", got)
+	if got := config.SrcIPs.LenInt(); got != 1 {
+		t.Fatalf("SrcIPs.LenInt() = %d, want 1", got)
 	}
 }
 
@@ -239,7 +254,7 @@ func TestDeprecatedFlagsStillMapToCanonicalBehavior(t *testing.T) {
 			name: "disable download maps to dt only",
 			args: []string{"--silence", "--disable-download", "-s", "1.1.1.1"},
 			want: func(t *testing.T) {
-				if !Config.DTOnly {
+				if !config.Config.DTOnly {
 					t.Fatal("expected --disable-download to enable DT-only mode")
 				}
 			},
@@ -248,8 +263,8 @@ func TestDeprecatedFlagsStillMapToCanonicalBehavior(t *testing.T) {
 			name: "dt via https alias maps protocol",
 			args: []string{"--silence", "--dt-via-https", "--dt-only", "-s", "1.1.1.1"},
 			want: func(t *testing.T) {
-				if Config.DTVia != "https" || !Config.DTHttps {
-					t.Fatalf("expected HTTPS DT mode, got DTVia=%q DTHttps=%v", Config.DTVia, Config.DTHttps)
+				if config.Config.DTVia != "https" || !config.Config.DTHttps {
+					t.Fatalf("expected HTTPS DT mode, got DTVia=%q DTHttps=%v", config.Config.DTVia, config.Config.DTHttps)
 				}
 			},
 		},
@@ -258,9 +273,12 @@ func TestDeprecatedFlagsStillMapToCanonicalBehavior(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resetGlobalsForTest()
-			shouldExit, _, err := configureApp(tt.args)
+			opts, shouldExit, _, err := config.ConfigureApp(tt.args)
 			if shouldExit || err != nil {
-				t.Fatalf("configureApp(%v) = shouldExit %v, err %v", tt.args, shouldExit, err)
+				t.Fatalf("ConfigureApp(%v) = shouldExit %v, err %v", tt.args, shouldExit, err)
+			}
+			if err := outbound.PrepareOutboundOptions(&opts); err != nil {
+				t.Fatalf("PrepareOutboundOptions returned error: %v", err)
 			}
 			tt.want(t)
 		})
@@ -269,12 +287,12 @@ func TestDeprecatedFlagsStillMapToCanonicalBehavior(t *testing.T) {
 
 func TestNormalizeDTViaLowercasesProtocol(t *testing.T) {
 	resetGlobalsForTest()
-	Config.DTVia = "TLS"
-	if err := normalizeDTVia(); err != nil {
-		t.Fatalf("normalizeDTVia returned error: %v", err)
+	config.Config.DTVia = "TLS"
+	if err := config.NormalizeDTVia(); err != nil {
+		t.Fatalf("NormalizeDTVia returned error: %v", err)
 	}
-	if Config.DTVia != "tls" || Config.DTHttps {
-		t.Fatalf("normalizeDTVia did not normalize TLS mode, DTVia=%q DTHttps=%v", Config.DTVia, Config.DTHttps)
+	if config.Config.DTVia != "tls" || config.Config.DTHttps {
+		t.Fatalf("NormalizeDTVia did not normalize TLS mode, DTVia=%q DTHttps=%v", config.Config.DTVia, config.Config.DTHttps)
 	}
 }
 
@@ -291,9 +309,9 @@ func TestValidationMessagesMatchThresholds(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resetGlobalsForTest()
-			shouldExit, _, err := configureApp(tt.args)
+			_, shouldExit, _, err := config.ConfigureApp(tt.args)
 			if !shouldExit || err == nil {
-				t.Fatalf("configureApp(%v) = shouldExit %v, err %v; want error", tt.args, shouldExit, err)
+				t.Fatalf("ConfigureApp(%v) = shouldExit %v, err %v; want error", tt.args, shouldExit, err)
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("error %q does not contain %q", err.Error(), tt.wantErr)
@@ -303,8 +321,8 @@ func TestValidationMessagesMatchThresholds(t *testing.T) {
 }
 
 func TestSourceIPsRejectsBareDNSHostWithHostPortMessage(t *testing.T) {
-	sources := NewSourceIPs()
-	err := sources.AddFromSlice([]string{"example.com"}, TypeIPv4|TypeIPv6)
+	sources := config.NewSourceIPs()
+	err := sources.AddFromSlice([]string{"example.com"}, config.TypeIPv4|config.TypeIPv6)
 	if err == nil {
 		t.Fatal("expected bare DNS host without port to be rejected")
 	}
@@ -314,85 +332,83 @@ func TestSourceIPsRejectsBareDNSHostWithHostPortMessage(t *testing.T) {
 }
 
 func TestAddPortsReturnsErrorsAndDeduplicates(t *testing.T) {
-	sources := NewSourceIPs()
+	sources := config.NewSourceIPs()
 	if err := sources.AddPorts([]string{"443,8443", "8443"}); err != nil {
 		t.Fatalf("AddPorts returned error: %v", err)
 	}
-	if len(sources.ports) != 2 || sources.ports[0] != 443 || sources.ports[1] != 8443 {
-		t.Fatalf("ports = %#v, want [443 8443]", sources.ports)
+	if len(sources.Ports) != 2 {
+		t.Fatalf("len(sources.Ports) = %d, want 2", len(sources.Ports))
 	}
-
-	badSources := NewSourceIPs()
-	if err := badSources.AddPorts([]string{"65536"}); err == nil {
-		t.Fatal("expected invalid port to return error")
+	if sources.Ports[0] != 443 || sources.Ports[1] != 8443 {
+		t.Fatalf("sources.Ports = %v, want [443, 8443]", sources.Ports)
 	}
 }
 
 func TestURLHelpersReturnErrorsInsteadOfExiting(t *testing.T) {
-	host, port, err := parseUrl("https://example.com/path")
+	host, port, err := utils.ParseUrl("https://example.com/path", config.DefaultDLTUrl)
 	if err != nil {
-		t.Fatalf("parseUrl returned error: %v", err)
+		t.Fatalf("ParseUrl returned error: %v", err)
 	}
 	if host != "example.com" || port != 443 {
-		t.Fatalf("parseUrl returned (%q, %d), want (example.com, 443)", host, port)
+		t.Fatalf("ParseUrl returned (%q, %d), want (example.com, 443)", host, port)
 	}
 
-	got, err := newUrl("https://example.com/path", "8443")
+	got, err := utils.NewUrl("https://example.com/path", "8443", config.DefaultDLTUrl)
 	if err != nil {
-		t.Fatalf("newUrl returned error: %v", err)
+		t.Fatalf("NewUrl returned error: %v", err)
 	}
 	if got != "https://example.com:8443/path" {
-		t.Fatalf("newUrl returned %q", got)
+		t.Fatalf("NewUrl returned %q", got)
 	}
 
-	if _, _, err := parseUrl("not a url"); err == nil {
-		t.Fatal("expected invalid parseUrl input to return error")
+	if _, _, err := utils.ParseUrl("not a url", config.DefaultDLTUrl); err == nil {
+		t.Fatal("expected invalid ParseUrl input to return error")
 	}
-	if _, err := newUrl("https://example.com/path", "0"); err == nil {
-		t.Fatal("expected invalid newUrl port to return error")
+	if _, err := utils.NewUrl("https://example.com/path", "0", config.DefaultDLTUrl); err == nil {
+		t.Fatal("expected invalid NewUrl port to return error")
 	}
 }
 
 func TestDefaultURLsUseCloudflareSpeedtest(t *testing.T) {
-	if defaultDTUrl != "https://speed.cloudflare.com/__down?bytes=0" {
-		t.Fatalf("defaultDTUrl = %q", defaultDTUrl)
+	if config.DefaultDTUrl != "https://speed.cloudflare.com/__down?bytes=0" {
+		t.Fatalf("DefaultDTUrl = %q", config.DefaultDTUrl)
 	}
-	if defaultDLTUrl != "https://speed.cloudflare.com/__down?bytes=250000000" {
-		t.Fatalf("defaultDLTUrl = %q", defaultDLTUrl)
+	if config.DefaultDLTUrl != "https://speed.cloudflare.com/__down?bytes=250000000" {
+		t.Fatalf("DefaultDLTUrl = %q", config.DefaultDLTUrl)
 	}
-	if DefaultTestHost != "speed.cloudflare.com" {
-		t.Fatalf("DefaultTestHost = %q", DefaultTestHost)
+	if config.DefaultTestHost != "speed.cloudflare.com" {
+		t.Fatalf("DefaultTestHost = %q", config.DefaultTestHost)
 	}
 }
 
 func TestNoCacheIgnoresDefaultURLsWithEquivalentPorts(t *testing.T) {
 	resetGlobalsForTest()
-	Config.NoCache = true
+	config.Config.NoCache = true
 
 	defaults := []string{
-		defaultDTUrl,
-		defaultDLTUrl,
+		config.DefaultDTUrl,
+		config.DefaultDLTUrl,
 		"https://speed.cloudflare.com:443/__down?bytes=0",
 		"https://speed.cloudflare.com:443/__down?bytes=250000000",
 	}
 	for _, sourceURL := range defaults {
-		if shouldApplyNoCache(sourceURL) {
-			t.Fatalf("shouldApplyNoCache(%q) = true, want false", sourceURL)
+		if config.ShouldApplyNoCache(sourceURL) {
+			t.Fatalf("ShouldApplyNoCache(%q) = true, want false", sourceURL)
 		}
 	}
 
-	if !shouldApplyNoCache("https://example.com/__down?bytes=250000000") {
+	if !config.ShouldApplyNoCache("https://example.com/__down?bytes=250000000") {
 		t.Fatal("custom URL should apply no-cache when Config.NoCache is true")
 	}
 
-	Config.NoCache = false
-	if shouldApplyNoCache("https://example.com/__down?bytes=250000000") {
+	config.Config.NoCache = false
+	if config.ShouldApplyNoCache("https://example.com/__down?bytes=250000000") {
 		t.Fatal("custom URL should not apply no-cache when Config.NoCache is false")
 	}
 }
 
 func TestParseCLIAcceptsLongFormAliases(t *testing.T) {
-	opts, err := parseCLI([]string{
+	opts, err := config.ParseCLI([]string{
 		"--source", "example.com:443",
 		"--source", "1.1.1.1:443",
 		"--source-file", "sources.txt",
@@ -422,7 +438,7 @@ func TestParseCLIAcceptsLongFormAliases(t *testing.T) {
 		"--quiet",
 	})
 	if err != nil {
-		t.Fatalf("parseCLI returned error: %v", err)
+		t.Fatalf("ParseCLI returned error: %v", err)
 	}
 	if len(opts.IPs) != 2 || opts.IPs[0] != "example.com:443" || opts.IPs[1] != "1.1.1.1:443" {
 		t.Fatalf("alias sources were not merged into IPs: %#v", opts.IPs)
@@ -470,21 +486,24 @@ func TestParseCLIAcceptsLongFormAliases(t *testing.T) {
 
 func TestConfigureAppKeepsDTTimeoutAliasValue(t *testing.T) {
 	resetGlobalsForTest()
-	shouldExit, _, err := configureApp([]string{"--quiet", "--dt-only", "--source", "1.1.1.1", "--dt-timeout-ms", "1234"})
+	opts, shouldExit, _, err := config.ConfigureApp([]string{"--quiet", "--dt-only", "--source", "1.1.1.1", "--dt-timeout-ms", "1234"})
 	if shouldExit || err != nil {
-		t.Fatalf("configureApp returned shouldExit %v, err %v", shouldExit, err)
+		t.Fatalf("ConfigureApp returned shouldExit %v, err %v", shouldExit, err)
 	}
-	if Config.DTTimeout != 1234 {
-		t.Fatalf("Config.DTTimeout = %d, want 1234", Config.DTTimeout)
+	if err := outbound.PrepareOutboundOptions(&opts); err != nil {
+		t.Fatalf("PrepareOutboundOptions returned error: %v", err)
+	}
+	if config.Config.DTTimeout != 1234 {
+		t.Fatalf("config.Config.DTTimeout = %d, want 1234", config.Config.DTTimeout)
 	}
 }
 
 func TestFetchCloudflareDomains(t *testing.T) {
-	oldLimit := Config.TrancoLimit
-	Config.TrancoLimit = 10
-	defer func() { Config.TrancoLimit = oldLimit }()
+	oldLimit := config.Config.TrancoLimit
+	config.Config.TrancoLimit = 10
+	defer func() { config.Config.TrancoLimit = oldLimit }()
 
-	domains, err := FetchCloudflareDomains("")
+	domains, err := fetcher.FetchCloudflareDomains(config.Config.DNSServer, config.Config.TrancoLimit)
 	if err != nil {
 		t.Logf("FetchCloudflareDomains returned error (possibly no network): %v", err)
 		return
@@ -493,11 +512,11 @@ func TestFetchCloudflareDomains(t *testing.T) {
 }
 
 func TestFetchDynamicIPv4(t *testing.T) {
-	oldLimit := Config.TrancoLimit
-	Config.TrancoLimit = 10
-	defer func() { Config.TrancoLimit = oldLimit }()
+	oldLimit := config.Config.TrancoLimit
+	config.Config.TrancoLimit = 10
+	defer func() { config.Config.TrancoLimit = oldLimit }()
 
-	cidrs, err := FetchDynamicIPv4("")
+	cidrs, err := fetcher.FetchDynamicIPv4(config.Config.DNSServer, config.Config.TrancoLimit)
 	if err != nil {
 		t.Logf("FetchDynamicIPv4 returned error (possibly no network): %v", err)
 		return

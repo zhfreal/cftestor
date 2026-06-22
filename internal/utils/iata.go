@@ -1,6 +1,6 @@
-package main
+package utils
 
-var iataMap = map[string]string{
+var IataMap = map[string]string{
 	"AAC": "EG",
 	"AAE": "DZ",
 	"AAL": "DK",

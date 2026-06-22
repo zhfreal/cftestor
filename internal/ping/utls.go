@@ -1,4 +1,4 @@
-package main
+package ping
 
 import (
 	"bufio"
@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"cftestor/internal/outbound"
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/http2"
 )
@@ -57,11 +58,10 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 
 	b.startAt = time.Now()
 	var err error
-	b.conn, err = outboundDialContext(req.Context(), "tcp", b.hostWithPort)
+	b.conn, err = outbound.OutboundDialContext(req.Context(), "tcp", b.hostWithPort)
 	if err != nil {
 		return nil, fmt.Errorf("tcp net dial fail: %w", err)
 	}
-	// defer conn.Close()
 
 	b.tlsConn, err = b.tlsConnect(b.conn, req)
 	b.tlsHandShookAt = time.Now()
@@ -79,11 +79,9 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 		if err != nil {
 			resp, err = nil, fmt.Errorf("create http2 client with connection fail: %w", err)
 		} else {
-			// defer h2_conn.Close()
 			resp, err = h2_conn.RoundTrip(req)
 		}
 	case "http/1.1", "":
-		// Use a larger buffer for reading the response to improve throughput
 		err = req.Write(b.tlsConn)
 		if err != nil {
 			resp, err = nil, fmt.Errorf("write http1 tls connection fail: %w", err)
@@ -146,7 +144,7 @@ func (b *UTLSTransport) CloseIdleConnections() {
 	}
 }
 
-func newHttpClient(helloID utls.ClientHelloID, hostWithPort string, timeout time.Duration) (*http.Client, *UTLSTransport) {
+func NewHttpClient(helloID utls.ClientHelloID, hostWithPort string, timeout time.Duration) (*http.Client, *UTLSTransport) {
 	tr := NewUTLSTransport(helloID, hostWithPort, timeout)
 	var client = &http.Client{
 		Timeout:   timeout,
@@ -155,11 +153,11 @@ func newHttpClient(helloID utls.ClientHelloID, hostWithPort string, timeout time
 	return client, tr
 }
 
-func performUtlsDial(host string, hostNameStr string, timeout time.Duration, hellID utls.ClientHelloID) bool {
+func PerformUtlsDial(host string, hostNameStr string, timeout time.Duration, hellID utls.ClientHelloID) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	dialConn, err := outboundDialContext(ctx, "tcp", host)
+	dialConn, err := outbound.OutboundDialContext(ctx, "tcp", host)
 	if err != nil {
 		return false
 	}

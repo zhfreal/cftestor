@@ -1,14 +1,16 @@
 //go:build freebsd || openbsd || netbsd || dragonfly
 
-package main
+package outbound
 
 import (
 	"fmt"
 	"syscall"
+
+	"cftestor/internal/config"
 )
 
 func validateOutboundPlatformOptions() error {
-	if Config.OutboundMarkSet {
+	if config.Config.OutboundMarkSet {
 		return fmt.Errorf("%q is only supported on Linux", "--mark")
 	}
 	return nil

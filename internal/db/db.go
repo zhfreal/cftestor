@@ -1,4 +1,4 @@
-package main
+package db
 
 import (
 	"time"
@@ -7,24 +7,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestTime      datetime     when the test happened
-// ASN           int          ASN of your local network
-// CITY          text         city of your local network
-// IP            text         valid IP for CloudFare CDN access
-// LABEL         text         label while stand for your CloudFare CDN resources
-// DTS           text         the method for DT (SSL or HTTPS)
-// DTC           int          tries for DT
-// DTPC          int          success count of DT
-// DTPR          float        success rate of DT
-// DA            float        average delay of DT
-// DMI           float        minimal delay of DT
-// DMX           float        maximum delay of DT
-// DLTC          int          tries for DLT
-// DLTPC         int          success count of DLT
-// DLTPR         float        success rate of DLT
-// DLSA          float        average download speed (KB/s)
-// DLDS          int          total bytes downloaded
-// DLTD          float        elapsed download time in seconds
 const (
 	DBFile    = "ip.db"
 	TableName = "CFTD"
@@ -62,11 +44,7 @@ func OpenSqlite(dbFilePath string) (*gorm.DB, error) {
 		NowFunc: func() time.Time {
 			return time.Now()
 		},
-		// NamingStrategy: schema.NamingStrategy{
-		//     TablePrefix: config.Table_Prefix,
-		// },
 	})
-
 }
 
 func AddTableCFDT(db *gorm.DB) error {

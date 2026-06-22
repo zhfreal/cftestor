@@ -1,18 +1,22 @@
-package main
+package config
 
 import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"time"
 
+	"cftestor/internal/fetcher"
+	"cftestor/internal/logger"
+	"cftestor/internal/utils"
 	utls "github.com/refraction-networking/utls"
 	flag "github.com/spf13/pflag"
 )
 
-type cliOptions struct {
+type CliOptions struct {
 	Config           AppConfig
 	IPs              []string
 	SourceIPs        []string
@@ -43,8 +47,8 @@ func DefaultConfig() AppConfig {
 		DTTimeout:                   2000,
 		DTStdExp:                    30,
 		HostName:                    DefaultTestHost,
-		DLTUrl:                      defaultDLTUrl,
-		DTUrl:                       defaultDTUrl,
+		DLTUrl:                      DefaultDLTUrl,
+		DTUrl:                       DefaultDTUrl,
 		DLTTimeout:                  5000,
 		Loop:                        -1,
 		TestTimeout:                 30,
@@ -55,38 +59,38 @@ func DefaultConfig() AppConfig {
 		DTHttpRspReturnCodeExpected: 200,
 		IPv4Mode:                    true,
 		TLSClientID:                 utls.HelloChrome_Auto,
-		UserAgent:                   userAgentChrome,
+		UserAgent:                   UserAgentChrome,
 		PortStrSlice:                []string{},
 		DNSServer:                   "1.1.1.1:53",
 		TrancoLimit:                 1000,
 	}
 }
 
-func parseCLI(args []string) (cliOptions, error) {
-	opts := cliOptions{
+func ParseCLI(args []string) (CliOptions, error) {
+	opts := CliOptions{
 		Config:    DefaultConfig(),
 		IPs:       []string{},
 		SourceIPs: []string{},
 	}
-	fs := flag.NewFlagSet(runTime, flag.ContinueOnError)
+	fs := flag.NewFlagSet(RunTime, flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Print(help)
+		fmt.Print(Help)
 	}
-	registerCLIFlags(fs, &opts)
+	RegisterCLIFlags(fs, &opts)
 	if err := fs.Parse(args); err != nil {
 		return opts, err
 	}
 	opts.IPs = append(opts.IPs, opts.SourceIPs...)
-	opts.IPv4Changed = flagChanged(fs, "ipv4")
-	opts.IPv6Changed = flagChanged(fs, "ipv6")
-	opts.DTTimeoutChanged = flagChanged(fs, "dt-timeout", "dt-timeout-ms")
-	opts.MarkChanged = flagChanged(fs, "mark")
-	opts.XMarkChanged = flagChanged(fs, "xmark")
-	applyTLSFingerprint(&opts)
+	opts.IPv4Changed = FlagChanged(fs, "ipv4")
+	opts.IPv6Changed = FlagChanged(fs, "ipv6")
+	opts.DTTimeoutChanged = FlagChanged(fs, "dt-timeout", "dt-timeout-ms")
+	opts.MarkChanged = FlagChanged(fs, "mark")
+	opts.XMarkChanged = FlagChanged(fs, "xmark")
+	ApplyTLSFingerprint(&opts)
 	return opts, nil
 }
 
-func registerCLIFlags(fs *flag.FlagSet, opts *cliOptions) {
+func RegisterCLIFlags(fs *flag.FlagSet, opts *CliOptions) {
 	cfg := &opts.Config
 
 	fs.BoolVar(&cfg.FastMode, "fast", cfg.FastMode, "Use a limited set of internal Cloudflare IPs for quick scanning.")
@@ -179,7 +183,7 @@ func registerCLIFlags(fs *flag.FlagSet, opts *cliOptions) {
 	fs.BoolVarP(&opts.PrintVersion, "version", "v", opts.PrintVersion, "Show version.")
 }
 
-func flagChanged(fs *flag.FlagSet, names ...string) bool {
+func FlagChanged(fs *flag.FlagSet, names ...string) bool {
 	for _, name := range names {
 		f := fs.Lookup(name)
 		if f != nil && f.Changed {
@@ -189,169 +193,90 @@ func flagChanged(fs *flag.FlagSet, names ...string) bool {
 	return false
 }
 
-func applyTLSFingerprint(opts *cliOptions) {
+func ApplyTLSFingerprint(opts *CliOptions) {
 	cfg := &opts.Config
 	if opts.TLSHelloFirefox {
 		cfg.TLSClientID = utls.HelloFirefox_Auto
-		cfg.UserAgent = userAgentFirefox
+		cfg.UserAgent = UserAgentFirefox
 	}
 	if opts.TLSHelloChrome {
 		cfg.TLSClientID = utls.HelloChrome_Auto
-		cfg.UserAgent = userAgentChrome
+		cfg.UserAgent = UserAgentChrome
 	}
 	if opts.TLSHelloEdge {
 		cfg.TLSClientID = utls.HelloEdge_Auto
-		cfg.UserAgent = userAgentEdge
+		cfg.UserAgent = UserAgentEdge
 	}
 	if opts.TLSHelloSafari {
 		cfg.TLSClientID = utls.HelloSafari_Auto
-		cfg.UserAgent = userAgentSafari
+		cfg.UserAgent = UserAgentSafari
 	}
 }
 
-func configureApp(args []string) (bool, int, error) {
-	opts, err := parseCLI(args)
-	if err != nil {
-		if err == flag.ErrHelp {
-			return true, 0, nil
+func LoadSourceIPs(tMode int8, ipv4Changed, ipv6Changed bool) error {
+	hasUserSources := len(IPStr) > 0 || len(Config.IPFile) > 0
+	if !hasUserSources {
+		if (tMode&TypeIPv4) == TypeIPv4 && (tMode&TypeIPv6) == TypeIPv6 {
+			return fmt.Errorf("the options \"-4|--ipv4\" and \"-6|--ipv6\" cannot be used together when no specific IPs or file are provided")
 		}
-		return true, 2, err
+		if (tMode & TypeIPv4) == TypeIPv4 {
+			tCFIPv4 := CFIPV4FULL
+			if Config.FastMode {
+				logger.Log.Infoln("Fast mode enabled for IPv4: dynamically fetching optimized active IPv4 CIDRs...")
+				cidrs, err := fetcher.FetchDynamicIPv4(Config.DNSServer, Config.TrancoLimit)
+				if err != nil {
+					logger.Log.Warningf("Dynamic fetch failed, falling back to fast ranges: %v", err)
+					tCFIPv4 = CFIPV4
+				} else if len(cidrs) > 0 {
+					tCFIPv4 = cidrs
+				} else {
+					tCFIPv4 = CFIPV4
+				}
+			}
+			return SrcIPs.AddFromSlice(tCFIPv4, TypeIPv4)
+		}
+		tCFIPv6 := CFIPV6FULL
+		if Config.FastMode {
+			logger.Log.Infoln("Fast mode enabled for IPv6: dynamically fetching optimized active IPv6 CIDRs...")
+			cidrs, err := fetcher.FetchDynamicIPv6(Config.DNSServer, Config.TrancoLimit)
+			if err != nil {
+				logger.Log.Warningf("Dynamic fetch failed, falling back to full ranges: %v", err)
+				tCFIPv6 = CFIPV6FULL
+			} else if len(cidrs) > 0 {
+				tCFIPv6 = cidrs
+			}
+		}
+		return SrcIPs.AddFromSlice(tCFIPv6, TypeIPv6)
 	}
 
-	Config = opts.Config
-	ipStr = opts.IPs
-	resetRuntimeState()
-
-	if len(version) == 0 {
-		version = "dev"
+	if !ipv6Changed && !ipv4Changed {
+		Config.IPv6Mode = true
+		tMode = TypeIPv4 | TypeIPv6
 	}
-	if !Config.SilenceMode {
-		print_version()
-	} else {
-		Config.Debug = false
-		Config.StoreToDB = false
-		Config.StoreToFile = false
+	if len(IPStr) > 0 {
+		if err := SrcIPs.AddFromSlice(IPStr, tMode); err != nil {
+			return err
+		}
 	}
-	if opts.PrintVersion {
-		return true, 0, nil
+	if len(Config.IPFile) != 0 {
+		if err := SrcIPs.AddFromFile(Config.IPFile, tMode); err != nil {
+			return err
+		}
 	}
-
-	initLoggerFromConfig()
-	initRandSeed()
-	return prepareRuntime(&opts)
+	if SrcIPs.LenInt() == 0 {
+		return fmt.Errorf("no source IPs provided")
+	}
+	return nil
 }
 
-func resetRuntimeState() {
-	verifyResultsMap = make(map[string]VerifyResults)
-	myRand = newRand()
-	srcIPs = NewSourceIPsWithRand(myRand)
+
+func ResetRuntimeState() {
+	VerifyResultsMap = make(map[string]VerifyResults)
+	MyRand = utils.NewRand()
+	SrcIPs = NewSourceIPsWithRand(MyRand)
 }
 
-func initLoggerFromConfig() {
-	if Config.SilenceMode {
-		loggerLevel = logLevelFatal
-	} else {
-		loggerLevel = logLevelInfo
-		if Config.Debug {
-			loggerLevel = logLevelDebug
-		}
-	}
-	myLogger = myLogger.newLogger(loggerLevel)
-}
-
-func prepareRuntime(opts *cliOptions) (bool, int, error) {
-	if Config.DisableDownload {
-		Config.DTOnly = true
-		myLogger.Warningln("deprecated flag \"--disable-download\"; use \"--dt-only\" instead")
-	}
-	if Config.DTHttps {
-		Config.DTVia = "https"
-		myLogger.Warningln("deprecated flag \"--dt-via-https\"; use \"--dt-via https\" instead")
-	}
-	if Config.DTOnly && Config.DLTOnly {
-		return true, 1, fmt.Errorf("%q and %q cannot be provided at the same time", "--dt-only", "--dlt-only")
-	}
-	if Config.DTEvaluationDTPR > 100 {
-		Config.DTEvaluationDTPR = 100
-	} else if Config.DTEvaluationDTPR < 0 {
-		Config.DTEvaluationDTPR = 0
-	}
-	if err := normalizeDTVia(); err != nil {
-		return true, 1, err
-	}
-
-	tMode, err := selectedIPMode(opts.IPv4Changed)
-	if err != nil {
-		return true, 1, err
-	}
-	trimConfigStrings()
-	if err := prepareOutboundOptions(opts); err != nil {
-		return true, 1, err
-	}
-
-	if len(Config.FetchCFDomainsFile) > 0 {
-		myLogger.Infof("Starting dynamic Cloudflare CDN domain fetch...")
-		domains, err := FetchCloudflareDomains(Config.DNSServer)
-		if err != nil {
-			myLogger.Errorf("Domain fetch failed: %v", err)
-			return true, 1, err
-		}
-		if err := writeStringsToFile(Config.FetchCFDomainsFile, domains); err != nil {
-			myLogger.Errorf("Failed to save fetched domains: %v", err)
-			return true, 1, err
-		}
-		myLogger.Infof("Successfully saved %d Cloudflare CDN domains to %s", len(domains), Config.FetchCFDomainsFile)
-		return true, 0, nil
-	}
-
-	if len(Config.FetchIPv4File) > 0 {
-		myLogger.Infof("Starting dynamic IPv4 fetch...")
-		cidrs, err := FetchDynamicIPv4(Config.DNSServer)
-		if err != nil {
-			myLogger.Errorf("Fetch failed: %v", err)
-			return true, 1, err
-		}
-		if err := writeStringsToFile(Config.FetchIPv4File, cidrs); err != nil {
-			myLogger.Errorf("Failed to save fetched IPs: %v", err)
-			return true, 1, err
-		}
-		myLogger.Infof("Successfully saved %d IPv4 CIDRs to %s", len(cidrs), Config.FetchIPv4File)
-		return true, 0, nil
-	}
-
-	if len(Config.FetchIPv6File) > 0 {
-		myLogger.Infof("Starting dynamic IPv6 fetch...")
-		cidrs, err := FetchDynamicIPv6(Config.DNSServer)
-		if err != nil {
-			myLogger.Errorf("Fetch failed: %v", err)
-			return true, 1, err
-		}
-		if err := writeStringsToFile(Config.FetchIPv6File, cidrs); err != nil {
-			myLogger.Errorf("Failed to save fetched IPs: %v", err)
-			return true, 1, err
-		}
-		myLogger.Infof("Successfully saved %d IPv6 CIDRs to %s", len(cidrs), Config.FetchIPv6File)
-		return true, 0, nil
-	}
-
-	if err := loadSourceIPs(tMode, opts.IPv4Changed, opts.IPv6Changed); err != nil {
-		return true, 1, err
-	}
-	if err := validateURLs(); err != nil {
-		return true, 1, err
-	}
-	if err := prepareSourcePool(); err != nil {
-		return true, 1, err
-	}
-	shouldExit, code, err := prepareTestModes(opts.DTTimeoutChanged)
-	if shouldExit || err != nil {
-		return shouldExit, code, err
-	}
-	prepareOutputTargets()
-	return false, 0, nil
-}
-
-func normalizeDTVia() error {
+func NormalizeDTVia() error {
 	Config.DTVia = strings.ToLower(Config.DTVia)
 	switch Config.DTVia {
 	case "https":
@@ -361,6 +286,136 @@ func normalizeDTVia() error {
 	default:
 		return fmt.Errorf("invalid value for \"--dt-via\": use one of https, tls, or ssl")
 	}
+	return nil
+}
+
+func ConfigureApp(args []string) (CliOptions, bool, int, error) {
+	opts, err := ParseCLI(args)
+	if err != nil {
+		if err == flag.ErrHelp {
+			return opts, true, 0, nil
+		}
+		return opts, true, 2, err
+	}
+
+	Config = opts.Config
+	IPStr = opts.IPs
+	VerifyResultsMap = make(map[string]VerifyResults)
+	utils.InitRandSeed(MyRand)
+	SrcIPs = NewSourceIPsWithRand(MyRand)
+
+	if len(Version) == 0 {
+		Version = "dev"
+	}
+	if Config.SilenceMode {
+		Config.Debug = false
+		Config.StoreToDB = false
+		Config.StoreToFile = false
+	}
+
+	InitLoggerFromConfig()
+	if err := prepareRuntime(&opts); err != nil {
+		return opts, true, 1, err
+	}
+	return opts, false, 0, nil
+}
+
+func InitLoggerFromConfig() {
+	if Config.SilenceMode {
+		logger.Log.LoggerLevel = logger.LogLevelFatal
+	} else {
+		logger.Log.LoggerLevel = logger.LogLevelInfo
+		if Config.Debug {
+			logger.Log.LoggerLevel = logger.LogLevelDebug
+		}
+	}
+}
+
+func ShouldApplyNoCache(sourceURL string) bool {
+	return Config.NoCache && !IsDefaultTestURL(sourceURL)
+}
+
+func IsDefaultTestURL(sourceURL string) bool {
+	return EquivalentURL(sourceURL, DefaultDTUrl) || EquivalentURL(sourceURL, DefaultDLTUrl)
+}
+
+func EquivalentURL(a, b string) bool {
+	aURL, err := url.Parse(strings.TrimSpace(a))
+	if err != nil || aURL == nil {
+		return false
+	}
+	bURL, err := url.Parse(strings.TrimSpace(b))
+	if err != nil || bURL == nil {
+		return false
+	}
+	return strings.EqualFold(aURL.Scheme, bURL.Scheme) &&
+		strings.EqualFold(strings.TrimSuffix(aURL.Hostname(), "."), strings.TrimSuffix(bURL.Hostname(), ".")) &&
+		effectiveURLPort(aURL) == effectiveURLPort(bURL) &&
+		normalizedURLPath(aURL) == normalizedURLPath(bURL) &&
+		aURL.Query().Encode() == bURL.Query().Encode()
+}
+
+func effectiveURLPort(u *url.URL) string {
+	if port := u.Port(); len(port) > 0 {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
+}
+
+func normalizedURLPath(u *url.URL) string {
+	if len(u.EscapedPath()) == 0 {
+		return "/"
+	}
+	return u.EscapedPath()
+}
+
+func prepareRuntime(opts *CliOptions) error {
+	if Config.DisableDownload {
+		Config.DTOnly = true
+		logger.Log.Warningln("deprecated flag \"--disable-download\"; use \"--dt-only\" instead")
+	}
+	if Config.DTHttps {
+		Config.DTVia = "https"
+		logger.Log.Warningln("deprecated flag \"--dt-via-https\"; use \"--dt-via https\" instead")
+	}
+	if Config.DTOnly && Config.DLTOnly {
+		return fmt.Errorf("%q and %q cannot be provided at the same time", "--dt-only", "--dlt-only")
+	}
+	if Config.DTEvaluationDTPR > 100 {
+		Config.DTEvaluationDTPR = 100
+	} else if Config.DTEvaluationDTPR < 0 {
+		Config.DTEvaluationDTPR = 0
+	}
+	if err := NormalizeDTVia(); err != nil {
+		return err
+	}
+
+	tMode, err := selectedIPMode(opts.IPv4Changed)
+	if err != nil {
+		return err
+	}
+	trimConfigStrings()
+
+	if err := LoadSourceIPs(tMode, opts.IPv4Changed, opts.IPv6Changed); err != nil {
+		return err
+	}
+	if err := validateURLs(); err != nil {
+		return err
+	}
+	if err := prepareSourcePool(); err != nil {
+		return err
+	}
+	if err := prepareTestModes(opts.DTTimeoutChanged); err != nil {
+		return err
+	}
+	prepareOutputTargets()
 	return nil
 }
 
@@ -390,62 +445,6 @@ func trimConfigStrings() {
 	Config.DLTUrl = strings.TrimSpace(Config.DLTUrl)
 	Config.DBFile = strings.TrimSpace(Config.DBFile)
 	Config.OutboundInterface = strings.TrimSpace(Config.OutboundInterface)
-}
-
-func loadSourceIPs(tMode int8, ipv4Changed, ipv6Changed bool) error {
-	hasUserSources := len(ipStr) > 0 || len(Config.IPFile) > 0
-	if !hasUserSources {
-		if (tMode&TypeIPv4) == TypeIPv4 && (tMode&TypeIPv6) == TypeIPv6 {
-			return fmt.Errorf("the options \"-4|--ipv4\" and \"-6|--ipv6\" cannot be used together when no specific IPs or file are provided")
-		}
-		if (tMode & TypeIPv4) == TypeIPv4 {
-			tCFIPv4 := CFIPV4FULL
-			if Config.FastMode {
-				myLogger.Infoln("Fast mode enabled for IPv4: dynamically fetching optimized active IPv4 CIDRs...")
-				cidrs, err := FetchDynamicIPv4(Config.DNSServer)
-				if err != nil {
-					myLogger.Warningf("Dynamic fetch failed, falling back to fast ranges: %v", err)
-					tCFIPv4 = CFIPV4
-				} else if len(cidrs) > 0 {
-					tCFIPv4 = cidrs
-				} else {
-					tCFIPv4 = CFIPV4
-				}
-			}
-			return srcIPs.AddFromSlice(tCFIPv4, TypeIPv4)
-		}
-		tCFIPv6 := CFIPV6FULL
-		if Config.FastMode {
-			myLogger.Infoln("Fast mode enabled for IPv6: dynamically fetching optimized active IPv6 CIDRs...")
-			cidrs, err := FetchDynamicIPv6(Config.DNSServer)
-			if err != nil {
-				myLogger.Warningf("Dynamic fetch failed, falling back to full ranges: %v", err)
-				tCFIPv6 = CFIPV6FULL
-			} else if len(cidrs) > 0 {
-				tCFIPv6 = cidrs
-			}
-		}
-		return srcIPs.AddFromSlice(tCFIPv6, TypeIPv6)
-	}
-
-	if !ipv6Changed && !ipv4Changed {
-		Config.IPv6Mode = true
-		tMode = TypeIPv4 | TypeIPv6
-	}
-	if len(ipStr) > 0 {
-		if err := srcIPs.AddFromSlice(ipStr, tMode); err != nil {
-			return err
-		}
-	}
-	if len(Config.IPFile) != 0 {
-		if err := srcIPs.AddFromFile(Config.IPFile, tMode); err != nil {
-			return err
-		}
-	}
-	if srcIPs.LenInt() == 0 {
-		return fmt.Errorf("no source IPs provided")
-	}
-	return nil
 }
 
 func validateURLs() error {
@@ -487,11 +486,11 @@ func prepareSourcePool() error {
 	if Config.ResultMin <= 0 {
 		return positiveIntFlagError("-r|--result", Config.ResultMin)
 	}
-	srcIPs.Shuffle()
-	if err := srcIPs.AddPorts(Config.PortStrSlice); err != nil {
+	SrcIPs.Shuffle()
+	if err := SrcIPs.AddPorts(Config.PortStrSlice); err != nil {
 		return err
 	}
-	tQty := srcIPs.Len()
+	tQty := SrcIPs.Len()
 	if Config.TestAll {
 		Config.ResultMin = -1
 	} else {
@@ -506,55 +505,58 @@ func prepareSourcePool() error {
 	return nil
 }
 
-func prepareTestModes(dtTimeoutChanged bool) (bool, int, error) {
+func positiveIntFlagError(flagName string, value int) error {
+	return fmt.Errorf("%q must be greater than 0 (got %d)", flagName, value)
+}
+
+func prepareTestModes(dtTimeoutChanged bool) error {
 	if !Config.DLTOnly {
-		shouldExit, code, err := prepareDelayTest(dtTimeoutChanged)
-		if shouldExit || err != nil {
-			return shouldExit, code, err
+		if err := prepareDelayTest(dtTimeoutChanged); err != nil {
+			return err
 		}
 	}
 	if !Config.DTOnly {
 		if err := prepareDownloadTest(); err != nil {
-			return true, 1, err
+			return err
 		}
 	}
-	return false, 0, nil
+	return nil
 }
 
-func prepareDelayTest(dtTimeoutChanged bool) (bool, int, error) {
+func prepareDelayTest(dtTimeoutChanged bool) error {
 	if Config.DTWorkerThread <= 0 {
-		return true, 1, positiveIntFlagError("-m|--dt-thread", Config.DTWorkerThread)
+		return positiveIntFlagError("-m|--dt-thread", Config.DTWorkerThread)
 	}
 	if Config.DTCount <= 0 {
-		return true, 1, positiveIntFlagError("-c|--dt-count", Config.DTCount)
+		return positiveIntFlagError("-c|--dt-count", Config.DTCount)
 	}
 	if Config.DTTimeout <= 0 {
-		return true, 1, positiveIntFlagError("-t|--dt-timeout", Config.DTTimeout)
+		return positiveIntFlagError("-t|--dt-timeout", Config.DTTimeout)
 	}
 	if !Config.DTHttps {
 		if len(Config.HostName) == 0 {
-			return true, 1, fmt.Errorf("%q must not be empty", "--hostname")
+			return fmt.Errorf("%q must not be empty", "--hostname")
 		}
-		Config.DTSource = dtsSSL
+		Config.DTSource = DtsSSL
 	} else {
 		if !dtTimeoutChanged {
 			Config.DTTimeout = 5000
 		}
-		label, _, err := parseUrl(Config.DTUrl)
+		label, _, err := utils.ParseUrl(Config.DTUrl, DefaultDLTUrl)
 		if err != nil {
-			return true, 1, fmt.Errorf("failed to derive label from \"--dt-url\": %w", err)
+			return fmt.Errorf("failed to derive label from \"--dt-url\": %w", err)
 		}
 		Config.SuffixLabel = label
-		Config.DTSource = dtsHTTPS
+		Config.DTSource = DtsHTTPS
 	}
 	if Config.EnableDTEvaluation {
 		if Config.DTEvaluationDelay <= 0 {
-			return true, 1, positiveIntFlagError("-k|--ev-dt-delay", Config.DTEvaluationDelay)
+			return positiveIntFlagError("-k|--ev-dt-delay", Config.DTEvaluationDelay)
 		}
 		if Config.DTTimeout < Config.DTEvaluationDelay {
-			myLogger.Warningf("\"-t|--dt-timeout\" (%d ms) is less than \"-k|--ev-dt-delay\" (%d ms); this may cause some tests to fail\n", Config.DTTimeout, Config.DTEvaluationDelay)
-			if !confirm("Continue?", 3) {
-				return true, 0, nil
+			logger.Log.Warningf("\"-t|--dt-timeout\" (%d ms) is less than \"-k|--ev-dt-delay\" (%d ms); this may cause some tests to fail\n", Config.DTTimeout, Config.DTEvaluationDelay)
+			if !utils.Confirm("Continue?", 3) {
+				os.Exit(0)
 			}
 		}
 		if Config.DTStdExp > 0 {
@@ -562,7 +564,7 @@ func prepareDelayTest(dtTimeoutChanged bool) (bool, int, error) {
 		}
 	}
 	Config.DTTimeoutDuration = time.Duration(Config.DTTimeout) * time.Millisecond
-	return false, 0, nil
+	return nil
 }
 
 func prepareDownloadTest() error {
@@ -576,12 +578,12 @@ func prepareDownloadTest() error {
 		return positiveIntFlagError("-d|--dlt-period", Config.DLTDurMax)
 	}
 	if Config.DLTEvaluationSpeed <= 0 {
-		return positiveFloatFlagError("-l|--speed", Config.DLTEvaluationSpeed)
+		return fmt.Errorf("%q must be greater than 0 (got %v)", "-l|--speed", Config.DLTEvaluationSpeed)
 	}
 	if Config.DLTTimeout > Config.DLTDurMax*1000 {
 		return fmt.Errorf("%q must be less than or equal to %q (%d ms > %d ms)", "--dlt-timeout", "-d|--dlt-period", Config.DLTTimeout, Config.DLTDurMax*1000)
 	}
-	label, _, err := parseUrl(Config.DLTUrl)
+	label, _, err := utils.ParseUrl(Config.DLTUrl, DefaultDLTUrl)
 	if err != nil {
 		return fmt.Errorf("failed to derive label from \"--dlt-url\": %w", err)
 	}
@@ -599,19 +601,11 @@ func prepareOutputTargets() {
 			Config.ResultFile = Config.ResultFile + ".csv"
 		}
 	} else {
-		Config.ResultFile = "Result_" + getTimeNowStrSuffix() + "-" + Config.SuffixLabel + ".csv"
+		Config.ResultFile = "Result_" + utils.GetTimeNowStrSuffix() + "-" + Config.SuffixLabel + ".csv"
 	}
 	if len(Config.DBFile) > 0 {
 		Config.StoreToDB = true
 	} else if Config.StoreToDB && len(Config.DBFile) == 0 {
-		Config.DBFile = defaultDBFile
+		Config.DBFile = DefaultDBFile
 	}
-}
-
-func positiveIntFlagError(flagName string, value int) error {
-	return fmt.Errorf("%q must be greater than 0 (got %d)", flagName, value)
-}
-
-func positiveFloatFlagError(flagName string, value float64) error {
-	return fmt.Errorf("%q must be greater than 0 (got %v)", flagName, value)
 }

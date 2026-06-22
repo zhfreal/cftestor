@@ -1,4 +1,4 @@
-package main
+package outbound
 
 import (
 	"context"
@@ -7,26 +7,28 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"cftestor/internal/config"
 )
 
-func prepareOutboundOptions(opts *cliOptions) error {
+func PrepareOutboundOptions(opts *config.CliOptions) error {
 	if err := prepareOutboundMark(opts); err != nil {
 		return err
 	}
-	if len(Config.OutboundInterface) > 0 {
-		if err := prepareOutboundInterface(); err != nil {
+	if len(config.Config.OutboundInterface) > 0 {
+		if err := PrepareOutboundInterface(); err != nil {
 			return err
 		}
 	}
 	return validateOutboundPlatformOptions()
 }
 
-func prepareOutboundMark(opts *cliOptions) error {
+func prepareOutboundMark(opts *config.CliOptions) error {
 	var mark uint32
 	markSet := false
 
 	if opts.MarkChanged {
-		v, err := parseOutboundMark("--mark", opts.Mark)
+		v, err := ParseOutboundMark("--mark", opts.Mark)
 		if err != nil {
 			return err
 		}
@@ -34,7 +36,7 @@ func prepareOutboundMark(opts *cliOptions) error {
 		markSet = true
 	}
 	if opts.XMarkChanged {
-		v, err := parseOutboundMark("--xmark", opts.XMark)
+		v, err := ParseOutboundMark("--xmark", opts.XMark)
 		if err != nil {
 			return err
 		}
@@ -45,13 +47,13 @@ func prepareOutboundMark(opts *cliOptions) error {
 		markSet = true
 	}
 	if markSet {
-		Config.OutboundMark = mark
-		Config.OutboundMarkSet = true
+		config.Config.OutboundMark = mark
+		config.Config.OutboundMarkSet = true
 	}
 	return nil
 }
 
-func parseOutboundMark(flagName, raw string) (uint32, error) {
+func ParseOutboundMark(flagName, raw string) (uint32, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return 0, fmt.Errorf("invalid value for %q: must be a decimal or hex mark in range 0..0xffffffff", flagName)
@@ -63,8 +65,8 @@ func parseOutboundMark(flagName, raw string) (uint32, error) {
 	return uint32(parsed), nil
 }
 
-func prepareOutboundInterface() error {
-	raw := strings.TrimSpace(Config.OutboundInterface)
+func PrepareOutboundInterface() error {
+	raw := strings.TrimSpace(config.Config.OutboundInterface)
 	if raw == "" {
 		return nil
 	}
@@ -72,8 +74,8 @@ func prepareOutboundInterface() error {
 		if err := validateLocalSourceIP(ip, zone); err != nil {
 			return err
 		}
-		Config.OutboundSourceIP = ip
-		Config.OutboundSourceZone = zone
+		config.Config.OutboundSourceIP = ip
+		config.Config.OutboundSourceZone = zone
 		return nil
 	}
 
@@ -84,8 +86,8 @@ func prepareOutboundInterface() error {
 		if err != nil {
 			return fmt.Errorf("invalid value for %q: interface index %d was not found", "--interface", index)
 		}
-		Config.OutboundInterfaceIndex = iface.Index
-		Config.OutboundInterfaceName = iface.Name
+		config.Config.OutboundInterfaceIndex = iface.Index
+		config.Config.OutboundInterfaceName = iface.Name
 		return nil
 	}
 
@@ -93,8 +95,8 @@ func prepareOutboundInterface() error {
 	if err != nil {
 		return fmt.Errorf("invalid value for %q: interface %q was not found", "--interface", raw)
 	}
-	Config.OutboundInterfaceIndex = iface.Index
-	Config.OutboundInterfaceName = iface.Name
+	config.Config.OutboundInterfaceIndex = iface.Index
+	config.Config.OutboundInterfaceName = iface.Name
 	return nil
 }
 
@@ -177,8 +179,8 @@ func interfaceMatchesZone(iface net.Interface, zone string) bool {
 	return zone == iface.Name || zone == strconv.Itoa(iface.Index)
 }
 
-func outboundDialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	if Config.OutboundInterfaceIndex > 0 && outboundInterfaceUsesSourceFallback() {
+func OutboundDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	if config.Config.OutboundInterfaceIndex > 0 && outboundInterfaceUsesSourceFallback() {
 		return dialWithInterfaceSourceFallback(ctx, network, address)
 	}
 	dialer, err := newOutboundDialer(network, nil, "")
@@ -188,11 +190,17 @@ func outboundDialContext(ctx context.Context, network, address string) (net.Conn
 	return dialer.DialContext(ctx, network, address)
 }
 
+func GetDialContextByAddr(addrPort string) func(ctx context.Context, network, address string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		return OutboundDialContext(ctx, network, addrPort)
+	}
+}
+
 func newOutboundDialer(network string, sourceIP net.IP, sourceZone string) (*net.Dialer, error) {
 	dialer := &net.Dialer{}
 	if sourceIP == nil {
-		sourceIP = Config.OutboundSourceIP
-		sourceZone = Config.OutboundSourceZone
+		sourceIP = config.Config.OutboundSourceIP
+		sourceZone = config.Config.OutboundSourceZone
 	}
 	if sourceIP != nil {
 		localIP, err := sourceIPForNetwork(network, sourceIP)
@@ -210,7 +218,7 @@ func newOutboundDialer(network string, sourceIP net.IP, sourceZone string) (*net
 }
 
 func needsOutboundSocketControl() bool {
-	return Config.OutboundMarkSet || (Config.OutboundInterfaceIndex > 0 && !outboundInterfaceUsesSourceFallback())
+	return config.Config.OutboundMarkSet || (config.Config.OutboundInterfaceIndex > 0 && !outboundInterfaceUsesSourceFallback())
 }
 
 func sourceIPForNetwork(network string, ip net.IP) (net.IP, error) {
@@ -324,9 +332,9 @@ func sourceIPFromInterface(network string) (net.IP, string, error) {
 	if family == 0 {
 		return nil, "", fmt.Errorf("cannot choose source address for network %q", network)
 	}
-	iface, err := net.InterfaceByIndex(Config.OutboundInterfaceIndex)
+	iface, err := net.InterfaceByIndex(config.Config.OutboundInterfaceIndex)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to resolve interface index %d: %w", Config.OutboundInterfaceIndex, err)
+		return nil, "", fmt.Errorf("failed to resolve interface index %d: %w", config.Config.OutboundInterfaceIndex, err)
 	}
 	addrs, err := iface.Addrs()
 	if err != nil {

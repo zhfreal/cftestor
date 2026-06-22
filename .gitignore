@@ -24,8 +24,8 @@ Desktop.ini
 /build/
 /dist/
 dist/
-cftestor
-cftestor.exe
+/cftestor
+/cftestor.exe
 *.exe
 *.dll
 *.so
