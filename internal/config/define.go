@@ -904,7 +904,7 @@ func (s *SourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*
 
 func (s *SourceIPs) Shuffle() {
 	s.mu.Lock()
-	s.mu.Unlock()
+	defer s.mu.Unlock()
 	MyRand.Shuffle(len(s.srcHosts), func(m, n int) {
 		s.srcHosts[m], s.srcHosts[n] = s.srcHosts[n], s.srcHosts[m]
 	})
