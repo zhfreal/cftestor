@@ -478,3 +478,42 @@ func TestConfigureAppKeepsDTTimeoutAliasValue(t *testing.T) {
 		t.Fatalf("Config.DTTimeout = %d, want 1234", Config.DTTimeout)
 	}
 }
+
+func TestFetchCloudflareDomains(t *testing.T) {
+	oldLimit := Config.TrancoLimit
+	Config.TrancoLimit = 10
+	defer func() { Config.TrancoLimit = oldLimit }()
+
+	domains, err := FetchCloudflareDomains("")
+	if err != nil {
+		t.Logf("FetchCloudflareDomains returned error (possibly no network): %v", err)
+		return
+	}
+	t.Logf("Fetched %d verified Cloudflare domains", len(domains))
+}
+
+func TestFetchDynamicIPv4(t *testing.T) {
+	oldLimit := Config.TrancoLimit
+	Config.TrancoLimit = 10
+	defer func() { Config.TrancoLimit = oldLimit }()
+
+	cidrs, err := FetchDynamicIPv4("")
+	if err != nil {
+		t.Logf("FetchDynamicIPv4 returned error (possibly no network): %v", err)
+		return
+	}
+	t.Logf("Fetched %d IPv4 CIDRs", len(cidrs))
+	for _, cidr := range cidrs {
+		parts := strings.Split(cidr, "/")
+		if len(parts) == 2 {
+			maskSize, err := strconv.Atoi(parts[1])
+			if err != nil {
+				t.Errorf("failed to parse mask size for %s: %v", cidr, err)
+				continue
+			}
+			if maskSize < 16 {
+				t.Errorf("found subnet smaller than /16: %s", cidr)
+			}
+		}
+	}
+}

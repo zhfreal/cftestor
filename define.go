@@ -277,7 +277,10 @@ type AppConfig struct {
 	OutboundSourceIP            net.IP
 	OutboundSourceZone          string
 	FetchIPv6File               string
+	FetchIPv4File               string
+	FetchCFDomainsFile          string
 	DNSServer                   string
+	TrancoLimit                 int
 }
 
 var Config AppConfig = DefaultConfig()
@@ -299,6 +302,10 @@ Core Options:
         --fast                    Use a limited set of internal Cloudflare IPs for quick scanning.
     -4, --ipv4                    Test IPv4 only. Default: on (if no IPs specified).
     -6, --ipv6                    Test IPv6 only. Default: off. DNS hosts are resolved by the dialer.
+        --fetch-ipv4   string     Fetch active Cloudflare IPv4 CIDRs dynamically, save to file, and exit.
+        --fetch-ipv6   string     Fetch active Cloudflare IPv6 CIDRs dynamically, save to file, and exit.
+        --fetch-cf-domains string Fetch, verify, and save top domains using Cloudflare CDN to a file, and exit.
+        --dns          string     Custom DNS server for dynamic fetching.
     -C, --no-cache                Bypass CDN/Proxy caching for custom URLs (ignored for defaults).
 
 Network Options:

@@ -97,10 +97,12 @@ Core Options:
                                   (e.g., "443", "80-443", "443,8443"). Default: 443.
     -a, --test-all                Test all provided IPs until none remain. Default: off.
     -r, --result       int        Target number of final qualified results. Default: 10.
-        --fast                    Use a limited set of internal Cloudflare IPs for quick scanning. If used with -6 and no IPs, dynamically fetches active CIDRs.
+        --fast                    Use a limited set of internal Cloudflare IPs for quick scanning. If no target IPs are provided, dynamically fetches active CIDRs.
     -4, --ipv4                    Test IPv4 only. Default: on (if no IPs specified).
     -6, --ipv6                    Test IPv6 only. Default: off. DNS hosts are resolved by the dialer.
+        --fetch-ipv4   string     Fetch active Cloudflare IPv4 CIDRs dynamically, save to file, and exit.
         --fetch-ipv6   string     Fetch active Cloudflare IPv6 CIDRs dynamically, save to file, and exit.
+        --fetch-cf-domains string Fetch, verify, and save top domains using Cloudflare CDN to a file, and exit.
         --dns          string     Custom DNS server for dynamic fetching (e.g. 1.1.1.1:53, tls://1.1.1.1, https://1.1.1.1/dns-query).
     -C, --no-cache                Bypass CDN/Proxy caching for custom URLs (ignored for defaults).
 

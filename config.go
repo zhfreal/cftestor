@@ -58,6 +58,7 @@ func DefaultConfig() AppConfig {
 		UserAgent:                   userAgentChrome,
 		PortStrSlice:                []string{},
 		DNSServer:                   "1.1.1.1:53",
+		TrancoLimit:                 1000,
 	}
 }
 
@@ -143,7 +144,10 @@ func registerCLIFlags(fs *flag.FlagSet, opts *cliOptions) {
 	fs.BoolVarP(&cfg.IPv4Mode, "ipv4", "4", cfg.IPv4Mode, "Test IPv4 only.")
 	fs.BoolVarP(&cfg.IPv6Mode, "ipv6", "6", cfg.IPv6Mode, "Test IPv6 only.")
 	fs.StringVar(&cfg.FetchIPv6File, "fetch-ipv6", cfg.FetchIPv6File, "Fetch active Cloudflare IPv6 CIDRs dynamically, save to file, and exit.")
+	fs.StringVar(&cfg.FetchIPv4File, "fetch-ipv4", cfg.FetchIPv4File, "Fetch active Cloudflare IPv4 CIDRs dynamically, save to file, and exit.")
+	fs.StringVar(&cfg.FetchCFDomainsFile, "fetch-cf-domains", cfg.FetchCFDomainsFile, "Fetch, verify, and save top domains using Cloudflare CDN to a file, and exit.")
 	fs.StringVar(&cfg.DNSServer, "dns", cfg.DNSServer, "Custom DNS server for dynamic fetching (e.g. 1.1.1.1:53, tls://1.1.1.1, https://1.1.1.1/dns-query)")
+	fs.IntVar(&cfg.TrancoLimit, "tranco-limit", cfg.TrancoLimit, "Number of top Tranco domains to fetch for dynamic scanning verification.")
 	fs.BoolVarP(&cfg.TestAll, "test-all", "a", cfg.TestAll, "Test all IPs until no more IP left.")
 	fs.StringVar(&opts.Mark, "mark", opts.Mark, "Set Linux socket fwmark for outbound packets. Supports decimal and hex.")
 	fs.StringVar(&opts.XMark, "xmark", opts.XMark, "Alias for --mark.")
@@ -285,6 +289,36 @@ func prepareRuntime(opts *cliOptions) (bool, int, error) {
 		return true, 1, err
 	}
 
+	if len(Config.FetchCFDomainsFile) > 0 {
+		myLogger.Infof("Starting dynamic Cloudflare CDN domain fetch...")
+		domains, err := FetchCloudflareDomains(Config.DNSServer)
+		if err != nil {
+			myLogger.Errorf("Domain fetch failed: %v", err)
+			return true, 1, err
+		}
+		if err := writeStringsToFile(Config.FetchCFDomainsFile, domains); err != nil {
+			myLogger.Errorf("Failed to save fetched domains: %v", err)
+			return true, 1, err
+		}
+		myLogger.Infof("Successfully saved %d Cloudflare CDN domains to %s", len(domains), Config.FetchCFDomainsFile)
+		return true, 0, nil
+	}
+
+	if len(Config.FetchIPv4File) > 0 {
+		myLogger.Infof("Starting dynamic IPv4 fetch...")
+		cidrs, err := FetchDynamicIPv4(Config.DNSServer)
+		if err != nil {
+			myLogger.Errorf("Fetch failed: %v", err)
+			return true, 1, err
+		}
+		if err := writeStringsToFile(Config.FetchIPv4File, cidrs); err != nil {
+			myLogger.Errorf("Failed to save fetched IPs: %v", err)
+			return true, 1, err
+		}
+		myLogger.Infof("Successfully saved %d IPv4 CIDRs to %s", len(cidrs), Config.FetchIPv4File)
+		return true, 0, nil
+	}
+
 	if len(Config.FetchIPv6File) > 0 {
 		myLogger.Infof("Starting dynamic IPv6 fetch...")
 		cidrs, err := FetchDynamicIPv6(Config.DNSServer)
@@ -367,7 +401,16 @@ func loadSourceIPs(tMode int8, ipv4Changed, ipv6Changed bool) error {
 		if (tMode & TypeIPv4) == TypeIPv4 {
 			tCFIPv4 := CFIPV4FULL
 			if Config.FastMode {
-				tCFIPv4 = CFIPV4
+				myLogger.Infoln("Fast mode enabled for IPv4: dynamically fetching optimized active IPv4 CIDRs...")
+				cidrs, err := FetchDynamicIPv4(Config.DNSServer)
+				if err != nil {
+					myLogger.Warningf("Dynamic fetch failed, falling back to fast ranges: %v", err)
+					tCFIPv4 = CFIPV4
+				} else if len(cidrs) > 0 {
+					tCFIPv4 = cidrs
+				} else {
+					tCFIPv4 = CFIPV4
+				}
 			}
 			return srcIPs.AddFromSlice(tCFIPv4, TypeIPv4)
 		}
