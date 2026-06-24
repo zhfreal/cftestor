@@ -17,15 +17,7 @@ import (
 )
 
 func print_version() {
-	fmt.Println(config.AppArt)
-	fmt.Println(`  CF CDN IP scanner, find best IPs for you.
-  https://github.com/zhfreal/cftestor`)
-	fmt.Println()
-	fmt.Printf("Version:    %v\n", config.Version)
-	fmt.Printf("BuildDate:  %v\n", config.BuildDate)
-	fmt.Printf("BuildTag:   %v\n", config.BuildTag)
-	fmt.Printf("BuildHash:  %v\n", config.BuildHash)
-	fmt.Println()
+	config.PrintVersionInfo()
 }
 
 func validDTResult(tVerifyResult *config.VerifyResults) bool {
@@ -463,10 +455,6 @@ func main() {
 	}
 	if shouldExit {
 		os.Exit(exitCode)
-	}
-
-	if config.Config.Debug {
-		print_version()
 	}
 
 	if err := outbound.PrepareOutboundOptions(&opts); err != nil {

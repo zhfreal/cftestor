@@ -289,6 +289,18 @@ func NormalizeDTVia() error {
 	return nil
 }
 
+func PrintVersionInfo() {
+	fmt.Println(AppArt)
+	fmt.Println(`  CF CDN IP scanner, find best IPs for you.
+  https://github.com/zhfreal/cftestor`)
+	fmt.Println()
+	fmt.Printf("Version:    %v\n", Version)
+	fmt.Printf("BuildDate:  %v\n", BuildDate)
+	fmt.Printf("BuildTag:   %v\n", BuildTag)
+	fmt.Printf("BuildHash:  %v\n", BuildHash)
+	fmt.Println()
+}
+
 func ConfigureApp(args []string) (CliOptions, bool, int, error) {
 	opts, err := ParseCLI(args)
 	if err != nil {
@@ -314,6 +326,9 @@ func ConfigureApp(args []string) (CliOptions, bool, int, error) {
 	}
 
 	InitLoggerFromConfig()
+	if Config.Debug && !opts.PrintVersion {
+		PrintVersionInfo()
+	}
 	if opts.PrintVersion {
 		return opts, true, 0, nil
 	}
