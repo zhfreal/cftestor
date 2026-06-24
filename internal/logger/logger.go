@@ -3,6 +3,7 @@ package logger
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -87,7 +88,9 @@ func (myLogger *MyLogger) log_newlinef(lv LogLevel, format string, info ...any) 
 	t_log_type_str := myLogger.getLogLevelString(lv)
 	fmt.Printf("%v", t_log_type_str)
 	fmt.Print(myLogger.Indent)
+	format = strings.TrimSuffix(strings.TrimSuffix(format, "\n"), "\r")
 	myLogger.printf(format, info...)
+	fmt.Println()
 }
 
 func (myLogger *MyLogger) print(newline bool, info ...any) {

@@ -465,6 +465,10 @@ func main() {
 		os.Exit(exitCode)
 	}
 
+	if config.Config.Debug {
+		print_version()
+	}
+
 	if err := outbound.PrepareOutboundOptions(&opts); err != nil {
 		logger.Log.Errorf("Outbound preparation failed: %v", err)
 		os.Exit(1)
