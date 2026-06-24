@@ -172,17 +172,17 @@ func printDetails(logLvl logger.LogLevel, v []config.VerifyResults, showSpeed bo
 		if len(*v[i].Loc) > 0 {
 			t_ip = fmt.Sprintf("%s#%s", t_ip, *v[i].Loc)
 		}
-		logger.Log.Logf(logLvl, "IP:%v%s", t_ip, indent)
+		msg := fmt.Sprintf("IP:%v%s", t_ip, indent)
 		if showSpeed {
-			logger.Log.Printf("Spd:%.2f%s", v[i].Dls, indent)
+			msg += fmt.Sprintf("Spd:%.2f%s", v[i].Dls, indent)
 		}
-		logger.Log.Printf("Dly:%.0f", v[i].Da)
-		logger.Log.Printf("%sStb:%.2f", indent, v[i].Dtpr*100)
+		msg += fmt.Sprintf("Dly:%.0f", v[i].Da)
+		msg += fmt.Sprintf("%sStb:%.2f", indent, v[i].Dtpr*100)
 		if config.Config.EnableStdEv {
-			logger.Log.Printf("%sStd:%.2f", indent, v[i].DaStd)
+			msg += fmt.Sprintf("%sStd:%.2f", indent, v[i].DaStd)
 		}
+		logger.Log.Logf(logLvl, "%s", msg)
 	}
-	logger.Log.Println()
 }
 
 func displayDetails(showSpeed, loopEnabled bool, v []config.VerifyResults) {
