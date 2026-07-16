@@ -129,7 +129,7 @@ Download Test (DLT) Options:
     -n, --dlt-thread   int        Number of concurrent DLT workers. Default: 1.
     -d, --dlt-period   int        Maximum duration for one DLT attempt in seconds. Default: 10.
     -b, --dlt-count    int        Number of DLT attempts per candidate. Default: 1.
-    -u, --dlt-url      string     URL to use for DLT. Default: https://speed.cloudflare.com/__down?bytes=250000000
+    -u, --dlt-url      string     URL to use for DLT. Default: https://speed.cloudflare.com/__down?bytes=99999999
         --dlt-timeout  int        HTTP response timeout for DLT in ms. Default: 5000.
     -l, --speed        float      Minimum required download speed in KB/s. Default: 6000.
     -I, --interval     int        Interval between test attempts in ms. Default: 500.

@@ -373,7 +373,7 @@ func TestDefaultURLsUseCloudflareSpeedtest(t *testing.T) {
 	if config.DefaultDTUrl != "https://speed.cloudflare.com/__down?bytes=0" {
 		t.Fatalf("DefaultDTUrl = %q", config.DefaultDTUrl)
 	}
-	if config.DefaultDLTUrl != "https://speed.cloudflare.com/__down?bytes=250000000" {
+	if config.DefaultDLTUrl != "https://speed.cloudflare.com/__down?bytes=99999999" {
 		t.Fatalf("DefaultDLTUrl = %q", config.DefaultDLTUrl)
 	}
 	if config.DefaultTestHost != "speed.cloudflare.com" {
@@ -389,7 +389,7 @@ func TestNoCacheIgnoresDefaultURLsWithEquivalentPorts(t *testing.T) {
 		config.DefaultDTUrl,
 		config.DefaultDLTUrl,
 		"https://speed.cloudflare.com:443/__down?bytes=0",
-		"https://speed.cloudflare.com:443/__down?bytes=250000000",
+		"https://speed.cloudflare.com:443/__down?bytes=99999999",
 	}
 	for _, sourceURL := range defaults {
 		if config.ShouldApplyNoCache(sourceURL) {
@@ -397,12 +397,12 @@ func TestNoCacheIgnoresDefaultURLsWithEquivalentPorts(t *testing.T) {
 		}
 	}
 
-	if !config.ShouldApplyNoCache("https://example.com/__down?bytes=250000000") {
+	if !config.ShouldApplyNoCache("https://example.com/__down?bytes=99999999") {
 		t.Fatal("custom URL should apply no-cache when Config.NoCache is true")
 	}
 
 	config.Config.NoCache = false
-	if config.ShouldApplyNoCache("https://example.com/__down?bytes=250000000") {
+	if config.ShouldApplyNoCache("https://example.com/__down?bytes=99999999") {
 		t.Fatal("custom URL should not apply no-cache when Config.NoCache is false")
 	}
 }
