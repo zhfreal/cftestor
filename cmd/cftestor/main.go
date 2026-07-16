@@ -228,6 +228,10 @@ func displayStat(ov config.OverAllStat) {
 	logger.Log.Println("")
 }
 
+func elapsed(start time.Time) string {
+	return fmt.Sprintf("[+%ds]", int(time.Since(start).Seconds()))
+}
+
 func runWorker() {
 	initWorkers()
 
@@ -252,6 +256,8 @@ func runWorker() {
 		tMode |= config.TypeIPv6
 	}
 
+	logger.Log.Infof("%s Starting test with %d source IPs (target: %d results)", elapsed(start_time), thisSourceIPs.LenInt(), t_result_min)
+
 RETRY_LOOP:
 	for {
 		tmpResultMap := make(map[string]config.VerifyResults)
@@ -260,6 +266,7 @@ RETRY_LOOP:
 	LOOP:
 		for {
 			dtDoneTasks := 0
+			dtPassedCount := 0
 			dltDoneTasks := 0
 			tmpTestSlice = make(map[string]bool)
 
@@ -278,12 +285,14 @@ RETRY_LOOP:
 					dltBatch := make([]*string, 0)
 					cachedMap := make(map[string]config.VerifyResults)
 
+					logger.Log.Infof("%s DT batch: testing %d IPs...", elapsed(start_time), len(dtBatch))
 					runDTSingleRound(dtBatch, func(dtRes config.SingleVerifyResult) {
 						dtDoneTasks++
 						tVerifyResult := calcResult(dtRes, false)
 						t_ip := *tVerifyResult.IP
 
 						if validDTResult(&tVerifyResult) {
+							dtPassedCount++
 							if !config.Config.DTOnly {
 								cachedMap[t_ip] = tVerifyResult
 								dltBatch = append(dltBatch, &t_ip)
@@ -317,6 +326,8 @@ RETRY_LOOP:
 						}
 					})
 
+					logger.Log.Infof("%s DT batch done: %d/%d passed, %d qualified for DLT", elapsed(start_time), dtPassedCount, len(dtBatch), len(dltBatch))
+
 					if config.Config.Debug && !config.Config.DTOnly {
 						displayStat(config.OverAllStat{
 							DtTasksDone:  dtDoneTasks,
@@ -327,6 +338,7 @@ RETRY_LOOP:
 					}
 
 					if !config.Config.DTOnly && len(dltBatch) > 0 {
+						logger.Log.Infof("%s DLT batch: testing %d IPs...", elapsed(start_time), len(dltBatch))
 						runDLTSingleRound(dltBatch, func(dltRes config.SingleVerifyResult) {
 							dltDoneTasks++
 							tVerifyResult := calcResult(dltRes, true)
@@ -359,12 +371,14 @@ RETRY_LOOP:
 								}
 							}
 						})
+						logger.Log.Infof("%s DLT batch done: %d tested, %d qualified so far", elapsed(start_time), dltDoneTasks, len(tmpTestSlice))
 					}
 				} else {
 					dltBatch := thisSourceIPs.RetrieveSome(config.Config.DLTWorkerThread, !config.Config.TestAll)
 					if len(dltBatch) == 0 {
 						break SINGLE_ROUND
 					}
+					logger.Log.Infof("%s DLT batch: testing %d IPs...", elapsed(start_time), len(dltBatch))
 					runDLTSingleRound(dltBatch, func(dltRes config.SingleVerifyResult) {
 						dltDoneTasks++
 						tVerifyResult := calcResult(dltRes, true)
@@ -394,6 +408,7 @@ RETRY_LOOP:
 							}
 						}
 					})
+					logger.Log.Infof("%s DLT batch done: %d tested, %d qualified so far", elapsed(start_time), dltDoneTasks, len(tmpTestSlice))
 				}
 
 				if config.Config.Debug {
@@ -410,12 +425,15 @@ RETRY_LOOP:
 				}
 			}
 
+			logger.Log.Infof("%s Round complete: %d candidates found (%d needed)", elapsed(start_time), len(tmpTestSlice), t_result_min)
+
 			if len(tmpResultMap) == 0 {
 				break LOOP
 			}
 			if !looper.Loop() {
 				break LOOP
 			} else {
+				logger.Log.Infof("%s Loop retest: cycle %d/%d, retesting %d candidates...", elapsed(start_time), looper.GetRound(), config.Config.Loop, len(tmpResultMap))
 				tmp_slice := make([]string, 0, len(tmpResultMap))
 				for k := range tmpResultMap {
 					tmp_slice = append(tmp_slice, k)
@@ -433,6 +451,7 @@ RETRY_LOOP:
 				if !config.Config.TestAll {
 					t_result_min = len(tmp_slice)
 				}
+				logger.Log.Infof("%s Waiting %ds before next loop cycle...", elapsed(start_time), config.Config.LoopInterval)
 				looper.Sleep()
 			}
 		}
@@ -451,12 +470,19 @@ RETRY_LOOP:
 			}
 		}
 
+		logger.Log.Infof("%s Validated results: %d total qualified", elapsed(start_time), len(config.VerifyResultsMap))
+
 		thisSourceIPs = config.SrcIPs
 		
 		hasReachedMin := !config.Config.TestAll && len(config.VerifyResultsMap) >= config.Config.ResultMin
 		isTimedOut := time.Since(start_time) >= time.Duration(config.Config.TestTimeout)*time.Minute
 		
 		if hasReachedMin || isTimedOut {
+			if hasReachedMin {
+				logger.Log.Infof("%s Target reached: %d/%d results", elapsed(start_time), len(config.VerifyResultsMap), config.Config.ResultMin)
+			} else {
+				logger.Log.Infof("%s Test timeout reached (%d min), stopping with %d results", elapsed(start_time), config.Config.TestTimeout, len(config.VerifyResultsMap))
+			}
 			break RETRY_LOOP
 		}
 		
@@ -465,6 +491,7 @@ RETRY_LOOP:
 			if config.Config.Supplement {
 				for currentSourceLevel < config.SourceLevelFull {
 					currentSourceLevel++
+					logger.Log.Infof("%s Supplementing: trying source level %d...", elapsed(start_time), currentSourceLevel)
 					err := config.SupplementSourceIPs(currentSourceLevel, tMode)
 					if err != nil {
 						logger.Log.Errorf("IP supplementation failed for level %d: %v\n", currentSourceLevel, err)
@@ -485,6 +512,7 @@ RETRY_LOOP:
 		t_result_min = config.Config.ResultMin - len(config.VerifyResultsMap)
 	}
 
+	logger.Log.Infof("%s Shutting down workers...", elapsed(start_time))
 	if dtTaskChan != nil {
 		close(dtTaskChan)
 	}
