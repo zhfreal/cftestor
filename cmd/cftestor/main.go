@@ -279,6 +279,26 @@ RETRY_LOOP:
 				if !config.Config.DLTOnly {
 					dtBatch := thisSourceIPs.RetrieveSome(config.Config.DTWorkerThread, !config.Config.TestAll)
 					if len(dtBatch) == 0 {
+						if config.Config.Supplement && !config.Config.TestAll && len(tmpTestSlice) < t_result_min && currentSourceLevel < config.SourceLevelFull {
+							supplemented := false
+							for currentSourceLevel < config.SourceLevelFull {
+								currentSourceLevel++
+								logger.Log.Infof("%s Source exhausted with %d/%d candidates, supplementing from level %d...", elapsed(start_time), len(tmpTestSlice), t_result_min, currentSourceLevel)
+								err := config.SupplementSourceIPs(currentSourceLevel, tMode)
+								if err != nil {
+									logger.Log.Errorf("IP supplementation failed for level %d: %v", currentSourceLevel, err)
+									continue
+								}
+								if !config.SrcIPs.IsEmpty() {
+									thisSourceIPs = config.SrcIPs
+									supplemented = true
+									break
+								}
+							}
+							if supplemented {
+								continue SINGLE_ROUND
+							}
+						}
 						break SINGLE_ROUND
 					}
 
@@ -376,6 +396,26 @@ RETRY_LOOP:
 				} else {
 					dltBatch := thisSourceIPs.RetrieveSome(config.Config.DLTWorkerThread, !config.Config.TestAll)
 					if len(dltBatch) == 0 {
+						if config.Config.Supplement && !config.Config.TestAll && len(tmpTestSlice) < t_result_min && currentSourceLevel < config.SourceLevelFull {
+							supplemented := false
+							for currentSourceLevel < config.SourceLevelFull {
+								currentSourceLevel++
+								logger.Log.Infof("%s Source exhausted with %d/%d candidates, supplementing from level %d...", elapsed(start_time), len(tmpTestSlice), t_result_min, currentSourceLevel)
+								err := config.SupplementSourceIPs(currentSourceLevel, tMode)
+								if err != nil {
+									logger.Log.Errorf("IP supplementation failed for level %d: %v", currentSourceLevel, err)
+									continue
+								}
+								if !config.SrcIPs.IsEmpty() {
+									thisSourceIPs = config.SrcIPs
+									supplemented = true
+									break
+								}
+							}
+							if supplemented {
+								continue SINGLE_ROUND
+							}
+						}
 						break SINGLE_ROUND
 					}
 					logger.Log.Infof("%s DLT batch: testing %d IPs...", elapsed(start_time), len(dltBatch))
@@ -487,26 +527,7 @@ RETRY_LOOP:
 		}
 		
 		if thisSourceIPs.IsEmpty() {
-			supplemented := false
-			if config.Config.Supplement {
-				for currentSourceLevel < config.SourceLevelFull {
-					currentSourceLevel++
-					logger.Log.Infof("%s Supplementing: trying source level %d...", elapsed(start_time), currentSourceLevel)
-					err := config.SupplementSourceIPs(currentSourceLevel, tMode)
-					if err != nil {
-						logger.Log.Errorf("IP supplementation failed for level %d: %v\n", currentSourceLevel, err)
-						continue
-					}
-					if !config.SrcIPs.IsEmpty() {
-						thisSourceIPs = config.SrcIPs
-						supplemented = true
-						break
-					}
-				}
-			}
-			if !supplemented {
-				break RETRY_LOOP
-			}
+			break RETRY_LOOP
 		}
 		
 		t_result_min = config.Config.ResultMin - len(config.VerifyResultsMap)

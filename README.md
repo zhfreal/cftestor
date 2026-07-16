@@ -80,7 +80,7 @@ Save results to CSV:
 
 `-r, --result` is the target number of final qualified results. `--loop` does not simply repeat the whole scan from scratch. It first retests candidates that already qualified, which is useful for confirming that results still pass over a larger time scale.
 
-If loop retesting removes too many candidates, `cftestor` continues scanning from the original source pool to find replacement candidates. If `--supplement` is enabled, and the initial source pool is exhausted before the target results are met, the tool will automatically fall back to load candidates from broader pools in the following order:
+If loop retesting removes too many candidates, `cftestor` continues scanning from the original source pool to find replacement candidates. If `--supplement` is enabled, and the initial source pool is exhausted before the target result count (`--result`) is met, the tool will automatically fall back to load candidates from broader pools in the following order:
 - **If user-provided target IPs (`-s` or `-i`) were used**: Falls back to the built-in `--fast` ranges, and then to the built-in `full` lists.
 - **If `--fast` ranges were used**: Falls back to the built-in `full` lists.
 - **If neither was used**: Only scans the default `full` lists (no further fallbacks).
@@ -147,7 +147,7 @@ Mode Options:
                                   if fewer than --result remain.
         --loop-interval int       Seconds to wait between loop cycles. Default: 60.
         --test-timeout int        Total test timeout in minutes. Default: 30.
-        --supplement              Enable IP source supplementation/fallback in loop retest mode.
+        --supplement              Enable IP source supplementation/fallback when target result count is not met.
 
 Fingerprinting Options:
         --hello-firefox           Simulate Firefox TLS fingerprint.

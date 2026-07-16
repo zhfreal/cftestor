@@ -145,7 +145,7 @@ func RegisterCLIFlags(fs *flag.FlagSet, opts *CliOptions) {
 	fs.Float64Var(&cfg.DLTEvaluationSpeed, "min-speed", cfg.DLTEvaluationSpeed, "Alias for --speed.")
 	fs.IntVar(&cfg.Loop, "loop", cfg.Loop, "Retest qualified candidates for N confirmation cycles; refill from the original pool if fewer than --result remain.")
 	fs.IntVar(&cfg.LoopInterval, "loop-interval", cfg.LoopInterval, "Seconds to wait between loop cycles.")
-	fs.BoolVar(&cfg.Supplement, "supplement", cfg.Supplement, "Enable IP source supplementation/fallback in loop retest mode.")
+	fs.BoolVar(&cfg.Supplement, "supplement", cfg.Supplement, "Enable IP source supplementation/fallback when target result count is not met.")
 	fs.IntVarP(&cfg.ResultMin, "result", "r", cfg.ResultMin, "Target number of final qualified results.")
 	fs.IntVar(&cfg.ResultMin, "result-count", cfg.ResultMin, "Alias for --result.")
 
@@ -417,9 +417,6 @@ func prepareRuntime(opts *CliOptions) error {
 	if Config.DTOnly && Config.DLTOnly {
 		return fmt.Errorf("%q and %q cannot be provided at the same time", "--dt-only", "--dlt-only")
 	}
-	if Config.Supplement && Config.Loop <= 0 {
-		return fmt.Errorf("the option %q is only valid when %q mode is active", "--supplement", "--loop")
-	}
 	if Config.DTEvaluationDTPR > 100 {
 		Config.DTEvaluationDTPR = 100
 	} else if Config.DTEvaluationDTPR < 0 {
@@ -529,7 +526,7 @@ func prepareSourcePool() error {
 		Config.ResultMin = -1
 	} else {
 		tResultMin := big.NewInt(int64(Config.ResultMin))
-		if tQty.Cmp(tResultMin) == -1 {
+		if tQty.Cmp(tResultMin) == -1 && !Config.Supplement {
 			Config.ResultMin = int(tQty.Int64())
 		}
 	}

@@ -671,17 +671,11 @@ func TestSupplementSourceIPs(t *testing.T) {
 	}
 }
 
-func TestSupplementWithoutLoopFails(t *testing.T) {
+func TestSupplementWithoutLoopSucceeds(t *testing.T) {
 	resetGlobalsForTest()
 	_, _, _, err := config.ConfigureApp([]string{"--supplement"})
-	if err == nil {
-		t.Fatal("expected ConfigureApp to fail when --supplement is used without --loop")
-	}
-
-	resetGlobalsForTest()
-	_, _, _, err = config.ConfigureApp([]string{"--supplement", "--loop", "3"})
 	if err != nil {
-		t.Fatalf("expected ConfigureApp to succeed with both --supplement and --loop: %v", err)
+		t.Fatalf("expected ConfigureApp to succeed when --supplement is used without --loop: %v", err)
 	}
 }
 

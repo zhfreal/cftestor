@@ -347,7 +347,7 @@ Mode Options:
                                   if fewer than --result remain.
         --loop-interval int       Seconds to wait between loop cycles. Default: 60.
         --test-timeout int        Total test timeout in minutes. Default: 30.
-        --supplement              Enable IP source supplementation/fallback in loop retest mode.
+        --supplement              Enable IP source supplementation/fallback when target result count is not met.
 
 Fingerprinting Options:
         --hello-firefox           Simulate Firefox TLS fingerprint.
