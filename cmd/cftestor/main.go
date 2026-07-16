@@ -317,6 +317,15 @@ RETRY_LOOP:
 						}
 					})
 
+					if config.Config.Debug && !config.Config.DTOnly {
+						displayStat(config.OverAllStat{
+							DtTasksDone:  dtDoneTasks,
+							DltTasksDone: dltDoneTasks,
+							ResultCount:  len(tmpTestSlice),
+							Remain:       thisSourceIPs.LenInt(),
+						})
+					}
+
 					if !config.Config.DTOnly && len(dltBatch) > 0 {
 						runDLTSingleRound(dltBatch, func(dltRes config.SingleVerifyResult) {
 							dltDoneTasks++
