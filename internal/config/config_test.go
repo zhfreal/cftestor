@@ -639,3 +639,51 @@ func TestLoadSourceIPsDualStackDefault(t *testing.T) {
 	}
 }
 
+func TestSupplementCLI(t *testing.T) {
+	resetGlobalsForTest()
+	opts, err := config.ParseCLI([]string{"--supplement"})
+	if err != nil {
+		t.Fatalf("ParseCLI returned error: %v", err)
+	}
+	if !opts.Config.Supplement {
+		t.Fatal("expected --supplement flag to be parsed")
+	}
+}
+
+func TestSupplementSourceIPs(t *testing.T) {
+	resetGlobalsForTest()
+	config.Config.PortStrSlice = []string{"443"}
+	
+	if err := config.SupplementSourceIPs(config.SourceLevelFast, config.TypeIPv4|config.TypeIPv6); err != nil {
+		t.Fatalf("SupplementSourceIPs failed for LevelFast: %v", err)
+	}
+	if config.SrcIPs.LenInt() == 0 {
+		t.Fatal("expected fast source IPs to be loaded")
+	}
+
+	resetGlobalsForTest()
+	config.Config.PortStrSlice = []string{"8443"}
+	if err := config.SupplementSourceIPs(config.SourceLevelFull, config.TypeIPv4|config.TypeIPv6); err != nil {
+		t.Fatalf("SupplementSourceIPs failed for LevelFull: %v", err)
+	}
+	if config.SrcIPs.LenInt() == 0 {
+		t.Fatal("expected full source IPs to be loaded")
+	}
+}
+
+func TestSupplementWithoutLoopFails(t *testing.T) {
+	resetGlobalsForTest()
+	_, _, _, err := config.ConfigureApp([]string{"--supplement"})
+	if err == nil {
+		t.Fatal("expected ConfigureApp to fail when --supplement is used without --loop")
+	}
+
+	resetGlobalsForTest()
+	_, _, _, err = config.ConfigureApp([]string{"--supplement", "--loop", "3"})
+	if err != nil {
+		t.Fatalf("expected ConfigureApp to succeed with both --supplement and --loop: %v", err)
+	}
+}
+
+
+

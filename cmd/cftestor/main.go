@@ -235,6 +235,23 @@ func runWorker() {
 	var t_result_min = config.Config.ResultMin
 	var start_time = time.Now()
 
+	// Determine starting IP source level
+	hasUserSources := len(config.IPStr) > 0 || len(config.Config.IPFile) > 0
+	currentSourceLevel := config.SourceLevelFull
+	if hasUserSources {
+		currentSourceLevel = config.SourceLevelUser
+	} else if config.Config.FastMode {
+		currentSourceLevel = config.SourceLevelFast
+	}
+
+	var tMode int8 = 0
+	if config.Config.IPv4Mode {
+		tMode |= config.TypeIPv4
+	}
+	if config.Config.IPv6Mode {
+		tMode |= config.TypeIPv6
+	}
+
 RETRY_LOOP:
 	for {
 		tmpResultMap := make(map[string]config.VerifyResults)
@@ -426,11 +443,37 @@ RETRY_LOOP:
 		}
 
 		thisSourceIPs = config.SrcIPs
-		if (!config.Config.TestAll && len(config.VerifyResultsMap) >= config.Config.ResultMin) || thisSourceIPs.IsEmpty() || time.Since(start_time) >= time.Duration(config.Config.TestTimeout)*time.Minute {
+		
+		hasReachedMin := !config.Config.TestAll && len(config.VerifyResultsMap) >= config.Config.ResultMin
+		isTimedOut := time.Since(start_time) >= time.Duration(config.Config.TestTimeout)*time.Minute
+		
+		if hasReachedMin || isTimedOut {
 			break RETRY_LOOP
-		} else {
-			t_result_min = config.Config.ResultMin - len(config.VerifyResultsMap)
 		}
+		
+		if thisSourceIPs.IsEmpty() {
+			supplemented := false
+			if config.Config.Supplement {
+				for currentSourceLevel < config.SourceLevelFull {
+					currentSourceLevel++
+					err := config.SupplementSourceIPs(currentSourceLevel, tMode)
+					if err != nil {
+						logger.Log.Errorf("IP supplementation failed for level %d: %v\n", currentSourceLevel, err)
+						continue
+					}
+					if !config.SrcIPs.IsEmpty() {
+						thisSourceIPs = config.SrcIPs
+						supplemented = true
+						break
+					}
+				}
+			}
+			if !supplemented {
+				break RETRY_LOOP
+			}
+		}
+		
+		t_result_min = config.Config.ResultMin - len(config.VerifyResultsMap)
 	}
 
 	if dtTaskChan != nil {

@@ -145,6 +145,7 @@ func RegisterCLIFlags(fs *flag.FlagSet, opts *CliOptions) {
 	fs.Float64Var(&cfg.DLTEvaluationSpeed, "min-speed", cfg.DLTEvaluationSpeed, "Alias for --speed.")
 	fs.IntVar(&cfg.Loop, "loop", cfg.Loop, "Retest qualified candidates for N confirmation cycles; refill from the original pool if fewer than --result remain.")
 	fs.IntVar(&cfg.LoopInterval, "loop-interval", cfg.LoopInterval, "Seconds to wait between loop cycles.")
+	fs.BoolVar(&cfg.Supplement, "supplement", cfg.Supplement, "Enable IP source supplementation/fallback in loop retest mode.")
 	fs.IntVarP(&cfg.ResultMin, "result", "r", cfg.ResultMin, "Target number of final qualified results.")
 	fs.IntVar(&cfg.ResultMin, "result-count", cfg.ResultMin, "Alias for --result.")
 
@@ -416,6 +417,9 @@ func prepareRuntime(opts *CliOptions) error {
 	if Config.DTOnly && Config.DLTOnly {
 		return fmt.Errorf("%q and %q cannot be provided at the same time", "--dt-only", "--dlt-only")
 	}
+	if Config.Supplement && Config.Loop <= 0 {
+		return fmt.Errorf("the option %q is only valid when %q mode is active", "--supplement", "--loop")
+	}
 	if Config.DTEvaluationDTPR > 100 {
 		Config.DTEvaluationDTPR = 100
 	} else if Config.DTEvaluationDTPR < 0 {
@@ -638,4 +642,60 @@ func prepareOutputTargets() {
 	} else if Config.StoreToDB && len(Config.DBFile) == 0 {
 		Config.DBFile = DefaultDBFile
 	}
+}
+
+func SupplementSourceIPs(level int, tMode int8) error {
+	SrcIPs = NewSourceIPsWithRand(MyRand)
+
+	if level == SourceLevelFast {
+		logger.Log.Infoln("Supplementing source IPs from --fast ranges...")
+		if (tMode & TypeIPv4) == TypeIPv4 {
+			tCFIPv4 := CFIPV4FULL
+			logger.Log.Infoln("Fast mode enabled for IPv4: dynamically fetching optimized active IPv4 CIDRs...")
+			cidrs, err := fetcher.FetchDynamicIPv4(Config.DNSServer, Config.TrancoLimit)
+			if err != nil {
+				logger.Log.Warningf("Dynamic fetch failed, falling back to fast ranges: %v", err)
+				tCFIPv4 = CFIPV4
+			} else if len(cidrs) > 0 {
+				tCFIPv4 = cidrs
+			} else {
+				tCFIPv4 = CFIPV4
+			}
+			if err := SrcIPs.AddFromSlice(tCFIPv4, TypeIPv4); err != nil {
+				return err
+			}
+		}
+		if (tMode & TypeIPv6) == TypeIPv6 {
+			tCFIPv6 := CFIPV6FULL
+			logger.Log.Infoln("Fast mode enabled for IPv6: dynamically fetching optimized active IPv6 CIDRs...")
+			cidrs, err := fetcher.FetchDynamicIPv6(Config.DNSServer, Config.TrancoLimit)
+			if err != nil {
+				logger.Log.Warningf("Dynamic fetch failed, falling back to full ranges: %v", err)
+				tCFIPv6 = CFIPV6FULL
+			} else if len(cidrs) > 0 {
+				tCFIPv6 = cidrs
+			}
+			if err := SrcIPs.AddFromSlice(tCFIPv6, TypeIPv6); err != nil {
+				return err
+			}
+		}
+	} else if level == SourceLevelFull {
+		logger.Log.Infoln("Supplementing source IPs from full ranges...")
+		if (tMode & TypeIPv4) == TypeIPv4 {
+			if err := SrcIPs.AddFromSlice(CFIPV4FULL, TypeIPv4); err != nil {
+				return err
+			}
+		}
+		if (tMode & TypeIPv6) == TypeIPv6 {
+			if err := SrcIPs.AddFromSlice(CFIPV6FULL, TypeIPv6); err != nil {
+				return err
+			}
+		}
+	}
+
+	SrcIPs.Shuffle()
+	if err := SrcIPs.AddPorts(Config.PortStrSlice); err != nil {
+		return err
+	}
+	return nil
 }

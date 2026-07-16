@@ -202,6 +202,9 @@ var (
 		"Location(CF)",
 	}
 	BaseCfCDNCgiTraceUrl = "https://speed.cloudflare.com/cdn-cgi/trace"
+	SourceLevelUser      = 0
+	SourceLevelFast      = 1
+	SourceLevelFull      = 2
 )
 
 var (
@@ -268,6 +271,7 @@ type AppConfig struct {
 	SilenceMode                 bool
 	ResolveLoc                  bool
 	NoCache                     bool
+	Supplement                  bool
 	OutboundMark                uint32
 	OutboundMarkSet             bool
 	OutboundInterface           string
@@ -343,6 +347,7 @@ Mode Options:
                                   if fewer than --result remain.
         --loop-interval int       Seconds to wait between loop cycles. Default: 60.
         --test-timeout int        Total test timeout in minutes. Default: 30.
+        --supplement              Enable IP source supplementation/fallback in loop retest mode.
 
 Fingerprinting Options:
         --hello-firefox           Simulate Firefox TLS fingerprint.
