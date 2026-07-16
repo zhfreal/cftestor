@@ -58,6 +58,7 @@ func DefaultConfig() AppConfig {
 		DTVia:                       "https",
 		DTHttpRspReturnCodeExpected: 200,
 		IPv4Mode:                    true,
+		IPv6Mode:                    true,
 		TLSClientID:                 utls.HelloChrome_Auto,
 		UserAgent:                   UserAgentChrome,
 		PortStrSlice:                []string{},
@@ -86,6 +87,11 @@ func ParseCLI(args []string) (CliOptions, error) {
 	opts.DTTimeoutChanged = FlagChanged(fs, "dt-timeout", "dt-timeout-ms")
 	opts.MarkChanged = FlagChanged(fs, "mark")
 	opts.XMarkChanged = FlagChanged(fs, "xmark")
+	if opts.IPv4Changed && !opts.IPv6Changed {
+		opts.Config.IPv6Mode = false
+	} else if opts.IPv6Changed && !opts.IPv4Changed {
+		opts.Config.IPv4Mode = false
+	}
 	ApplyTLSFingerprint(&opts)
 	return opts, nil
 }
@@ -216,9 +222,6 @@ func ApplyTLSFingerprint(opts *CliOptions) {
 func LoadSourceIPs(tMode int8, ipv4Changed, ipv6Changed bool) error {
 	hasUserSources := len(IPStr) > 0 || len(Config.IPFile) > 0
 	if !hasUserSources {
-		if (tMode&TypeIPv4) == TypeIPv4 && (tMode&TypeIPv6) == TypeIPv6 {
-			return fmt.Errorf("the options \"-4|--ipv4\" and \"-6|--ipv6\" cannot be used together when no specific IPs or file are provided")
-		}
 		if (tMode & TypeIPv4) == TypeIPv4 {
 			tCFIPv4 := CFIPV4FULL
 			if Config.FastMode {
@@ -233,20 +236,27 @@ func LoadSourceIPs(tMode int8, ipv4Changed, ipv6Changed bool) error {
 					tCFIPv4 = CFIPV4
 				}
 			}
-			return SrcIPs.AddFromSlice(tCFIPv4, TypeIPv4)
-		}
-		tCFIPv6 := CFIPV6FULL
-		if Config.FastMode {
-			logger.Log.Infoln("Fast mode enabled for IPv6: dynamically fetching optimized active IPv6 CIDRs...")
-			cidrs, err := fetcher.FetchDynamicIPv6(Config.DNSServer, Config.TrancoLimit)
-			if err != nil {
-				logger.Log.Warningf("Dynamic fetch failed, falling back to full ranges: %v", err)
-				tCFIPv6 = CFIPV6FULL
-			} else if len(cidrs) > 0 {
-				tCFIPv6 = cidrs
+			if err := SrcIPs.AddFromSlice(tCFIPv4, TypeIPv4); err != nil {
+				return err
 			}
 		}
-		return SrcIPs.AddFromSlice(tCFIPv6, TypeIPv6)
+		if (tMode & TypeIPv6) == TypeIPv6 {
+			tCFIPv6 := CFIPV6FULL
+			if Config.FastMode {
+				logger.Log.Infoln("Fast mode enabled for IPv6: dynamically fetching optimized active IPv6 CIDRs...")
+				cidrs, err := fetcher.FetchDynamicIPv6(Config.DNSServer, Config.TrancoLimit)
+				if err != nil {
+					logger.Log.Warningf("Dynamic fetch failed, falling back to full ranges: %v", err)
+					tCFIPv6 = CFIPV6FULL
+				} else if len(cidrs) > 0 {
+					tCFIPv6 = cidrs
+				}
+			}
+			if err := SrcIPs.AddFromSlice(tCFIPv6, TypeIPv6); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 
 	if !ipv6Changed && !ipv4Changed {
@@ -415,7 +425,7 @@ func prepareRuntime(opts *CliOptions) error {
 		return err
 	}
 
-	tMode, err := selectedIPMode(opts.IPv4Changed)
+	tMode, err := selectedIPMode(opts.IPv4Changed, opts.IPv6Changed)
 	if err != nil {
 		return err
 	}
@@ -437,8 +447,10 @@ func prepareRuntime(opts *CliOptions) error {
 	return nil
 }
 
-func selectedIPMode(ipv4Changed bool) (int8, error) {
-	if !ipv4Changed && Config.IPv6Mode {
+func selectedIPMode(ipv4Changed, ipv6Changed bool) (int8, error) {
+	if ipv4Changed && !ipv6Changed {
+		Config.IPv6Mode = false
+	} else if ipv6Changed && !ipv4Changed {
 		Config.IPv4Mode = false
 	}
 	tMode := int8(0)

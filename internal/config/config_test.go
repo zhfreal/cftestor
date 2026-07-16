@@ -536,3 +536,106 @@ func TestFetchDynamicIPv4(t *testing.T) {
 		}
 	}
 }
+
+func TestIPModeBehavior(t *testing.T) {
+	tests := []struct {
+		name         string
+		args         []string
+		wantIPv4     bool
+		wantIPv6     bool
+		wantIPv4Chg  bool
+		wantIPv6Chg  bool
+	}{
+		{
+			name:         "neither specified",
+			args:         []string{},
+			wantIPv4:     true,
+			wantIPv6:     true,
+			wantIPv4Chg:  false,
+			wantIPv6Chg:  false,
+		},
+		{
+			name:         "only -4 specified",
+			args:         []string{"-4"},
+			wantIPv4:     true,
+			wantIPv6:     false,
+			wantIPv4Chg:  true,
+			wantIPv6Chg:  false,
+		},
+		{
+			name:         "only -6 specified",
+			args:         []string{"-6"},
+			wantIPv4:     false,
+			wantIPv6:     true,
+			wantIPv4Chg:  false,
+			wantIPv6Chg:  true,
+		},
+		{
+			name:         "both -4 and -6 specified",
+			args:         []string{"-4", "-6"},
+			wantIPv4:     true,
+			wantIPv6:     true,
+			wantIPv4Chg:  true,
+			wantIPv6Chg:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetGlobalsForTest()
+			opts, err := config.ParseCLI(tt.args)
+			if err != nil {
+				t.Fatalf("ParseCLI failed: %v", err)
+			}
+			if opts.Config.IPv4Mode != tt.wantIPv4 {
+				t.Errorf("IPv4Mode = %v, want %v", opts.Config.IPv4Mode, tt.wantIPv4)
+			}
+			if opts.Config.IPv6Mode != tt.wantIPv6 {
+				t.Errorf("IPv6Mode = %v, want %v", opts.Config.IPv6Mode, tt.wantIPv6)
+			}
+			if opts.IPv4Changed != tt.wantIPv4Chg {
+				t.Errorf("IPv4Changed = %v, want %v", opts.IPv4Changed, tt.wantIPv4Chg)
+			}
+			if opts.IPv6Changed != tt.wantIPv6Chg {
+				t.Errorf("IPv6Changed = %v, want %v", opts.IPv6Changed, tt.wantIPv6Chg)
+			}
+		})
+	}
+}
+
+func TestLoadSourceIPsDualStackDefault(t *testing.T) {
+	resetGlobalsForTest()
+	config.IPStr = []string{}
+	config.Config.IPFile = ""
+	config.Config.FastMode = false
+
+	if err := config.LoadSourceIPs(config.TypeIPv4|config.TypeIPv6, false, false); err != nil {
+		t.Fatalf("LoadSourceIPs failed for dual-stack default: %v", err)
+	}
+
+	totalIPs := config.SrcIPs.LenInt()
+	if totalIPs == 0 {
+		t.Fatal("expected some source IPs to be loaded")
+	}
+
+	hasIPv4 := false
+	hasIPv6 := false
+	
+	if err := config.SrcIPs.AddPorts([]string{"443"}); err != nil {
+		t.Fatalf("AddPorts failed: %v", err)
+	}
+	
+	batch := config.SrcIPs.RetrieveSome(totalIPs, false)
+	for _, ipStr := range batch {
+		if strings.Contains(*ipStr, "[") {
+			hasIPv6 = true
+		} else {
+			hasIPv4 = true
+		}
+	}
+
+	if !hasIPv4 || !hasIPv6 {
+		t.Errorf("expected both IPv4 and IPv6 addresses, got: hasIPv4=%v, hasIPv6=%v", hasIPv4, hasIPv6)
+	}
+}
+
