@@ -730,6 +730,9 @@ func (s *SourceIPs) AddFromFile(filename string, mode int8) error {
 			return err
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading file %q: %w", filename, err)
+	}
 	return nil
 }
 
