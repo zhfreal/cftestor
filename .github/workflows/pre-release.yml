@@ -101,11 +101,11 @@ jobs:
         run: |
           mkdir -p dist
           LDFLAGS="-s -w -buildid= \
-                   -X 'main.version=${RELEASE_VERSION}' \
-                   -X 'main.buildDate=${BUILDDATE}' \
-                   -X 'main.buildTag=${BUILDTAG}' \
-                   -X 'main.buildHash=${BUILDHASH}'"
-          go build -o dist/${BINARY} -v -trimpath -ldflags "${LDFLAGS}" .
+                   -X 'cftestor/internal/config.Version=${RELEASE_VERSION}' \
+                   -X 'cftestor/internal/config.BuildDate=${BUILDDATE}' \
+                   -X 'cftestor/internal/config.BuildTag=${BUILDTAG}' \
+                   -X 'cftestor/internal/config.BuildHash=${BUILDHASH}'"
+          go build -o dist/${BINARY} -v -trimpath -ldflags "${LDFLAGS}" ./cmd/cftestor
 
       - name: Create ZIP archive
         run: |
