@@ -679,5 +679,39 @@ func TestSupplementWithoutLoopSucceeds(t *testing.T) {
 	}
 }
 
+func TestLoadSourceIPsDualStackRandomMixed(t *testing.T) {
+	resetGlobalsForTest()
+	config.IPStr = []string{}
+	config.Config.IPFile = ""
+	config.Config.FastMode = true
+
+	if err := config.LoadSourceIPs(config.TypeIPv4|config.TypeIPv6, false, false); err != nil {
+		t.Fatalf("LoadSourceIPs failed: %v", err)
+	}
+
+	if err := config.SrcIPs.AddPorts([]string{"443"}); err != nil {
+		t.Fatalf("AddPorts failed: %v", err)
+	}
+
+	batch := config.SrcIPs.RetrieveSome(50, true)
+	if len(batch) == 0 {
+		t.Fatal("expected retrieve to return IPs")
+	}
+
+	hasIPv4 := false
+	hasIPv6 := false
+	for _, ipStr := range batch {
+		if strings.Contains(*ipStr, "[") {
+			hasIPv6 = true
+		} else {
+			hasIPv4 = true
+		}
+	}
+
+	if !hasIPv4 || !hasIPv6 {
+		t.Errorf("expected both IPv4 and IPv6 to be retrieved in the batch, got: hasIPv4=%v, hasIPv6=%v", hasIPv4, hasIPv6)
+	}
+}
+
 
 

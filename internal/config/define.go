@@ -833,69 +833,109 @@ func (s *SourceIPs) retrieveHosts(amount int) (targetHosts []*string) {
 	return
 }
 
+func (s *SourceIPs) hasIP4() bool {
+	for _, ip := range s.srcIPRsExtracted {
+		if ip.To4() != nil {
+			return true
+		}
+	}
+	for _, ipr := range s.srcIPRsRaw {
+		if !ipr.IsV6() && ipr.Len.Cmp(big.NewInt(0)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SourceIPs) hasIP6() bool {
+	for _, ip := range s.srcIPRsExtracted {
+		if ip.To4() == nil {
+			return true
+		}
+	}
+	for _, ipr := range s.srcIPRsRaw {
+		if ipr.IsV6() && ipr.Len.Cmp(big.NewInt(0)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SourceIPs) retrieveOneIP(isV6 bool, isRandom bool) net.IP {
+	for i, ip := range s.srcIPRsExtracted {
+		ipIsV6 := ip.To4() == nil
+		if ipIsV6 == isV6 {
+			s.srcIPRsExtracted = append(s.srcIPRsExtracted[:i], s.srcIPRsExtracted[i+1:]...)
+			return ip
+		}
+	}
+
+	var matchingIndices []int
+	for i, ipr := range s.srcIPRsRaw {
+		if ipr.IsV6() == isV6 && ipr.Len.Cmp(big.NewInt(0)) > 0 {
+			matchingIndices = append(matchingIndices, i)
+		}
+	}
+
+	if len(matchingIndices) == 0 {
+		return nil
+	}
+
+	var idx int
+	if isRandom {
+		idx = matchingIndices[MyRand.Intn(len(matchingIndices))]
+	} else {
+		idx = matchingIndices[0]
+	}
+
+	ipr := s.srcIPRsRaw[idx]
+	var extracted []net.IP
+	if isRandom {
+		extracted = ipr.GetRandomX(MyRand, 1)
+	} else {
+		extracted = ipr.Extract(1)
+	}
+
+	if ipr.Len.Cmp(big.NewInt(0)) == 0 {
+		for i, r := range s.srcIPRsRaw {
+			if r == ipr {
+				s.srcIPRsRaw = append(s.srcIPRsRaw[:i], s.srcIPRsRaw[i+1:]...)
+				break
+			}
+		}
+	}
+
+	if len(extracted) > 0 {
+		return extracted[0]
+	}
+	return nil
+}
+
 func (s *SourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*string) {
 	if amount <= 0 {
 		return
 	}
 
-	numRaw := len(s.srcIPRsRaw)
-	hasExtracted := len(s.srcIPRsExtracted) > 0
-	totalGroups := numRaw
-	if hasExtracted {
-		totalGroups++
-	}
-	if totalGroups == 0 {
-		return nil
-	}
-
-	perGroup := amount / totalGroups
-	if perGroup == 0 {
-		perGroup = 1
-	}
-
-	indices := make([]int, totalGroups)
-	for i := range indices {
-		indices[i] = i
-	}
-	MyRand.Shuffle(len(indices), func(i, j int) {
-		indices[i], indices[j] = indices[j], indices[i]
-	})
-
 	t_ips := make([]net.IP, 0, amount)
-	for i, idx := range indices {
-		if len(t_ips) >= amount {
+	for len(t_ips) < amount {
+		hasV4 := s.hasIP4()
+		hasV6 := s.hasIP6()
+		if !hasV4 && !hasV6 {
 			break
 		}
 
-		need := amount - len(t_ips)
-		take := perGroup
-		if i == len(indices)-1 {
-			take = need
-		}
-		if take > need {
-			take = need
-		}
-
-		if hasExtracted && idx == numRaw {
-			actualTake := utils.MinInt(take, len(s.srcIPRsExtracted))
-			t_ips = append(t_ips, s.srcIPRsExtracted[:actualTake]...)
-			s.srcIPRsExtracted = s.srcIPRsExtracted[actualTake:]
+		var chooseV6 bool
+		if hasV4 && hasV6 {
+			chooseV6 = MyRand.Float64() < 0.5
 		} else {
-			ipr := s.srcIPRsRaw[idx]
-			var extracted []net.IP
-			if isRandom {
-				extracted = ipr.GetRandomX(MyRand, take)
-			} else {
-				extracted = ipr.Extract(take)
-			}
-			t_ips = append(t_ips, extracted...)
+			chooseV6 = hasV6
 		}
-	}
 
-	for i := 0; i < len(s.srcIPRsRaw); i++ {
-		if s.srcIPRsRaw[i].Len.Cmp(big.NewInt(0)) == 0 {
-			s.srcIPRsRaw = append(s.srcIPRsRaw[:i], s.srcIPRsRaw[i+1:]...)
-			i--
+		ip := s.retrieveOneIP(chooseV6, isRandom)
+		if ip != nil {
+			t_ips = append(t_ips, ip)
+		} else {
+			break
 		}
 	}
 
