@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math/big"
 	"os"
 	"sort"
 	"sync"
@@ -205,27 +206,17 @@ func displayDetails(showSpeed, loopEnabled bool, v []config.VerifyResults) {
 	}
 }
 
-func displayStat(ov config.OverAllStat) {
-	if logger.Log.LoggerLevel&logger.LogLevelDebug != logger.LogLevelDebug {
+func displayStat(resultCount int, dtDone int, dtTotalStr string, dltDone int, dltTotal any) {
+	if config.Config.SilenceMode || logger.Log.LoggerLevel < logger.LogLevelInfo {
 		return
 	}
-	logger.Log.Printf("==== Res: %d ==== ", ov.ResultCount)
-	srcCount := ov.Remain
-	if !config.Config.DLTOnly {
-		dtTotal := ov.DtCached + ov.DtTasksDone + ov.DtOnGoing
-		if config.Config.DTOnly {
-			dtTotal += srcCount
-		}
-		logger.Log.Printf(" DT:%d/%d ", ov.DtTasksDone, dtTotal)
+	if !config.Config.DLTOnly && !config.Config.DTOnly {
+		logger.Log.Printf("==== Res: %d ====  DT:%d/%s  DLT:%d/%v\n", resultCount, dtDone, dtTotalStr, dltDone, dltTotal)
+	} else if config.Config.DTOnly {
+		logger.Log.Printf("==== Res: %d ====  DT:%d/%s\n", resultCount, dtDone, dtTotalStr)
+	} else if config.Config.DLTOnly {
+		logger.Log.Printf("==== Res: %d ====  DLT:%d/%v\n", resultCount, dltDone, dltTotal)
 	}
-	if !config.Config.DTOnly {
-		dltTotal := ov.DltCached + ov.DltTasksDone + ov.DltOnGoing
-		if config.Config.DLTOnly {
-			dltTotal += srcCount
-		}
-		logger.Log.Printf(" DLT:%d/%d ", ov.DltTasksDone, dltTotal)
-	}
-	logger.Log.Println("")
 }
 
 func elapsed(start time.Time) string {
@@ -256,7 +247,7 @@ func runWorker() {
 		tMode |= config.TypeIPv6
 	}
 
-	logger.Log.Infof("%s Starting test with %d source IPs (target: %d results)", elapsed(start_time), thisSourceIPs.LenInt(), t_result_min)
+	logger.Log.Infof("%s Starting test with %s source IPs (target: %d results)", elapsed(start_time), utils.FormatHostCount(thisSourceIPs.TotalHosts()), t_result_min)
 
 RETRY_LOOP:
 	for {
@@ -304,6 +295,7 @@ RETRY_LOOP:
 
 					dltBatch := make([]*string, 0)
 					cachedMap := make(map[string]config.VerifyResults)
+					batchDTPassed := 0
 
 					logger.Log.Infof("%s DT batch: testing %d IPs...", elapsed(start_time), len(dtBatch))
 					runDTSingleRound(dtBatch, func(dtRes config.SingleVerifyResult) {
@@ -312,6 +304,7 @@ RETRY_LOOP:
 						t_ip := *tVerifyResult.IP
 
 						if validDTResult(&tVerifyResult) {
+							batchDTPassed++
 							dtPassedCount++
 							if !config.Config.DTOnly {
 								cachedMap[t_ip] = tVerifyResult
@@ -346,52 +339,55 @@ RETRY_LOOP:
 						}
 					})
 
-					logger.Log.Infof("%s DT batch done: %d/%d passed, %d qualified for DLT", elapsed(start_time), dtPassedCount, len(dtBatch), len(dltBatch))
+					dtTotal := new(big.Int).Add(big.NewInt(int64(dtDoneTasks)), thisSourceIPs.TotalHosts())
+					dtTotalStr := utils.FormatHostCount(dtTotal)
 
-					if config.Config.Debug && !config.Config.DTOnly {
-						displayStat(config.OverAllStat{
-							DtTasksDone:  dtDoneTasks,
-							DltTasksDone: dltDoneTasks,
-							ResultCount:  len(tmpTestSlice),
-							Remain:       thisSourceIPs.LenInt(),
-						})
-					}
+					if config.Config.DTOnly {
+						logger.Log.Infof("%s DT batch done: %d/%d passed, %d qualified so far", elapsed(start_time), batchDTPassed, len(dtBatch), len(tmpTestSlice))
+						displayStat(len(tmpTestSlice), dtDoneTasks, dtTotalStr, 0, 0)
+					} else {
+						logger.Log.Infof("%s DT batch done: %d/%d passed, %d qualified for DLT", elapsed(start_time), batchDTPassed, len(dtBatch), len(dltBatch))
+						displayStat(len(tmpTestSlice), dtDoneTasks, dtTotalStr, dltDoneTasks, dltDoneTasks+len(dltBatch))
 
-					if !config.Config.DTOnly && len(dltBatch) > 0 {
-						logger.Log.Infof("%s DLT batch: testing %d IPs...", elapsed(start_time), len(dltBatch))
-						runDLTSingleRound(dltBatch, func(dltRes config.SingleVerifyResult) {
-							dltDoneTasks++
-							tVerifyResult := calcResult(dltRes, true)
-							t_ip := *tVerifyResult.IP
-							v := cachedMap[t_ip]
-							tVerifyResult.Combine(v)
+						if len(dltBatch) > 0 {
+							batchDLTPassed := 0
+							logger.Log.Infof("%s DLT batch: testing %d IPs...", elapsed(start_time), len(dltBatch))
+							runDLTSingleRound(dltBatch, func(dltRes config.SingleVerifyResult) {
+								dltDoneTasks++
+								tVerifyResult := calcResult(dltRes, true)
+								t_ip := *tVerifyResult.IP
+								v := cachedMap[t_ip]
+								tVerifyResult.Combine(v)
 
-							if validDLTResult(&tVerifyResult) && validDTResult(&tVerifyResult) {
-								if config.Config.ResolveLoc && config.Config.SilenceMode && looper.Status() == -1 && (tVerifyResult.Loc == nil || len(*tVerifyResult.Loc) == 0) {
-									loc := outbound.GetGeoInfoFromCF(&t_ip)
-									tVerifyResult.Loc = &loc
-								}
-								mv, ok := tmpResultMap[t_ip]
-								if ok {
-									tVerifyResult.Combine(mv)
-								}
-								tmpResultMap[t_ip] = tVerifyResult
-								tmpTestSlice[t_ip] = true
-								displayDetails(true, looper.Status() > -1, []config.VerifyResults{tVerifyResult})
-							} else {
-								if looper.InLooping() {
+								if validDLTResult(&tVerifyResult) && validDTResult(&tVerifyResult) {
+									batchDLTPassed++
+									if config.Config.ResolveLoc && config.Config.SilenceMode && looper.Status() == -1 && (tVerifyResult.Loc == nil || len(*tVerifyResult.Loc) == 0) {
+										loc := outbound.GetGeoInfoFromCF(&t_ip)
+										tVerifyResult.Loc = &loc
+									}
 									mv, ok := tmpResultMap[t_ip]
 									if ok {
 										tVerifyResult.Combine(mv)
 									}
 									tmpResultMap[t_ip] = tVerifyResult
-								}
-								if config.Config.Debug {
+									tmpTestSlice[t_ip] = true
 									displayDetails(true, looper.Status() > -1, []config.VerifyResults{tVerifyResult})
+								} else {
+									if looper.InLooping() {
+										mv, ok := tmpResultMap[t_ip]
+										if ok {
+											tVerifyResult.Combine(mv)
+										}
+										tmpResultMap[t_ip] = tVerifyResult
+									}
+									if config.Config.Debug {
+										displayDetails(true, looper.Status() > -1, []config.VerifyResults{tVerifyResult})
+									}
 								}
-							}
-						})
-						logger.Log.Infof("%s DLT batch done: %d tested, %d qualified so far", elapsed(start_time), dltDoneTasks, len(tmpTestSlice))
+							})
+							logger.Log.Infof("%s DLT batch done: %d/%d passed, %d qualified so far", elapsed(start_time), batchDLTPassed, len(dltBatch), len(tmpTestSlice))
+							displayStat(len(tmpTestSlice), dtDoneTasks, dtTotalStr, dltDoneTasks, dltDoneTasks)
+						}
 					}
 				} else {
 					dltBatch := thisSourceIPs.RetrieveSome(config.Config.DLTWorkerThread, !config.Config.TestAll)
@@ -418,12 +414,14 @@ RETRY_LOOP:
 						}
 						break SINGLE_ROUND
 					}
+					batchDLTPassed := 0
 					logger.Log.Infof("%s DLT batch: testing %d IPs...", elapsed(start_time), len(dltBatch))
 					runDLTSingleRound(dltBatch, func(dltRes config.SingleVerifyResult) {
 						dltDoneTasks++
 						tVerifyResult := calcResult(dltRes, true)
 						t_ip := *tVerifyResult.IP
 						if validDLTResult(&tVerifyResult) {
+							batchDLTPassed++
 							if config.Config.ResolveLoc && config.Config.SilenceMode && looper.Status() == -1 && (tVerifyResult.Loc == nil || len(*tVerifyResult.Loc) == 0) {
 								loc := outbound.GetGeoInfoFromCF(&t_ip)
 								tVerifyResult.Loc = &loc
@@ -448,16 +446,10 @@ RETRY_LOOP:
 							}
 						}
 					})
-					logger.Log.Infof("%s DLT batch done: %d tested, %d qualified so far", elapsed(start_time), dltDoneTasks, len(tmpTestSlice))
-				}
-
-				if config.Config.Debug {
-					displayStat(config.OverAllStat{
-						DtTasksDone:  dtDoneTasks,
-						DltTasksDone: dltDoneTasks,
-						ResultCount:  len(tmpTestSlice),
-						Remain:       thisSourceIPs.LenInt(),
-					})
+					dltTotal := new(big.Int).Add(big.NewInt(int64(dltDoneTasks)), thisSourceIPs.TotalHosts())
+					dltTotalStr := utils.FormatHostCount(dltTotal)
+					logger.Log.Infof("%s DLT batch done: %d/%d passed, %d qualified so far", elapsed(start_time), batchDLTPassed, len(dltBatch), len(tmpTestSlice))
+					displayStat(len(tmpTestSlice), 0, "", dltDoneTasks, dltTotalStr)
 				}
 
 				if !config.Config.TestAll && len(tmpTestSlice) >= t_result_min {

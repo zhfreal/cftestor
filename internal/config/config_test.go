@@ -713,5 +713,38 @@ func TestLoadSourceIPsDualStackRandomMixed(t *testing.T) {
 	}
 }
 
+func TestRetrieveSomeFullAmount(t *testing.T) {
+	src := config.NewSourceIPs()
+	hosts := []string{
+		"1.1.1.1:443", "1.1.1.2:443", "1.1.1.3:443", "1.1.1.4:443", "1.1.1.5:443",
+		"1.1.1.6:443", "1.1.1.7:443", "1.1.1.8:443", "1.1.1.9:443", "1.1.1.10:443",
+	}
+	if err := src.AddFromSlice(hosts, config.TypeIPv4); err != nil {
+		t.Fatalf("AddFromSlice failed: %v", err)
+	}
+
+	batch := src.RetrieveSome(10, false)
+	if len(batch) != 10 {
+		t.Fatalf("expected RetrieveSome(10) to return 10 hosts, got %d", len(batch))
+	}
+}
+
+func TestTotalHosts(t *testing.T) {
+	src := config.NewSourceIPs()
+	if err := src.Add("1.1.1.1", config.TypeIPv4); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	if err := src.Add("1.0.0.1", config.TypeIPv4); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	if err := src.AddPorts([]string{"443", "8443"}); err != nil {
+		t.Fatalf("AddPorts failed: %v", err)
+	}
+	total := src.TotalHosts()
+	if total.Int64() != 4 {
+		t.Fatalf("expected 4 total hosts, got %d", total.Int64())
+	}
+}
+
 
 

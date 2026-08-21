@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"math/rand"
 	"net"
 	"net/http"
@@ -408,5 +409,36 @@ func MinInt(a, b int, num ...int) (t int) {
 		}
 	}
 	return
+}
+
+func FormatHostCount(total *big.Int) string {
+	if total == nil || total.Sign() <= 0 {
+		return "0"
+	}
+	oneM := big.NewInt(1_000_000)
+	if total.Cmp(oneM) < 0 {
+		return total.String()
+	}
+	tenM := big.NewInt(10_000_000)
+	if total.Cmp(tenM) < 0 {
+		m := new(big.Int).Div(total, oneM)
+		return fmt.Sprintf("%dM+", m.Int64())
+	}
+	oneB := big.NewInt(1_000_000_000)
+	if total.Cmp(oneB) < 0 {
+		m := new(big.Int).Div(total, oneM)
+		return fmt.Sprintf("%dM+", (m.Int64()/10)*10)
+	}
+	tenB := big.NewInt(10_000_000_000)
+	if total.Cmp(tenB) < 0 {
+		b := new(big.Int).Div(total, oneB)
+		return fmt.Sprintf("%dB+", b.Int64())
+	}
+	hundredB := big.NewInt(100_000_000_000)
+	if total.Cmp(hundredB) < 0 {
+		b := new(big.Int).Div(total, oneB)
+		return fmt.Sprintf("%dB+", (b.Int64()/10)*10)
+	}
+	return "10M+"
 }
 

@@ -628,7 +628,7 @@ type SourceIPs struct {
 	tRnd             *rand.Rand
 }
 
-func (s *SourceIPs) Len() *big.Int {
+func (s *SourceIPs) TotalHosts() *big.Int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t_qty := big.NewInt(0)
@@ -636,8 +636,16 @@ func (s *SourceIPs) Len() *big.Int {
 		t_qty = t_qty.Add(t_qty, s.srcIPRsRaw[i].Length())
 	}
 	t_qty = t_qty.Add(t_qty, big.NewInt(int64(len(s.srcIPRsExtracted))))
+	portCount := int64(len(s.Ports))
+	if portCount > 1 {
+		t_qty = t_qty.Mul(t_qty, big.NewInt(portCount))
+	}
 	t_qty = t_qty.Add(t_qty, big.NewInt(int64(len(s.srcHosts))))
 	return t_qty
+}
+
+func (s *SourceIPs) Len() *big.Int {
+	return s.TotalHosts()
 }
 
 func (s *SourceIPs) LenInt() int {
@@ -796,10 +804,7 @@ func (s *SourceIPs) RetrieveSome(amount int, isRand bool) (targetIPs []*string) 
 
 	numHosts := len(s.srcHosts)
 	if numHosts > 0 {
-		takeHosts := utils.MinInt(amount/2, numHosts)
-		if takeHosts == 0 {
-			takeHosts = 1
-		}
+		takeHosts := utils.MinInt(amount, numHosts)
 		targetIPs = append(targetIPs, s.srcHosts[:takeHosts]...)
 		s.srcHosts = s.srcHosts[takeHosts:]
 	}
