@@ -266,11 +266,10 @@ RETRY_LOOP:
 				if time.Since(start_time) >= time.Duration(config.Config.TestTimeout)*time.Minute {
 					break SINGLE_ROUND
 				}
-
 				if !config.Config.DLTOnly {
 					dtBatch := thisSourceIPs.RetrieveSome(config.Config.DTWorkerThread, !config.Config.TestAll)
 					if len(dtBatch) == 0 {
-						if config.Config.Supplement && !config.Config.TestAll && len(tmpTestSlice) < t_result_min && currentSourceLevel < config.SourceLevelFull {
+						if !looper.InLooping() && config.Config.Supplement && !config.Config.TestAll && len(tmpTestSlice) < t_result_min && currentSourceLevel < config.SourceLevelFull {
 							supplemented := false
 							for currentSourceLevel < config.SourceLevelFull {
 								currentSourceLevel++
@@ -392,7 +391,7 @@ RETRY_LOOP:
 				} else {
 					dltBatch := thisSourceIPs.RetrieveSome(config.Config.DLTWorkerThread, !config.Config.TestAll)
 					if len(dltBatch) == 0 {
-						if config.Config.Supplement && !config.Config.TestAll && len(tmpTestSlice) < t_result_min && currentSourceLevel < config.SourceLevelFull {
+						if !looper.InLooping() && config.Config.Supplement && !config.Config.TestAll && len(tmpTestSlice) < t_result_min && currentSourceLevel < config.SourceLevelFull {
 							supplemented := false
 							for currentSourceLevel < config.SourceLevelFull {
 								currentSourceLevel++
@@ -519,7 +518,24 @@ RETRY_LOOP:
 		}
 		
 		if thisSourceIPs.IsEmpty() {
-			if !config.Config.Supplement || currentSourceLevel >= config.SourceLevelFull {
+			supplemented := false
+			if config.Config.Supplement && currentSourceLevel < config.SourceLevelFull {
+				for currentSourceLevel < config.SourceLevelFull {
+					currentSourceLevel++
+					logger.Log.Infof("%s Source exhausted with %d/%d candidates, supplementing from %s...", elapsed(start_time), len(config.VerifyResultsMap), config.Config.ResultMin, config.GetSourceLevelName(currentSourceLevel))
+					err := config.SupplementSourceIPs(currentSourceLevel, tMode)
+					if err != nil {
+						logger.Log.Errorf("IP supplementation failed for %s: %v", config.GetSourceLevelName(currentSourceLevel), err)
+						continue
+					}
+					if !config.SrcIPs.IsEmpty() {
+						thisSourceIPs = config.SrcIPs
+						supplemented = true
+						break
+					}
+				}
+			}
+			if !supplemented {
 				break RETRY_LOOP
 			}
 		}
