@@ -80,10 +80,16 @@ Save results to CSV:
 
 `-r, --result` is the target number of final qualified results. `--loop` does not simply repeat the whole scan from scratch. It first retests candidates that already qualified, which is useful for confirming that results still pass over a larger time scale.
 
-If loop retesting removes too many candidates, `cftestor` continues scanning from the original source pool to find replacement candidates. If `--supplement` is enabled, and the initial source pool is exhausted before the target result count (`--result`) is met, the tool will automatically fall back to load candidates from broader pools in the following order:
-- **If user-provided target IPs (`-s` or `-i`) were used**: Falls back to the built-in `--fast` ranges, and then to the built-in `full` lists.
-- **If `--fast` ranges were used**: Falls back to the built-in `full` lists.
-- **If neither was used**: Only scans the default `full` lists (no further fallbacks).
+If loop retesting removes too many candidates, `cftestor` continues scanning from the original source pool to find replacement candidates.
+
+### Source Supplementation (`--supplement`)
+
+When `--supplement` is enabled and the initial candidate pool is exhausted before reaching the target result count (`-r, --result`), `cftestor` automatically falls back to broader pools in the following sequence:
+1. **User-provided sources (`-s` or `-i`)**: Tests user-provided IPs first. If exhausted and results remain below `--result`, supplements with `--fast` ranges (dynamically discovered active Cloudflare subnets). If still insufficient, falls back to full Cloudflare CIDR ranges.
+2. **Fast mode sources (`--fast` without `-s` / `-i`)**: Tests fast ranges first. If exhausted and results remain below `--result`, supplements with full Cloudflare CIDR ranges.
+3. **Default full scan (neither `-s`, `-i`, nor `--fast` provided)**: Scans full Cloudflare CIDR ranges only. `--fast` dynamic fetching is skipped since full CIDRs already encompass all Cloudflare ranges.
+
+Without `--supplement`, supplying fewer candidates than `--result` adjusts the target result count down to the candidate pool size. With `--supplement`, the target result count is preserved so supplementary pools can satisfy the target.
 
 The run stops when it reaches `--result`, exhausts all available (including supplemented) source pools, or reaches `--test-timeout`.
 
@@ -147,7 +153,9 @@ Mode Options:
                                   if fewer than --result remain.
         --loop-interval int       Seconds to wait between loop cycles. Default: 60.
         --test-timeout int        Total test timeout in minutes. Default: 30.
-        --supplement              Enable IP source supplementation/fallback when target result count is not met.
+        --supplement              Enable multi-tier IP source supplementation when target result count is not met:
+                                  user sources (-s/-i) -> fast ranges (--fast) -> full Cloudflare CIDRs.
+                                  If default full scan is used, tests full Cloudflare CIDRs only.
 
 Fingerprinting Options:
         --hello-firefox           Simulate Firefox TLS fingerprint.

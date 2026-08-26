@@ -145,7 +145,7 @@ func RegisterCLIFlags(fs *flag.FlagSet, opts *CliOptions) {
 	fs.Float64Var(&cfg.DLTEvaluationSpeed, "min-speed", cfg.DLTEvaluationSpeed, "Alias for --speed.")
 	fs.IntVar(&cfg.Loop, "loop", cfg.Loop, "Retest qualified candidates for N confirmation cycles; refill from the original pool if fewer than --result remain.")
 	fs.IntVar(&cfg.LoopInterval, "loop-interval", cfg.LoopInterval, "Seconds to wait between loop cycles.")
-	fs.BoolVar(&cfg.Supplement, "supplement", cfg.Supplement, "Enable IP source supplementation/fallback when target result count is not met.")
+	fs.BoolVar(&cfg.Supplement, "supplement", cfg.Supplement, "Enable multi-tier IP source supplementation when target result count is not met (User IPs -> --fast -> Full CF CIDRs).")
 	fs.IntVarP(&cfg.ResultMin, "result", "r", cfg.ResultMin, "Target number of final qualified results.")
 	fs.IntVar(&cfg.ResultMin, "result-count", cfg.ResultMin, "Alias for --result.")
 
@@ -247,10 +247,12 @@ func LoadSourceIPs(tMode int8, ipv4Changed, ipv6Changed bool) error {
 				logger.Log.Infoln("Fast mode enabled for IPv6: dynamically fetching optimized active IPv6 CIDRs...")
 				cidrs, err := fetcher.FetchDynamicIPv6(Config.DNSServer, Config.TrancoLimit)
 				if err != nil {
-					logger.Log.Warningf("Dynamic fetch failed, falling back to full ranges: %v", err)
-					tCFIPv6 = CFIPV6FULL
+					logger.Log.Warningf("Dynamic fetch failed, falling back to fast ranges: %v", err)
+					tCFIPv6 = CFIPV6
 				} else if len(cidrs) > 0 {
 					tCFIPv6 = cidrs
+				} else {
+					tCFIPv6 = CFIPV6
 				}
 			}
 			if err := SrcIPs.AddFromSlice(tCFIPv6, TypeIPv6); err != nil {
@@ -647,8 +649,8 @@ func SupplementSourceIPs(level int, tMode int8) error {
 	if level == SourceLevelFast {
 		logger.Log.Infoln("Supplementing source IPs from --fast ranges...")
 		if (tMode & TypeIPv4) == TypeIPv4 {
-			tCFIPv4 := CFIPV4FULL
-			logger.Log.Infoln("Fast mode enabled for IPv4: dynamically fetching optimized active IPv4 CIDRs...")
+			tCFIPv4 := CFIPV4
+			logger.Log.Infoln("Supplementing IPv4: dynamically fetching optimized active CIDRs...")
 			cidrs, err := fetcher.FetchDynamicIPv4(Config.DNSServer, Config.TrancoLimit)
 			if err != nil {
 				logger.Log.Warningf("Dynamic fetch failed, falling back to fast ranges: %v", err)
@@ -663,14 +665,16 @@ func SupplementSourceIPs(level int, tMode int8) error {
 			}
 		}
 		if (tMode & TypeIPv6) == TypeIPv6 {
-			tCFIPv6 := CFIPV6FULL
-			logger.Log.Infoln("Fast mode enabled for IPv6: dynamically fetching optimized active IPv6 CIDRs...")
+			tCFIPv6 := CFIPV6
+			logger.Log.Infoln("Supplementing IPv6: dynamically fetching optimized active CIDRs...")
 			cidrs, err := fetcher.FetchDynamicIPv6(Config.DNSServer, Config.TrancoLimit)
 			if err != nil {
-				logger.Log.Warningf("Dynamic fetch failed, falling back to full ranges: %v", err)
-				tCFIPv6 = CFIPV6FULL
+				logger.Log.Warningf("Dynamic fetch failed, falling back to fast ranges: %v", err)
+				tCFIPv6 = CFIPV6
 			} else if len(cidrs) > 0 {
 				tCFIPv6 = cidrs
+			} else {
+				tCFIPv6 = CFIPV6
 			}
 			if err := SrcIPs.AddFromSlice(tCFIPv6, TypeIPv6); err != nil {
 				return err

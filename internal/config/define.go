@@ -207,6 +207,19 @@ var (
 	SourceLevelFull      = 2
 )
 
+func GetSourceLevelName(level int) string {
+	switch level {
+	case SourceLevelUser:
+		return "user source (-s/-i)"
+	case SourceLevelFast:
+		return "fast ranges (--fast)"
+	case SourceLevelFull:
+		return "full ranges (Cloudflare CIDRs)"
+	default:
+		return fmt.Sprintf("level %d", level)
+	}
+}
+
 var (
 	MaxHostLenBig                            = big.NewInt(MaxHostLen)
 	Version, BuildTag, BuildDate, BuildHash string = "dev", "dev", "dev", "dev"
@@ -347,7 +360,9 @@ Mode Options:
                                   if fewer than --result remain.
         --loop-interval int       Seconds to wait between loop cycles. Default: 60.
         --test-timeout int        Total test timeout in minutes. Default: 30.
-        --supplement              Enable IP source supplementation/fallback when target result count is not met.
+        --supplement              Enable multi-tier IP source supplementation when target result count is not met:
+                                  user sources (-s/-i) -> fast ranges (--fast) -> full Cloudflare CIDRs.
+                                  If default full scan is used, tests full Cloudflare CIDRs only.
 
 Fingerprinting Options:
         --hello-firefox           Simulate Firefox TLS fingerprint.

@@ -274,10 +274,10 @@ RETRY_LOOP:
 							supplemented := false
 							for currentSourceLevel < config.SourceLevelFull {
 								currentSourceLevel++
-								logger.Log.Infof("%s Source exhausted with %d/%d candidates, supplementing from level %d...", elapsed(start_time), len(tmpTestSlice), t_result_min, currentSourceLevel)
+								logger.Log.Infof("%s Source exhausted with %d/%d candidates, supplementing from %s...", elapsed(start_time), len(tmpTestSlice), t_result_min, config.GetSourceLevelName(currentSourceLevel))
 								err := config.SupplementSourceIPs(currentSourceLevel, tMode)
 								if err != nil {
-									logger.Log.Errorf("IP supplementation failed for level %d: %v", currentSourceLevel, err)
+									logger.Log.Errorf("IP supplementation failed for %s: %v", config.GetSourceLevelName(currentSourceLevel), err)
 									continue
 								}
 								if !config.SrcIPs.IsEmpty() {
@@ -396,10 +396,10 @@ RETRY_LOOP:
 							supplemented := false
 							for currentSourceLevel < config.SourceLevelFull {
 								currentSourceLevel++
-								logger.Log.Infof("%s Source exhausted with %d/%d candidates, supplementing from level %d...", elapsed(start_time), len(tmpTestSlice), t_result_min, currentSourceLevel)
+								logger.Log.Infof("%s Source exhausted with %d/%d candidates, supplementing from %s...", elapsed(start_time), len(tmpTestSlice), t_result_min, config.GetSourceLevelName(currentSourceLevel))
 								err := config.SupplementSourceIPs(currentSourceLevel, tMode)
 								if err != nil {
-									logger.Log.Errorf("IP supplementation failed for level %d: %v", currentSourceLevel, err)
+									logger.Log.Errorf("IP supplementation failed for %s: %v", config.GetSourceLevelName(currentSourceLevel), err)
 									continue
 								}
 								if !config.SrcIPs.IsEmpty() {
@@ -519,7 +519,9 @@ RETRY_LOOP:
 		}
 		
 		if thisSourceIPs.IsEmpty() {
-			break RETRY_LOOP
+			if !config.Config.Supplement || currentSourceLevel >= config.SourceLevelFull {
+				break RETRY_LOOP
+			}
 		}
 		
 		t_result_min = config.Config.ResultMin - len(config.VerifyResultsMap)

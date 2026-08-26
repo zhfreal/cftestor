@@ -671,6 +671,69 @@ func TestSupplementSourceIPs(t *testing.T) {
 	}
 }
 
+func TestGetSourceLevelName(t *testing.T) {
+	tests := []struct {
+		name     string
+		level    int
+		contains string
+	}{
+		{name: "user level", level: config.SourceLevelUser, contains: "-s/-i"},
+		{name: "fast level", level: config.SourceLevelFast, contains: "--fast"},
+		{name: "full level", level: config.SourceLevelFull, contains: "Cloudflare"},
+		{name: "unknown level", level: 99, contains: "level 99"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name := config.GetSourceLevelName(tt.level)
+			if !strings.Contains(name, tt.contains) {
+				t.Errorf("GetSourceLevelName(%d) = %q, want substring %q", tt.level, name, tt.contains)
+			}
+		})
+	}
+}
+
+func TestInitialSourceLevelHierarchy(t *testing.T) {
+	t.Run("user sources set SourceLevelUser", func(t *testing.T) {
+		resetGlobalsForTest()
+		_, _, _, err := config.ConfigureApp([]string{"-s", "1.1.1.1", "--supplement"})
+		if err != nil {
+			t.Fatalf("ConfigureApp failed: %v", err)
+		}
+		hasUserSources := len(config.IPStr) > 0 || len(config.Config.IPFile) > 0
+		if !hasUserSources {
+			t.Fatal("expected hasUserSources to be true for -s")
+		}
+	})
+
+	t.Run("fast mode without user sources set SourceLevelFast", func(t *testing.T) {
+		resetGlobalsForTest()
+		opts, _, _, err := config.ConfigureApp([]string{"--fast", "--supplement"})
+		if err != nil {
+			t.Fatalf("ConfigureApp failed: %v", err)
+		}
+		if !opts.Config.FastMode {
+			t.Fatal("expected FastMode to be true")
+		}
+		if len(config.IPStr) > 0 || len(config.Config.IPFile) > 0 {
+			t.Fatal("expected no user sources when only --fast is set")
+		}
+	})
+
+	t.Run("default uses SourceLevelFull", func(t *testing.T) {
+		resetGlobalsForTest()
+		opts, _, _, err := config.ConfigureApp([]string{"--supplement"})
+		if err != nil {
+			t.Fatalf("ConfigureApp failed: %v", err)
+		}
+		if opts.Config.FastMode {
+			t.Fatal("expected FastMode to be false for default")
+		}
+		if len(config.IPStr) > 0 || len(config.Config.IPFile) > 0 {
+			t.Fatal("expected no user sources for default")
+		}
+	})
+}
+
 func TestSupplementWithoutLoopSucceeds(t *testing.T) {
 	resetGlobalsForTest()
 	_, _, _, err := config.ConfigureApp([]string{"--supplement"})
