@@ -236,6 +236,7 @@ var (
 
 type AppConfig struct {
 	IPFile                      string
+	IPFiles                     []string
 	DTCount                     int
 	DTWorkerThread              int
 	DLTDurMax                   int
@@ -285,6 +286,8 @@ type AppConfig struct {
 	ResolveLoc                  bool
 	NoCache                     bool
 	Supplement                  bool
+	SupplementIPv4              bool
+	SupplementIPv6              bool
 	OutboundMark                uint32
 	OutboundMarkSet             bool
 	OutboundInterface           string
@@ -310,7 +313,7 @@ Usage: cftestor [options]
 Core Options:
     -s, --ip           strings    Specify IP, CIDR, or host:port. Examples: "-s 1.0.0.1", "-s 1.0.0.1/24",
                                   "-s 1.1.1.1:2053", "-s example.com:443". Can be provided multiple times.
-    -i, --in           string     Path to a file containing IPs, CIDRs, or host:port entries (one per line).
+    -i, --in           strings    Path to file(s) containing IPs, CIDRs, or host:port entries. Can be provided multiple times.
     -p, --port         strings    Specify port(s) to test. Supports single ports, ranges, and lists (e.g.,
                                   "443", "80-443", "443,8443"). Default: 443.
     -a, --test-all                Test all provided IPs until none remain. Default: off.
@@ -363,6 +366,8 @@ Mode Options:
         --supplement              Enable multi-tier IP source supplementation when target result count is not met:
                                   user sources (-s/-i) -> fast ranges (--fast) -> full Cloudflare CIDRs.
                                   If default full scan is used, tests full Cloudflare CIDRs only.
+        --supplement-ipv4         Enable IPv4 for supplementation fallback. Default: true.
+        --supplement-ipv6         Enable IPv6 for supplementation fallback. Default: false.
 
 Fingerprinting Options:
         --hello-firefox           Simulate Firefox TLS fingerprint.

@@ -82,14 +82,66 @@ Save results to CSV:
 
 If loop retesting removes too many candidates, `cftestor` continues scanning from the original source pool to find replacement candidates.
 
+#### Candidate Sources and Pool Composition
+
+`cftestor` supports four sources of candidate endpoints:
+
+1. **Command-line targets (`-s, --ip, --source`)**: Individual IPs, CIDR blocks, or `host:port` pairs. Can be specified multiple times (or comma-separated).
+2. **Target files (`-i, --in, --source-file`)**: Files containing IPs, CIDRs, or `host:port` entries (one per line). Can also be specified multiple times (or comma-separated).
+3. **Fast mode ranges (`--fast`)**: Dynamically discovered active Cloudflare subnets. Used for rapid scanning when no user targets are provided.
+4. **Default full scan**: Full Cloudflare CIDR blocks (scanned when neither `-s`, `-i`, nor `--fast` is supplied).
+
+#### Co-working with User Sources (`-s` and `-i`)
+
+`-s` and `-i` work together seamlessly. You can supply both flags concurrently to assemble an initial candidate pool from multiple files and inline endpoints:
+
+```bash
+./cftestor -s 1.1.1.1:443 -s 1.0.0.1/24 -i internal_ips.txt -i custom_nodes.txt
+```
+
+All specified entries across all `-s` and `-i` flags are parsed, filtered according to the active IP mode, loaded into `SrcIPs`, and deduplicated.
+
+#### Relationship Between User Sources (`-s`/`-i`) and `--fast`
+
+User-provided sources and `--fast` are **not mixed** into the initial test pool. If both are specified together, `cftestor` tests only the user-provided targets and outputs a guidance warning:
+
+- **Without `--supplement`**:
+  `WARNING: --fast wouldn't work when user provide sources (-s/-i), you can try --supplement and -r <N>.`
+- **With `--supplement`**:
+  `WARNING: sources from --fast just tested after no enough -r <N> archived, --fast can be omitted while --supplement provided.`
+
 ### Source Supplementation (`--supplement`)
 
 When `--supplement` is enabled and the initial candidate pool is exhausted before reaching the target result count (`-r, --result`), `cftestor` automatically falls back to broader pools in the following sequence:
-1. **User-provided sources (`-s` or `-i`)**: Tests user-provided IPs first. If exhausted and results remain below `--result`, supplements with `--fast` ranges (dynamically discovered active Cloudflare subnets). If still insufficient, falls back to full Cloudflare CIDR ranges.
+1. **User-provided sources (`-s` and/or `-i`)**: Tests user-provided IPs first. If exhausted and results remain below `--result`, supplements with `--fast` ranges (dynamically discovered active Cloudflare subnets). If still insufficient, falls back to full Cloudflare CIDR ranges.
 2. **Fast mode sources (`--fast` without `-s` / `-i`)**: Tests fast ranges first. If exhausted and results remain below `--result`, supplements with full Cloudflare CIDR ranges.
 3. **Default full scan (neither `-s`, `-i`, nor `--fast` provided)**: Scans full Cloudflare CIDR ranges only. `--fast` dynamic fetching is skipped since full CIDRs already encompass all Cloudflare ranges.
 
 Without `--supplement`, supplying fewer candidates than `--result` adjusts the target result count down to the candidate pool size. With `--supplement`, the target result count is preserved so supplementary pools can satisfy the target.
+
+### Independent IP Mode Staging (Primary vs Fallback)
+
+`cftestor` decouples IP family selection between the **primary test phase** and the **supplementation fallback phase**:
+
+- **Primary Phase (`-4, --ipv4` / `-6, --ipv6`)**:
+  - Governs candidate filtering for user sources (`-s` / `-i`), standalone `--fast`, or standalone full CIDR scan.
+  - Default (neither `-4` nor `-6` specified): **Dual-stack** (both IPv4 and IPv6 are tested).
+  - `-4`: Forces IPv4-only for primary candidates.
+  - `-6`: Forces IPv6-only for primary candidates.
+- **Supplementation Fallback Phase (`--supplement-ipv4` / `--supplement-ipv6`)**:
+  - Governs candidate generation when falling back to `--fast` or full Cloudflare CIDRs.
+  - `--supplement-ipv4`: Default `true`.
+  - `--supplement-ipv6`: Default `false`. Cloudflare's IPv6 ranges are vast and frequently unrouted or filtered on residential networks. Defaulting fallback to IPv4 ensures reliable results unless IPv6 fallback is explicitly desired.
+
+#### Staging Matrix and Examples
+
+| CLI Command | Primary IP Family | Fallback IP Family | Behavior |
+| :--- | :--- | :--- | :--- |
+| `./cftestor -s nodes.txt --supplement` | IPv4 + IPv6 | IPv4 | Tests user nodes in dual-stack. If exhausted, supplements with Cloudflare IPv4 ranges. |
+| `./cftestor -4 -s nodes.txt --supplement` | IPv4 | IPv4 | Strict IPv4 test for both user nodes and fallback pools. |
+| `./cftestor -4 -s nodes.txt --supplement --supplement-ipv6` | IPv4 | IPv6 | Tests custom IPv4 nodes first. If insufficient, falls back to Cloudflare IPv6 ranges. |
+| `./cftestor -6 -s nodes.txt --supplement --supplement-ipv4` | IPv6 | IPv4 | Tests custom IPv6 nodes first. If insufficient, falls back to Cloudflare IPv4 ranges. |
+| `./cftestor -s nodes.txt --supplement --supplement-ipv4 --supplement-ipv6` | IPv4 + IPv6 | IPv4 + IPv6 | Full dual-stack testing across both user targets and fallback pools. |
 
 The run stops when it reaches `--result`, exhausts all available (including supplemented) source pools, or reaches `--test-timeout`.
 
@@ -103,7 +155,7 @@ Usage: cftestor [options]
 Core Options:
     -s, --ip           strings    Specify IP, CIDR, or host:port. Examples: "-s 1.0.0.1", "-s 1.0.0.1/24",
                                   "-s 1.1.1.1:2053", "-s example.com:443". Can be provided multiple times.
-    -i, --in           string     Path to a file containing IPs, CIDRs, or host:port entries (one per line).
+    -i, --in           strings    Path to file(s) containing IPs, CIDRs, or host:port entries (one per line). Can be provided multiple times.
     -p, --port         strings    Specify port(s) to test for IP/CIDR inputs. Supports single ports, ranges, and lists
                                   (e.g., "443", "80-443", "443,8443"). Default: 443.
     -a, --test-all                Test all provided IPs until none remain. Default: off.
@@ -133,7 +185,7 @@ Delay Test (DT) Options:
         --dt-expect-code int      Expected HTTP status code for DT. Default: 200.
         --ev-dt                   Enable DT evaluation using all attempts. Default: off.
     -k, --ev-dt-delay  int        Maximum allowed average DT delay in ms. Default: 600.
-        --ev-dt-dtpr   float      Minimum required DT pass rate percentage. Default: 100.0.
+        --ev-dt-dtpr   float      Minimum required DT pass rate (percentage). Default: 100.0.
         --ev-dt-std    float      Maximum allowed DT standard deviation. Default: 30.0 (if enabled).
 
 Download Test (DLT) Options:
@@ -156,6 +208,8 @@ Mode Options:
         --supplement              Enable multi-tier IP source supplementation when target result count is not met:
                                   user sources (-s/-i) -> fast ranges (--fast) -> full Cloudflare CIDRs.
                                   If default full scan is used, tests full Cloudflare CIDRs only.
+        --supplement-ipv4         Enable IPv4 for supplementation fallback. Default: true.
+        --supplement-ipv6         Enable IPv6 for supplementation fallback. Default: false.
 
 Fingerprinting Options:
         --hello-firefox           Simulate Firefox TLS fingerprint.

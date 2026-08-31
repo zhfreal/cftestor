@@ -231,7 +231,7 @@ func runWorker() {
 	var start_time = time.Now()
 
 	// Determine starting IP source level
-	hasUserSources := len(config.IPStr) > 0 || len(config.Config.IPFile) > 0
+	hasUserSources := config.HasUserSources()
 	currentSourceLevel := config.SourceLevelFull
 	if hasUserSources {
 		currentSourceLevel = config.SourceLevelUser
@@ -246,6 +246,7 @@ func runWorker() {
 	if config.Config.IPv6Mode {
 		tMode |= config.TypeIPv6
 	}
+	sMode := config.SupplementIPMode()
 
 	logger.Log.Infof("%s Starting test with %s source IPs (target: %d results)", elapsed(start_time), utils.FormatHostCount(thisSourceIPs.TotalHosts()), t_result_min)
 
@@ -274,7 +275,7 @@ RETRY_LOOP:
 							for currentSourceLevel < config.SourceLevelFull {
 								currentSourceLevel++
 								logger.Log.Infof("%s Source exhausted with %d/%d candidates, supplementing from %s...", elapsed(start_time), len(tmpTestSlice), t_result_min, config.GetSourceLevelName(currentSourceLevel))
-								err := config.SupplementSourceIPs(currentSourceLevel, tMode)
+								err := config.SupplementSourceIPs(currentSourceLevel, sMode)
 								if err != nil {
 									logger.Log.Errorf("IP supplementation failed for %s: %v", config.GetSourceLevelName(currentSourceLevel), err)
 									continue
@@ -396,7 +397,7 @@ RETRY_LOOP:
 							for currentSourceLevel < config.SourceLevelFull {
 								currentSourceLevel++
 								logger.Log.Infof("%s Source exhausted with %d/%d candidates, supplementing from %s...", elapsed(start_time), len(tmpTestSlice), t_result_min, config.GetSourceLevelName(currentSourceLevel))
-								err := config.SupplementSourceIPs(currentSourceLevel, tMode)
+								err := config.SupplementSourceIPs(currentSourceLevel, sMode)
 								if err != nil {
 									logger.Log.Errorf("IP supplementation failed for %s: %v", config.GetSourceLevelName(currentSourceLevel), err)
 									continue
@@ -523,7 +524,7 @@ RETRY_LOOP:
 				for currentSourceLevel < config.SourceLevelFull {
 					currentSourceLevel++
 					logger.Log.Infof("%s Source exhausted with %d/%d candidates, supplementing from %s...", elapsed(start_time), len(config.VerifyResultsMap), config.Config.ResultMin, config.GetSourceLevelName(currentSourceLevel))
-					err := config.SupplementSourceIPs(currentSourceLevel, tMode)
+					err := config.SupplementSourceIPs(currentSourceLevel, sMode)
 					if err != nil {
 						logger.Log.Errorf("IP supplementation failed for %s: %v", config.GetSourceLevelName(currentSourceLevel), err)
 						continue

@@ -17,21 +17,25 @@ import (
 )
 
 type CliOptions struct {
-	Config           AppConfig
-	IPs              []string
-	SourceIPs        []string
-	Mark             string
-	XMark            string
-	PrintVersion     bool
-	TLSHelloFirefox  bool
-	TLSHelloChrome   bool
-	TLSHelloEdge     bool
-	TLSHelloSafari   bool
-	IPv4Changed      bool
-	IPv6Changed      bool
-	DTTimeoutChanged bool
-	MarkChanged      bool
-	XMarkChanged     bool
+	Config                AppConfig
+	IPs                   []string
+	SourceIPs             []string
+	IPFiles               []string
+	SourceFiles           []string
+	Mark                  string
+	XMark                 string
+	PrintVersion          bool
+	TLSHelloFirefox       bool
+	TLSHelloChrome        bool
+	TLSHelloEdge          bool
+	TLSHelloSafari        bool
+	IPv4Changed           bool
+	IPv6Changed           bool
+	DTTimeoutChanged      bool
+	SupplementIPv4Changed bool
+	SupplementIPv6Changed bool
+	MarkChanged           bool
+	XMarkChanged          bool
 }
 
 func DefaultConfig() AppConfig {
@@ -59,6 +63,8 @@ func DefaultConfig() AppConfig {
 		DTHttpRspReturnCodeExpected: 200,
 		IPv4Mode:                    true,
 		IPv6Mode:                    true,
+		SupplementIPv4:              true,
+		SupplementIPv6:              false,
 		TLSClientID:                 utls.HelloChrome_Auto,
 		UserAgent:                   UserAgentChrome,
 		PortStrSlice:                []string{},
@@ -69,9 +75,11 @@ func DefaultConfig() AppConfig {
 
 func ParseCLI(args []string) (CliOptions, error) {
 	opts := CliOptions{
-		Config:    DefaultConfig(),
-		IPs:       []string{},
-		SourceIPs: []string{},
+		Config:      DefaultConfig(),
+		IPs:         []string{},
+		SourceIPs:   []string{},
+		IPFiles:     []string{},
+		SourceFiles: []string{},
 	}
 	fs := flag.NewFlagSet(RunTime, flag.ContinueOnError)
 	fs.Usage = func() {
@@ -82,15 +90,26 @@ func ParseCLI(args []string) (CliOptions, error) {
 		return opts, err
 	}
 	opts.IPs = append(opts.IPs, opts.SourceIPs...)
+	opts.IPFiles = append(opts.IPFiles, opts.SourceFiles...)
+	opts.Config.IPFiles = opts.IPFiles
+	if len(opts.IPFiles) > 0 {
+		opts.Config.IPFile = opts.IPFiles[0]
+	}
 	opts.IPv4Changed = FlagChanged(fs, "ipv4")
 	opts.IPv6Changed = FlagChanged(fs, "ipv6")
 	opts.DTTimeoutChanged = FlagChanged(fs, "dt-timeout", "dt-timeout-ms")
 	opts.MarkChanged = FlagChanged(fs, "mark")
 	opts.XMarkChanged = FlagChanged(fs, "xmark")
+	opts.SupplementIPv4Changed = FlagChanged(fs, "supplement-ipv4")
+	opts.SupplementIPv6Changed = FlagChanged(fs, "supplement-ipv6")
 	if opts.IPv4Changed && !opts.IPv6Changed {
 		opts.Config.IPv6Mode = false
 	} else if opts.IPv6Changed && !opts.IPv4Changed {
 		opts.Config.IPv4Mode = false
+	}
+	if opts.SupplementIPv6Changed && !opts.SupplementIPv4Changed {
+		opts.Config.SupplementIPv4 = false
+		opts.Config.SupplementIPv6 = true
 	}
 	ApplyTLSFingerprint(&opts)
 	return opts, nil
@@ -102,8 +121,8 @@ func RegisterCLIFlags(fs *flag.FlagSet, opts *CliOptions) {
 	fs.BoolVar(&cfg.FastMode, "fast", cfg.FastMode, "Use a limited set of internal Cloudflare IPs for quick scanning.")
 	fs.StringSliceVarP(&opts.IPs, "ip", "s", opts.IPs, "IP, CIDR, or host:port candidate to test. Can be provided multiple times.")
 	fs.StringSliceVar(&opts.SourceIPs, "source", opts.SourceIPs, "Alias for --ip.")
-	fs.StringVarP(&cfg.IPFile, "in", "i", cfg.IPFile, "Path to a file containing IPs, CIDRs, or host:port entries.")
-	fs.StringVar(&cfg.IPFile, "source-file", cfg.IPFile, "Alias for --in.")
+	fs.StringSliceVarP(&opts.IPFiles, "in", "i", opts.IPFiles, "Path to a file containing IPs, CIDRs, or host:port entries. Can be provided multiple times.")
+	fs.StringSliceVar(&opts.SourceFiles, "source-file", opts.SourceFiles, "Alias for --in.")
 
 	fs.IntVarP(&cfg.DTWorkerThread, "dt-thread", "m", cfg.DTWorkerThread, "Number of concurrent Delay Test (DT) workers.")
 	fs.IntVar(&cfg.DTWorkerThread, "dt-workers", cfg.DTWorkerThread, "Alias for --dt-thread.")
@@ -146,6 +165,8 @@ func RegisterCLIFlags(fs *flag.FlagSet, opts *CliOptions) {
 	fs.IntVar(&cfg.Loop, "loop", cfg.Loop, "Retest qualified candidates for N confirmation cycles; refill from the original pool if fewer than --result remain.")
 	fs.IntVar(&cfg.LoopInterval, "loop-interval", cfg.LoopInterval, "Seconds to wait between loop cycles.")
 	fs.BoolVar(&cfg.Supplement, "supplement", cfg.Supplement, "Enable multi-tier IP source supplementation when target result count is not met (User IPs -> --fast -> Full CF CIDRs).")
+	fs.BoolVar(&cfg.SupplementIPv4, "supplement-ipv4", cfg.SupplementIPv4, "Enable IPv4 for supplementation fallback.")
+	fs.BoolVar(&cfg.SupplementIPv6, "supplement-ipv6", cfg.SupplementIPv6, "Enable IPv6 for supplementation fallback.")
 	fs.IntVarP(&cfg.ResultMin, "result", "r", cfg.ResultMin, "Target number of final qualified results.")
 	fs.IntVar(&cfg.ResultMin, "result-count", cfg.ResultMin, "Alias for --result.")
 
@@ -221,7 +242,7 @@ func ApplyTLSFingerprint(opts *CliOptions) {
 }
 
 func LoadSourceIPs(tMode int8, ipv4Changed, ipv6Changed bool) error {
-	hasUserSources := len(IPStr) > 0 || len(Config.IPFile) > 0
+	hasUserSources := HasUserSources()
 	if !hasUserSources {
 		if (tMode & TypeIPv4) == TypeIPv4 {
 			tCFIPv4 := CFIPV4FULL
@@ -271,7 +292,17 @@ func LoadSourceIPs(tMode int8, ipv4Changed, ipv6Changed bool) error {
 			return err
 		}
 	}
-	if len(Config.IPFile) != 0 {
+	if len(Config.IPFiles) > 0 {
+		for _, file := range Config.IPFiles {
+			file = strings.TrimSpace(file)
+			if file == "" {
+				continue
+			}
+			if err := SrcIPs.AddFromFile(file, tMode); err != nil {
+				return err
+			}
+		}
+	} else if len(Config.IPFile) != 0 {
 		if err := SrcIPs.AddFromFile(Config.IPFile, tMode); err != nil {
 			return err
 		}
@@ -408,6 +439,16 @@ func normalizedURLPath(u *url.URL) string {
 }
 
 func prepareRuntime(opts *CliOptions) error {
+	if HasUserSources() && Config.FastMode {
+		if !Config.Supplement {
+			logger.Log.Warningln("--fast wouldn't work when user provide sources (-s/-i), you can try --supplement and -r <N>.")
+		} else {
+			logger.Log.Warningln("sources from --fast just tested after no enough -r <N> archived, --fast can be omitted while --supplement provided.")
+		}
+	}
+	if Config.Supplement && !Config.SupplementIPv4 && !Config.SupplementIPv6 {
+		return fmt.Errorf("%q and %q cannot both be disabled when %q is enabled", "--supplement-ipv4", "--supplement-ipv6", "--supplement")
+	}
 	if Config.DisableDownload {
 		Config.DTOnly = true
 		logger.Log.Warningln("deprecated flag \"--disable-download\"; use \"--dt-only\" instead")
@@ -471,6 +512,17 @@ func selectedIPMode(ipv4Changed, ipv6Changed bool) (int8, error) {
 
 func trimConfigStrings() {
 	Config.IPFile = strings.TrimSpace(Config.IPFile)
+	cleanedFiles := make([]string, 0, len(Config.IPFiles))
+	for _, f := range Config.IPFiles {
+		trimmed := strings.TrimSpace(f)
+		if trimmed != "" {
+			cleanedFiles = append(cleanedFiles, trimmed)
+		}
+	}
+	Config.IPFiles = cleanedFiles
+	if len(Config.IPFiles) > 0 {
+		Config.IPFile = Config.IPFiles[0]
+	}
 	Config.ResultFile = strings.TrimSpace(Config.ResultFile)
 	Config.SuffixLabel = strings.TrimSpace(Config.SuffixLabel)
 	Config.HostName = strings.TrimSpace(Config.HostName)
@@ -700,3 +752,21 @@ func SupplementSourceIPs(level int, tMode int8) error {
 	}
 	return nil
 }
+
+// HasUserSources returns true if user specified candidate IPs via -s or -i.
+func HasUserSources() bool {
+	return len(IPStr) > 0 || len(Config.IPFiles) > 0 || len(Config.IPFile) > 0
+}
+
+// SupplementIPMode returns the IP type bitmask (TypeIPv4, TypeIPv6, or both) for supplementation fallback.
+func SupplementIPMode() int8 {
+	var sMode int8
+	if Config.SupplementIPv4 {
+		sMode |= TypeIPv4
+	}
+	if Config.SupplementIPv6 {
+		sMode |= TypeIPv6
+	}
+	return sMode
+}
+

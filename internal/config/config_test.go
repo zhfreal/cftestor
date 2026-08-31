@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"net"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -648,6 +649,100 @@ func TestSupplementCLI(t *testing.T) {
 	if !opts.Config.Supplement {
 		t.Fatal("expected --supplement flag to be parsed")
 	}
+	if !opts.Config.SupplementIPv4 {
+		t.Fatal("expected SupplementIPv4 to default to true")
+	}
+	if opts.Config.SupplementIPv6 {
+		t.Fatal("expected SupplementIPv6 to default to false")
+	}
+}
+
+func TestSupplementIPModeStaging(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantPriV4  bool
+		wantPriV6  bool
+		wantSuppV4 bool
+		wantSuppV6 bool
+		wantSMode  int8
+	}{
+		{
+			name:       "default supplement",
+			args:       []string{"--supplement"},
+			wantPriV4:  true,
+			wantPriV6:  true,
+			wantSuppV4: true,
+			wantSuppV6: false,
+			wantSMode:  config.TypeIPv4,
+		},
+		{
+			name:       "primary ipv4 with supplement ipv6",
+			args:       []string{"-4", "--supplement", "--supplement-ipv6"},
+			wantPriV4:  true,
+			wantPriV6:  false,
+			wantSuppV4: false,
+			wantSuppV6: true,
+			wantSMode:  config.TypeIPv6,
+		},
+		{
+			name:       "primary ipv6 with supplement ipv4",
+			args:       []string{"-6", "--supplement", "--supplement-ipv4"},
+			wantPriV4:  false,
+			wantPriV6:  true,
+			wantSuppV4: true,
+			wantSuppV6: false,
+			wantSMode:  config.TypeIPv4,
+		},
+		{
+			name:       "both supplement ipv4 and ipv6",
+			args:       []string{"--supplement", "--supplement-ipv4", "--supplement-ipv6"},
+			wantPriV4:  true,
+			wantPriV6:  true,
+			wantSuppV4: true,
+			wantSuppV6: true,
+			wantSMode:  config.TypeIPv4 | config.TypeIPv6,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetGlobalsForTest()
+			opts, err := config.ParseCLI(tt.args)
+			if err != nil {
+				t.Fatalf("ParseCLI failed: %v", err)
+			}
+			if opts.Config.IPv4Mode != tt.wantPriV4 {
+				t.Errorf("IPv4Mode = %v, want %v", opts.Config.IPv4Mode, tt.wantPriV4)
+			}
+			if opts.Config.IPv6Mode != tt.wantPriV6 {
+				t.Errorf("IPv6Mode = %v, want %v", opts.Config.IPv6Mode, tt.wantPriV6)
+			}
+			if opts.Config.SupplementIPv4 != tt.wantSuppV4 {
+				t.Errorf("SupplementIPv4 = %v, want %v", opts.Config.SupplementIPv4, tt.wantSuppV4)
+			}
+			if opts.Config.SupplementIPv6 != tt.wantSuppV6 {
+				t.Errorf("SupplementIPv6 = %v, want %v", opts.Config.SupplementIPv6, tt.wantSuppV6)
+			}
+
+			config.Config = opts.Config
+			if got := config.SupplementIPMode(); got != tt.wantSMode {
+				t.Errorf("SupplementIPMode() = %d, want %d", got, tt.wantSMode)
+			}
+		})
+	}
+}
+
+func TestSupplementDisabledBothIPv4AndIPv6Rejects(t *testing.T) {
+	resetGlobalsForTest()
+	_, _, _, err := config.ConfigureApp([]string{"--supplement", "--supplement-ipv4=false", "--supplement-ipv6=false"})
+	if err == nil {
+		t.Fatal("expected error when both --supplement-ipv4 and --supplement-ipv6 are false")
+	}
+	wantSubstr := "\"--supplement-ipv4\" and \"--supplement-ipv6\" cannot both be disabled"
+	if !strings.Contains(err.Error(), wantSubstr) {
+		t.Fatalf("unexpected error message: %v (want %q)", err, wantSubstr)
+	}
 }
 
 func TestSupplementSourceIPs(t *testing.T) {
@@ -808,6 +903,86 @@ func TestTotalHosts(t *testing.T) {
 		t.Fatalf("expected 4 total hosts, got %d", total.Int64())
 	}
 }
+
+func TestMultiInAndSWorkTogether(t *testing.T) {
+	resetGlobalsForTest()
+	dir := t.TempDir()
+	f1 := dir + "/list1.txt"
+	f2 := dir + "/list2.txt"
+
+	if err := os.WriteFile(f1, []byte("1.1.1.1\n1.1.1.2\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	if err := os.WriteFile(f2, []byte("1.0.0.1\n1.0.0.2\n"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	opts, shouldExit, exitCode, err := config.ConfigureApp([]string{
+		"-s", "8.8.8.8",
+		"-s", "8.8.4.4",
+		"-i", f1,
+		"-i", f2,
+	})
+	if err != nil {
+		t.Fatalf("ConfigureApp failed: %v", err)
+	}
+	if shouldExit || exitCode != 0 {
+		t.Fatalf("ConfigureApp returned shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+	}
+	if !config.HasUserSources() {
+		t.Fatal("expected HasUserSources() to be true")
+	}
+	if len(opts.IPs) != 2 {
+		t.Fatalf("expected 2 IPs from -s, got %d: %v", len(opts.IPs), opts.IPs)
+	}
+	if len(opts.Config.IPFiles) != 2 {
+		t.Fatalf("expected 2 IPFiles from -i, got %d: %v", len(opts.Config.IPFiles), opts.Config.IPFiles)
+	}
+
+	// 2 from -s, 2 from f1, 2 from f2 = 6 hosts total
+	total := config.SrcIPs.TotalHosts()
+	if total.Int64() != 6 {
+		t.Fatalf("expected 6 total hosts loaded into SrcIPs, got %d", total.Int64())
+	}
+}
+
+func TestFastModeWithUserSourcesWarnings(t *testing.T) {
+	t.Run("without supplement warns fast mode ignored", func(t *testing.T) {
+		resetGlobalsForTest()
+		opts, shouldExit, exitCode, err := config.ConfigureApp([]string{
+			"-s", "1.1.1.1",
+			"--fast",
+		})
+		if err != nil {
+			t.Fatalf("ConfigureApp failed: %v", err)
+		}
+		if shouldExit || exitCode != 0 {
+			t.Fatalf("ConfigureApp returned shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+		}
+		if !opts.Config.FastMode {
+			t.Fatal("expected FastMode to be true")
+		}
+	})
+
+	t.Run("with supplement warns fast mode tested as fallback", func(t *testing.T) {
+		resetGlobalsForTest()
+		opts, shouldExit, exitCode, err := config.ConfigureApp([]string{
+			"-s", "1.1.1.1",
+			"--fast",
+			"--supplement",
+		})
+		if err != nil {
+			t.Fatalf("ConfigureApp failed: %v", err)
+		}
+		if shouldExit || exitCode != 0 {
+			t.Fatalf("ConfigureApp returned shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+		}
+		if !opts.Config.Supplement {
+			t.Fatal("expected Supplement to be true")
+		}
+	})
+}
+
 
 
 
