@@ -255,6 +255,7 @@ RETRY_LOOP:
 		tmpResultMap := make(map[string]config.VerifyResults)
 		var tmpTestSlice map[string]bool
 		looper := config.NewSafeLooperWithInterval(config.Config.Loop, config.Config.LoopInterval*1000)
+		loopCandidateCount := 0
 	LOOP:
 		for {
 			dtDoneTasks := 0
@@ -452,12 +453,16 @@ RETRY_LOOP:
 					displayStat(len(tmpTestSlice), 0, "", dltDoneTasks, dltTotalStr)
 				}
 
-				if !config.Config.TestAll && len(tmpTestSlice) >= t_result_min {
+				if !config.Config.TestAll && !looper.InLooping() && len(tmpTestSlice) >= t_result_min {
 					break SINGLE_ROUND
 				}
 			}
 
-			logger.Log.Infof("%s Round complete: %d candidates found (%d needed)", elapsed(start_time), len(tmpTestSlice), t_result_min)
+			if looper.InLooping() {
+				logger.Log.Infof("%s Loop retest: cycle %d/%d complete, %d/%d candidates passed", elapsed(start_time), looper.GetRound(), config.Config.Loop, len(tmpTestSlice), loopCandidateCount)
+			} else {
+				logger.Log.Infof("%s Round complete: %d candidates found (%d needed)", elapsed(start_time), len(tmpTestSlice), t_result_min)
+			}
 
 			if len(tmpResultMap) == 0 {
 				break LOOP
@@ -470,6 +475,7 @@ RETRY_LOOP:
 				for k := range tmpResultMap {
 					tmp_slice = append(tmp_slice, k)
 				}
+				loopCandidateCount = len(tmp_slice)
 				newSourceIPs := config.NewSourceIPs()
 				if err := newSourceIPs.AddFromSlice(tmp_slice, config.TypeIPv4|config.TypeIPv6); err != nil {
 					logger.Log.Errorf("failed to prepare loop candidates: %v\n", err)
@@ -480,9 +486,6 @@ RETRY_LOOP:
 					break LOOP
 				}
 				thisSourceIPs = newSourceIPs
-				if !config.Config.TestAll {
-					t_result_min = len(tmp_slice)
-				}
 				logger.Log.Infof("%s Waiting %ds before next loop cycle...", elapsed(start_time), config.Config.LoopInterval)
 				looper.Sleep()
 			}
