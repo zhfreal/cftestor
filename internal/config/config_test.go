@@ -436,6 +436,7 @@ func TestParseCLIAcceptsLongFormAliases(t *testing.T) {
 		"--sqlite-file", "out.db",
 		"--record-label", "edge",
 		"--resolve-location",
+		"--resolve-loc-threads", "15",
 		"--quiet",
 	})
 	if err != nil {
@@ -473,6 +474,7 @@ func TestParseCLIAcceptsLongFormAliases(t *testing.T) {
 		{name: "sqlite file", ok: cfg.DBFile == "out.db"},
 		{name: "record label", ok: cfg.SuffixLabel == "edge"},
 		{name: "resolve location", ok: cfg.ResolveLoc},
+		{name: "resolve location threads", ok: cfg.ResolveLocPar == 15},
 		{name: "quiet", ok: cfg.SilenceMode},
 	}
 	for _, check := range checks {
@@ -983,6 +985,41 @@ func TestFastModeWithUserSourcesWarnings(t *testing.T) {
 	})
 }
 
+func TestResolveLocParFlags(t *testing.T) {
+	resetGlobalsForTest()
+	opts, shouldExit, _, err := config.ConfigureApp([]string{"--dt-only", "--resolve-loc-par", "8"})
+	if shouldExit || err != nil {
+		t.Fatalf("ConfigureApp returned shouldExit %v, err %v", shouldExit, err)
+	}
+	if config.Config.ResolveLocPar != 8 {
+		t.Fatalf("expected ResolveLocPar 8, got %d", config.Config.ResolveLocPar)
+	}
+	if !config.Config.ResolveLoc {
+		t.Fatal("expected ResolveLoc to be auto-enabled when --resolve-loc-par is specified")
+	}
+	if !opts.Config.ResolveLoc {
+		t.Fatal("expected opts.Config.ResolveLoc to be auto-enabled when --resolve-loc-par is specified")
+	}
+}
 
+func TestResolveLocParExplicitFalse(t *testing.T) {
+	resetGlobalsForTest()
+	opts, shouldExit, _, err := config.ConfigureApp([]string{"--dt-only", "--resolve-loc-par", "8", "--resolve-loc=false"})
+	if shouldExit || err != nil {
+		t.Fatalf("ConfigureApp returned shouldExit %v, err %v", shouldExit, err)
+	}
+	if config.Config.ResolveLoc {
+		t.Fatal("expected ResolveLoc to remain false when explicitly disabled")
+	}
+	if opts.Config.ResolveLoc {
+		t.Fatal("expected opts.Config.ResolveLoc to remain false when explicitly disabled")
+	}
+}
 
-
+func TestResolveLocParValidation(t *testing.T) {
+	resetGlobalsForTest()
+	_, _, _, err := config.ConfigureApp([]string{"--dt-only", "--resolve-loc-par", "0"})
+	if err == nil {
+		t.Fatal("expected error for --resolve-loc-par 0")
+	}
+}

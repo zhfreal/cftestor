@@ -284,6 +284,7 @@ type AppConfig struct {
 	FastMode                    bool
 	SilenceMode                 bool
 	ResolveLoc                  bool
+	ResolveLocPar               int
 	NoCache                     bool
 	Supplement                  bool
 	SupplementIPv4              bool
@@ -382,6 +383,7 @@ Output & Storage Options:
     -f, --db-file      string     Path for the SQLite3 database file.
     -g, --label        string     Label for records (defaults to hostname).
         --resolve-loc             Attempt to resolve and display Cloudflare location.
+        --resolve-loc-par  int    Number of concurrent threads to resolve locations in parallel. Default: 10.
         --local-asn               Retrieve and store local ASN/city info.
 
 Alias Options:
@@ -410,6 +412,7 @@ Alias Options:
         --sqlite-file             Alias for --db-file.
         --record-label            Alias for --label.
         --resolve-location        Alias for --resolve-loc.
+        --resolve-loc-threads     Alias for --resolve-loc-par.
         --quiet                   Alias for --silence.
 
 General Options:

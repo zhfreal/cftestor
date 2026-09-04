@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"cftestor/internal/config"
@@ -133,4 +134,53 @@ func get_loc_from_cf_resp(body io.ReadCloser) (string, error) {
 	} else {
 		return loc, nil
 	}
+}
+
+// ResolveLocationsParallel resolves missing locations for results concurrently up to concurrency limit,
+// capped at the quantity of candidates needing resolution.
+func ResolveLocationsParallel(results []config.VerifyResults, concurrency int) {
+	ResolveLocationsParallelWithResolver(results, concurrency, GetGeoInfoFromCF)
+}
+
+// ResolveLocationsParallelWithResolver resolves missing locations using the provided resolver function.
+func ResolveLocationsParallelWithResolver(results []config.VerifyResults, concurrency int, resolver func(ip *string) string) {
+	if len(results) == 0 {
+		return
+	}
+	if resolver == nil {
+		resolver = GetGeoInfoFromCF
+	}
+
+	var toResolve []int
+	for i := range results {
+		if results[i].IP != nil && (results[i].Loc == nil || len(*results[i].Loc) == 0) {
+			toResolve = append(toResolve, i)
+		}
+	}
+	if len(toResolve) == 0 {
+		return
+	}
+
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	// Cap threads to the quantity of candidates needing resolution
+	if concurrency > len(toResolve) {
+		concurrency = len(toResolve)
+	}
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, concurrency)
+
+	for _, idx := range toResolve {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			loc := resolver(results[i].IP)
+			results[i].Loc = &loc
+		}(idx)
+	}
+	wg.Wait()
 }

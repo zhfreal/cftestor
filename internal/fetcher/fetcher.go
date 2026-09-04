@@ -80,7 +80,7 @@ func (list IPNetList) Contains(ip net.IP) bool {
 }
 
 func fetchRawBGPPrefixes() ([]string, error) {
-	logger.Log.Infoln("Fetching BGP prefixes from RIPEstat...")
+	logger.Log.Debugln("Fetching BGP prefixes from RIPEstat...")
 	resp, err := http.Get("https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS13335")
 	if err != nil {
 		return nil, err
@@ -125,12 +125,12 @@ func fetchBGPPrefixes(ipVersion int) ([]string, error) {
 			prefixes = append(prefixes, p)
 		}
 	}
-	logger.Log.Infof("Found %d BGP IPv%d prefixes.", len(prefixes), ipVersion)
+	logger.Log.Debugf("Found %d BGP IPv%d prefixes.", len(prefixes), ipVersion)
 	return prefixes, nil
 }
 
 func fetchTrancoDomains(limit int) ([]string, error) {
-	logger.Log.Infoln("Fetching top domains from Tranco...")
+	logger.Log.Debugln("Fetching top domains from Tranco...")
 	resp, err := http.Get("https://tranco-list.eu/top-1m.csv.zip")
 	if err != nil {
 		return nil, err
@@ -291,7 +291,7 @@ func FetchCloudflareDomains(dnsServerStr string, trancoLimit int) ([]string, err
 
 	netType, serverAddr := parseDNSServer(dnsServerStr)
 
-	logger.Log.Infoln("Checking which top domains are served by Cloudflare CDN...")
+	logger.Log.Debugln("Checking which top domains are served by Cloudflare CDN...")
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, DNSConcurrencyLimit)
@@ -349,7 +349,7 @@ func FetchCloudflareDomains(dnsServerStr string, trancoLimit int) ([]string, err
 		results = append(results, d)
 	}
 
-	logger.Log.Infof("Found %d verified Cloudflare CDN served domains.", len(results))
+	logger.Log.Debugf("Found %d verified Cloudflare CDN served domains.", len(results))
 	return results, nil
 }
 
@@ -366,7 +366,7 @@ func FetchDynamicIPv4(dnsServerStr string, trancoLimit int) ([]string, error) {
 
 	netType, serverAddr := parseDNSServer(dnsServerStr)
 
-	logger.Log.Infoln("Resolving domains to map Cloudflare IPv4 allocations...")
+	logger.Log.Debugln("Resolving domains to map Cloudflare IPv4 allocations...")
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, DNSConcurrencyLimit)
@@ -439,7 +439,7 @@ func FetchDynamicIPv6(dnsServerStr string, trancoLimit int) ([]string, error) {
 
 	netType, serverAddr := parseDNSServer(dnsServerStr)
 
-	logger.Log.Infoln("Resolving domains to map Cloudflare IPv6 allocations...")
+	logger.Log.Debugln("Resolving domains to map Cloudflare IPv6 allocations...")
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, DNSConcurrencyLimit)

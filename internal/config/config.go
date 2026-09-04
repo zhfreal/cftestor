@@ -36,6 +36,8 @@ type CliOptions struct {
 	SupplementIPv6Changed bool
 	MarkChanged           bool
 	XMarkChanged          bool
+	ResolveLocChanged     bool
+	ResolveLocParChanged  bool
 }
 
 func DefaultConfig() AppConfig {
@@ -70,6 +72,7 @@ func DefaultConfig() AppConfig {
 		PortStrSlice:                []string{},
 		DNSServer:                   "1.1.1.1:53",
 		TrancoLimit:                 1000,
+		ResolveLocPar:               10,
 	}
 }
 
@@ -102,6 +105,8 @@ func ParseCLI(args []string) (CliOptions, error) {
 	opts.XMarkChanged = FlagChanged(fs, "xmark")
 	opts.SupplementIPv4Changed = FlagChanged(fs, "supplement-ipv4")
 	opts.SupplementIPv6Changed = FlagChanged(fs, "supplement-ipv6")
+	opts.ResolveLocChanged = FlagChanged(fs, "resolve-loc", "resolve-location")
+	opts.ResolveLocParChanged = FlagChanged(fs, "resolve-loc-par", "resolve-loc-threads")
 	if opts.IPv4Changed && !opts.IPv6Changed {
 		opts.Config.IPv6Mode = false
 	} else if opts.IPv6Changed && !opts.IPv4Changed {
@@ -203,6 +208,8 @@ func RegisterCLIFlags(fs *flag.FlagSet, opts *CliOptions) {
 	fs.StringVar(&cfg.SuffixLabel, "record-label", cfg.SuffixLabel, "Alias for --label.")
 	fs.BoolVar(&cfg.ResolveLoc, "resolve-loc", cfg.ResolveLoc, "Attempt to resolve and display Cloudflare location.")
 	fs.BoolVar(&cfg.ResolveLoc, "resolve-location", cfg.ResolveLoc, "Alias for --resolve-loc.")
+	fs.IntVar(&cfg.ResolveLocPar, "resolve-loc-par", cfg.ResolveLocPar, "Number of concurrent threads to resolve locations in parallel.")
+	fs.IntVar(&cfg.ResolveLocPar, "resolve-loc-threads", cfg.ResolveLocPar, "Alias for --resolve-loc-par.")
 	fs.BoolVarP(&cfg.NoCache, "no-cache", "C", cfg.NoCache, "Bypass CDN/proxy caching for custom URLs.")
 
 	fs.BoolVarP(&cfg.SilenceMode, "silence", "S", cfg.SilenceMode, "Enable silence mode with minimal output.")
@@ -487,6 +494,13 @@ func prepareRuntime(opts *CliOptions) error {
 	if err := prepareTestModes(opts.DTTimeoutChanged); err != nil {
 		return err
 	}
+	if opts.ResolveLocParChanged && !opts.ResolveLocChanged {
+		Config.ResolveLoc = true
+		opts.Config.ResolveLoc = true
+	}
+	if Config.ResolveLocPar <= 0 {
+		return positiveIntFlagError("--resolve-loc-par", Config.ResolveLocPar)
+	}
 	prepareOutputTargets()
 	return nil
 }
@@ -702,7 +716,7 @@ func SupplementSourceIPs(level int, tMode int8) error {
 		logger.Log.Infoln("Supplementing source IPs from --fast ranges...")
 		if (tMode & TypeIPv4) == TypeIPv4 {
 			tCFIPv4 := CFIPV4
-			logger.Log.Infoln("Supplementing IPv4: dynamically fetching optimized active CIDRs...")
+			logger.Log.Debugln("Supplementing IPv4: dynamically fetching optimized active CIDRs...")
 			cidrs, err := fetcher.FetchDynamicIPv4(Config.DNSServer, Config.TrancoLimit)
 			if err != nil {
 				logger.Log.Warningf("Dynamic fetch failed, falling back to fast ranges: %v", err)
@@ -718,7 +732,7 @@ func SupplementSourceIPs(level int, tMode int8) error {
 		}
 		if (tMode & TypeIPv6) == TypeIPv6 {
 			tCFIPv6 := CFIPV6
-			logger.Log.Infoln("Supplementing IPv6: dynamically fetching optimized active CIDRs...")
+			logger.Log.Debugln("Supplementing IPv6: dynamically fetching optimized active CIDRs...")
 			cidrs, err := fetcher.FetchDynamicIPv6(Config.DNSServer, Config.TrancoLimit)
 			if err != nil {
 				logger.Log.Warningf("Dynamic fetch failed, falling back to fast ranges: %v", err)

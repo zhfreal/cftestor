@@ -625,13 +625,17 @@ func main() {
 	runWorker()
 
 	if len(config.VerifyResultsMap) > 0 {
-		verifyResultsSlice := make([]config.VerifyResults, 0)
+		verifyResultsSlice := make([]config.VerifyResults, 0, len(config.VerifyResultsMap))
 		for _, v := range config.VerifyResultsMap {
-			if config.Config.ResolveLoc && len(*v.Loc) == 0 {
-				t_loc := outbound.GetGeoInfoFromCF(v.IP)
-				v.Loc = &t_loc
-			}
 			verifyResultsSlice = append(verifyResultsSlice, v)
+		}
+		if config.Config.ResolveLoc {
+			outbound.ResolveLocationsParallel(verifyResultsSlice, config.Config.ResolveLocPar)
+			for _, v := range verifyResultsSlice {
+				if v.IP != nil {
+					config.VerifyResultsMap[*v.IP] = v
+				}
+			}
 		}
 		var records []db.DBRecord
 		if config.Config.StoreToFile || config.Config.StoreToDB {
