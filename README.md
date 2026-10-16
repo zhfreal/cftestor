@@ -288,4 +288,4 @@ This project is inspired by and built upon work from:
 
 - [CloudflareScanner](https://github.com/Spedoske/CloudflareScanner)
 - [CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest)
-- [utls](https://github.com/refraction-networking/utls)
+- [utls](https://github.com/zhfreal/utls)

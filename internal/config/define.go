@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"cftestor/internal/utils"
-	utls "github.com/refraction-networking/utls"
+	utls "github.com/metacubex/utls"
 )
 
 const (

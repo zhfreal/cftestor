@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"cftestor/internal/outbound"
-	utls "github.com/refraction-networking/utls"
+	utls "github.com/metacubex/utls"
 	"golang.org/x/net/http2"
 )
 

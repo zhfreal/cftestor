@@ -12,7 +12,7 @@ import (
 	"cftestor/internal/fetcher"
 	"cftestor/internal/logger"
 	"cftestor/internal/utils"
-	utls "github.com/refraction-networking/utls"
+	utls "github.com/metacubex/utls"
 	flag "github.com/spf13/pflag"
 )
 

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"cftestor/internal/config"
-	utls "github.com/refraction-networking/utls"
+	utls "github.com/metacubex/utls"
 )
 
 func TestNewHttpClientWithUTLSPresets(t *testing.T) {
