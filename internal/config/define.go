@@ -280,6 +280,24 @@ type AppConfig struct {
 	HttpRspTimeoutDuration      time.Duration
 	DTTimeoutDuration           time.Duration
 	DLTDurationInTotal          time.Duration
+	IntervalDuration            time.Duration
+	DTEvaluationDelayDuration   time.Duration
+	LoopIntervalDuration        time.Duration
+	TestTimeoutDuration         time.Duration
+	lastInterval                  int
+	lastIntervalDuration          time.Duration
+	lastLoopInterval              int
+	lastLoopIntervalDuration      time.Duration
+	lastTestTimeout               int
+	lastTestTimeoutDuration       time.Duration
+	lastDTTimeout                 int
+	lastDTTimeoutDuration         time.Duration
+	lastDTEvaluationDelay         int
+	lastDTEvaluationDelayDuration time.Duration
+	lastDLTDurMax                 int
+	lastDLTDurationInTotal        time.Duration
+	lastDLTTimeout                int
+	lastHttpRspTimeoutDuration    time.Duration
 	PortStrSlice                []string
 	FastMode                    bool
 	SilenceMode                 bool
@@ -335,7 +353,7 @@ Network Options:
 
 Delay Test (DT) Options:
     -m, --dt-thread    int        Number of concurrent DT workers. Default: 20.
-    -t, --dt-timeout   int        Timeout for a single DT attempt in ms. Default: 2000 (TLS/SSL) or 5000 (HTTPS).
+    -t, --dt-timeout   duration   Timeout for a single DT attempt (e.g. 50ms, 2s; default: 2000ms TLS/SSL, 5000ms HTTPS).
     -c, --dt-count     int        Number of DT attempts per candidate. Default: 4.
         --dt-via       string     DT protocol: "https", "tls", or "ssl". Default: https.
         --dt-via-https            Deprecated alias for --dt-via https.
@@ -343,18 +361,18 @@ Delay Test (DT) Options:
         --hostname     string     SNI hostname for TLS/SSL DT. Default: ` + DefaultTestHost + `
         --dt-expect-code int      Expected HTTP status code for DT. Default: 200.
         --ev-dt                   Enable DT evaluation using all attempts. Default: off.
-    -k, --ev-dt-delay  int        Maximum allowed average DT delay in ms. Default: 600.
+    -k, --ev-dt-delay  duration   Maximum allowed average DT delay (e.g. 50ms, 600ms; default: 600ms).
         --ev-dt-dtpr   float      Minimum required DT pass rate (percentage). Default: 100.0.
         --ev-dt-std    float      Maximum allowed DT standard deviation. Default: 30.0 (if enabled).
 
 Download Test (DLT) Options:
     -n, --dlt-thread   int        Number of concurrent DLT workers. Default: 1.
-    -d, --dlt-period   int        Maximum duration for one DLT attempt in seconds. Default: 10.
+    -d, --dlt-period   duration   Maximum duration for one DLT attempt (e.g. 50s, 10s, 10000ms; default: 10s).
     -b, --dlt-count    int        Number of DLT attempts per candidate. Default: 1.
     -u, --dlt-url      string     URL to use for DLT. Default: ` + DefaultDLTUrl + `
-        --dlt-timeout  int        HTTP response timeout for DLT in ms. Default: 5000.
+        --dlt-timeout  duration   HTTP response timeout for DLT (e.g. 50ms, 5s; default: 5000ms).
     -l, --speed        float      Minimum required download speed in KB/s. Default: 6000.
-    -I, --interval     int        Interval between test attempts in ms. Default: 500.
+    -I, --interval     duration   Interval between test attempts (e.g. 50ms, 500ms, 1s; default: 500ms).
 
 Mode Options:
         --dt-only                 Perform Delay Test only.
@@ -362,8 +380,8 @@ Mode Options:
         --dlt-only                Perform Download Test only.
         --loop         int        Retest qualified candidates for N confirmation cycles; refill from the original pool
                                   if fewer than --result remain.
-        --loop-interval int       Seconds to wait between loop cycles. Default: 60.
-        --test-timeout int        Total test timeout in minutes. Default: 30.
+        --loop-interval duration  Time to wait between loop cycles (e.g. 50s, 60s, 1m; default: 60s).
+        --test-timeout duration   Total test timeout (e.g. 50mins, 50s, 30m; default: 30m).
         --supplement              Enable multi-tier IP source supplementation when target result count is not met:
                                   user sources (-s/-i) -> fast ranges (--fast) -> full Cloudflare CIDRs.
                                   If default full scan is used, tests full Cloudflare CIDRs only.
@@ -532,9 +550,10 @@ type OverAllStat struct {
 }
 
 type SafeLooper struct {
-	mu sync.Mutex
+	mu       sync.Mutex
 	t, c     int
 	interval int
+	duration time.Duration
 }
 
 func (s *SafeLooper) Valid() bool {
@@ -603,12 +622,32 @@ func (s *SafeLooper) SetInterval(interv int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.interval = interv
+	s.duration = time.Duration(interv) * time.Millisecond
+}
+
+func (s *SafeLooper) SetDuration(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.duration = d
+	s.interval = int(d / time.Millisecond)
+	if s.interval == 0 && d > 0 {
+		s.interval = 1
+	}
 }
 
 func (s *SafeLooper) GetInterval() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.interval
+}
+
+func (s *SafeLooper) GetDuration() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.duration > 0 {
+		return s.duration
+	}
+	return time.Duration(s.interval) * time.Millisecond
 }
 
 func (s *SafeLooper) GetRound() int {
@@ -618,15 +657,49 @@ func (s *SafeLooper) GetRound() int {
 }
 
 func (s *SafeLooper) Sleep() {
+	s.SleepWithCheck(nil)
+}
+
+func (s *SafeLooper) SleepWithCheck(shouldStop func() bool) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	time.Sleep(time.Duration(s.interval) * time.Millisecond)
+	dur := s.duration
+	if dur <= 0 && s.interval > 0 {
+		dur = time.Duration(s.interval) * time.Millisecond
+	}
+	s.mu.Unlock()
+	if dur <= 0 {
+		return
+	}
+	if shouldStop == nil {
+		time.Sleep(dur)
+		return
+	}
+	deadline := time.Now().Add(dur)
+	for time.Now().Before(deadline) {
+		if shouldStop() {
+			return
+		}
+		chunk := time.Until(deadline)
+		if chunk > 100*time.Millisecond {
+			chunk = 100 * time.Millisecond
+		}
+		time.Sleep(chunk)
+	}
 }
 
 func (s *SafeLooper) SleepInterval(interv int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	time.Sleep(time.Duration(interv) * time.Millisecond)
+	if interv > 0 {
+		time.Sleep(time.Duration(interv) * time.Millisecond)
+	}
+}
+
+func (s *SafeLooper) SleepDuration(d time.Duration) {
+	if d > 0 {
+		time.Sleep(d)
+	}
 }
 
 func NewSafeLooper(t int) *SafeLooper {
@@ -638,12 +711,19 @@ func NewSafeLooper(t int) *SafeLooper {
 		t:        t,
 		c:        c,
 		interval: 1000,
+		duration: 1000 * time.Millisecond,
 	}
 }
 
 func NewSafeLooperWithInterval(t, interv int) *SafeLooper {
 	s := NewSafeLooper(t)
 	s.SetInterval(interv)
+	return s
+}
+
+func NewSafeLooperWithDuration(t int, d time.Duration) *SafeLooper {
+	s := NewSafeLooper(t)
+	s.SetDuration(d)
 	return s
 }
 

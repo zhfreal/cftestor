@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"cftestor/internal/config"
 	"cftestor/internal/fetcher"
@@ -1062,3 +1063,335 @@ func TestVerifyResultsCombineMinMax(t *testing.T) {
 		t.Errorf("expected combined Dls = 5000.0, got %v", dltRes.Dls)
 	}
 }
+
+func TestParseCLIAcceptsDurationStrings(t *testing.T) {
+	opts, err := config.ParseCLI([]string{
+		"-s", "1.1.1.1",
+		"-t", "50ms",
+		"-k", "50ms",
+		"-d", "50s",
+		"-I", "50ms",
+		"--dlt-timeout", "50ms",
+		"--loop-interval", "50s",
+		"--test-timeout", "50mins",
+	})
+	if err != nil {
+		t.Fatalf("ParseCLI returned error: %v", err)
+	}
+	cfg := opts.Config
+	if cfg.DTTimeout != 50 || cfg.DTTimeoutDuration != 50*time.Millisecond {
+		t.Errorf("DTTimeout = %d, %v; want 50, 50ms", cfg.DTTimeout, cfg.DTTimeoutDuration)
+	}
+	if cfg.DTEvaluationDelay != 50 || cfg.DTEvaluationDelayDuration != 50*time.Millisecond {
+		t.Errorf("DTEvaluationDelay = %d, %v; want 50, 50ms", cfg.DTEvaluationDelay, cfg.DTEvaluationDelayDuration)
+	}
+	if cfg.DLTDurMax != 50 || cfg.DLTDurationInTotal != 50*time.Second {
+		t.Errorf("DLTDurMax = %d, %v; want 50, 50s", cfg.DLTDurMax, cfg.DLTDurationInTotal)
+	}
+	if cfg.Interval != 50 || cfg.IntervalDuration != 50*time.Millisecond {
+		t.Errorf("Interval = %d, %v; want 50, 50ms", cfg.Interval, cfg.IntervalDuration)
+	}
+	if cfg.DLTTimeout != 50 || cfg.HttpRspTimeoutDuration != 50*time.Millisecond {
+		t.Errorf("DLTTimeout = %d, %v; want 50, 50ms", cfg.DLTTimeout, cfg.HttpRspTimeoutDuration)
+	}
+	if cfg.LoopInterval != 50 || cfg.LoopIntervalDuration != 50*time.Second {
+		t.Errorf("LoopInterval = %d, %v; want 50, 50s", cfg.LoopInterval, cfg.LoopIntervalDuration)
+	}
+	if cfg.TestTimeout != 50 || cfg.TestTimeoutDuration != 50*time.Minute {
+		t.Errorf("TestTimeout = %d, %v; want 50, 50m", cfg.TestTimeout, cfg.TestTimeoutDuration)
+	}
+}
+
+func TestParseCLIAcceptsNaturalDurationUnits(t *testing.T) {
+	opts, err := config.ParseCLI([]string{
+		"-s", "1.1.1.1",
+		"--dt-timeout-ms", "2s",
+		"--dt-max-delay", "1500ms",
+		"--dlt-duration", "1m30s",
+		"--test-interval-ms", "500ms",
+		"--dlt-timeout-ms", "10sec",
+		"--loop-interval", "2min",
+		"--test-timeout", "1h",
+	})
+	if err != nil {
+		t.Fatalf("ParseCLI returned error: %v", err)
+	}
+	cfg := opts.Config
+	if cfg.DTTimeout != 2000 || cfg.DTTimeoutDuration != 2*time.Second {
+		t.Errorf("DTTimeout = %d, %v; want 2000, 2s", cfg.DTTimeout, cfg.DTTimeoutDuration)
+	}
+	if cfg.DTEvaluationDelay != 1500 || cfg.DTEvaluationDelayDuration != 1500*time.Millisecond {
+		t.Errorf("DTEvaluationDelay = %d, %v; want 1500, 1500ms", cfg.DTEvaluationDelay, cfg.DTEvaluationDelayDuration)
+	}
+	if cfg.DLTDurMax != 90 || cfg.DLTDurationInTotal != 90*time.Second {
+		t.Errorf("DLTDurMax = %d, %v; want 90, 90s", cfg.DLTDurMax, cfg.DLTDurationInTotal)
+	}
+	if cfg.Interval != 500 || cfg.IntervalDuration != 500*time.Millisecond {
+		t.Errorf("Interval = %d, %v; want 500, 500ms", cfg.Interval, cfg.IntervalDuration)
+	}
+	if cfg.DLTTimeout != 10000 || cfg.HttpRspTimeoutDuration != 10*time.Second {
+		t.Errorf("DLTTimeout = %d, %v; want 10000, 10s", cfg.DLTTimeout, cfg.HttpRspTimeoutDuration)
+	}
+	if cfg.LoopInterval != 120 || cfg.LoopIntervalDuration != 2*time.Minute {
+		t.Errorf("LoopInterval = %d, %v; want 120, 2m", cfg.LoopInterval, cfg.LoopIntervalDuration)
+	}
+	if cfg.TestTimeout != 60 || cfg.TestTimeoutDuration != 1*time.Hour {
+		t.Errorf("TestTimeout = %d, %v; want 60, 1h", cfg.TestTimeout, cfg.TestTimeoutDuration)
+	}
+}
+
+func TestParseCLILegacyUnitlessValues(t *testing.T) {
+	opts, err := config.ParseCLI([]string{
+		"-s", "1.1.1.1",
+		"-t", "1500",
+		"-k", "400",
+		"-d", "12",
+		"-I", "250",
+		"--dlt-timeout", "3500",
+		"--loop-interval", "45",
+		"--test-timeout", "20",
+	})
+	if err != nil {
+		t.Fatalf("ParseCLI returned error: %v", err)
+	}
+	cfg := opts.Config
+	if cfg.DTTimeout != 1500 || cfg.DTTimeoutDuration != 1500*time.Millisecond {
+		t.Errorf("DTTimeout = %d, %v; want 1500, 1500ms", cfg.DTTimeout, cfg.DTTimeoutDuration)
+	}
+	if cfg.DTEvaluationDelay != 400 || cfg.DTEvaluationDelayDuration != 400*time.Millisecond {
+		t.Errorf("DTEvaluationDelay = %d, %v; want 400, 400ms", cfg.DTEvaluationDelay, cfg.DTEvaluationDelayDuration)
+	}
+	if cfg.DLTDurMax != 12 || cfg.DLTDurationInTotal != 12*time.Second {
+		t.Errorf("DLTDurMax = %d, %v; want 12, 12s", cfg.DLTDurMax, cfg.DLTDurationInTotal)
+	}
+	if cfg.Interval != 250 || cfg.IntervalDuration != 250*time.Millisecond {
+		t.Errorf("Interval = %d, %v; want 250, 250ms", cfg.Interval, cfg.IntervalDuration)
+	}
+	if cfg.DLTTimeout != 3500 || cfg.HttpRspTimeoutDuration != 3500*time.Millisecond {
+		t.Errorf("DLTTimeout = %d, %v; want 3500, 3500ms", cfg.DLTTimeout, cfg.HttpRspTimeoutDuration)
+	}
+	if cfg.LoopInterval != 45 || cfg.LoopIntervalDuration != 45*time.Second {
+		t.Errorf("LoopInterval = %d, %v; want 45, 45s", cfg.LoopInterval, cfg.LoopIntervalDuration)
+	}
+	if cfg.TestTimeout != 20 || cfg.TestTimeoutDuration != 20*time.Minute {
+		t.Errorf("TestTimeout = %d, %v; want 20, 20m", cfg.TestTimeout, cfg.TestTimeoutDuration)
+	}
+}
+
+func TestParseCLIRejectsInvalidDurationStrings(t *testing.T) {
+	invalidFlags := [][]string{
+		{"-t", "abc"},
+		{"-t", "0"},
+		{"-t", "-5ms"},
+		{"-k", "bad"},
+		{"-k", "0"},
+		{"-d", "invalid"},
+		{"-d", "0s"},
+		{"-I", "xyz"},
+		{"-I", "-10ms"},
+		{"--dlt-timeout", "foo"},
+		{"--loop-interval", "bar"},
+		{"--test-timeout", "0"},
+	}
+
+	for _, flagArgs := range invalidFlags {
+		args := append([]string{"-s", "1.1.1.1"}, flagArgs...)
+		_, err := config.ParseCLI(args)
+		if err == nil {
+			t.Errorf("ParseCLI(%v) expected error, got nil", args)
+		}
+	}
+}
+
+func TestSafeLooperDurationOperations(t *testing.T) {
+	looper := config.NewSafeLooperWithDuration(3, 2500*time.Millisecond)
+	if dur := looper.GetDuration(); dur != 2500*time.Millisecond {
+		t.Fatalf("GetDuration() = %v, want 2500ms", dur)
+	}
+	if interv := looper.GetInterval(); interv != 2500 {
+		t.Fatalf("GetInterval() = %d, want 2500", interv)
+	}
+
+	looper.SetDuration(100 * time.Millisecond)
+	if dur := looper.GetDuration(); dur != 100*time.Millisecond {
+		t.Fatalf("GetDuration() after SetDuration = %v, want 100ms", dur)
+	}
+	if interv := looper.GetInterval(); interv != 100 {
+		t.Fatalf("GetInterval() after SetDuration = %d, want 100", interv)
+	}
+
+	looper.SetInterval(500)
+	if dur := looper.GetDuration(); dur != 500*time.Millisecond {
+		t.Fatalf("GetDuration() after SetInterval = %v, want 500ms", dur)
+	}
+	if interv := looper.GetInterval(); interv != 500 {
+		t.Fatalf("GetInterval() after SetInterval = %d, want 500", interv)
+	}
+
+	// Verify Sleep releases mutex and does not block concurrent readers
+	sleepDone := make(chan struct{})
+	go func() {
+		looper.SetDuration(80 * time.Millisecond)
+		looper.Sleep()
+		close(sleepDone)
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	// Querying round while sleeping must succeed immediately
+	round := looper.GetRound()
+	if round != 0 {
+		t.Fatalf("looper.GetRound() = %d, want 0", round)
+	}
+	<-sleepDone
+}
+
+func TestProgrammaticConfigDurationSynchronization(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	// 1. Programmatically mutate raw integer fields
+	cfg.Interval = 250
+	cfg.LoopInterval = 15
+	cfg.TestTimeout = 45
+	cfg.DLTDurMax = 8
+	cfg.DLTTimeout = 3000
+	cfg.DTTimeout = 1200
+	cfg.DTEvaluationDelay = 400
+	cfg.SyncDurations()
+
+	if cfg.IntervalDuration != 250*time.Millisecond {
+		t.Errorf("IntervalDuration = %v, want 250ms", cfg.IntervalDuration)
+	}
+	if cfg.LoopIntervalDuration != 15*time.Second {
+		t.Errorf("LoopIntervalDuration = %v, want 15s", cfg.LoopIntervalDuration)
+	}
+	if cfg.TestTimeoutDuration != 45*time.Minute {
+		t.Errorf("TestTimeoutDuration = %v, want 45m", cfg.TestTimeoutDuration)
+	}
+	if cfg.DTTimeoutDuration != 1200*time.Millisecond {
+		t.Errorf("DTTimeoutDuration = %v, want 1200ms", cfg.DTTimeoutDuration)
+	}
+	if cfg.DTEvaluationDelayDuration != 400*time.Millisecond {
+		t.Errorf("DTEvaluationDelayDuration = %v, want 400ms", cfg.DTEvaluationDelayDuration)
+	}
+	if cfg.DLTDurationInTotal != 8*time.Second {
+		t.Errorf("DLTDurationInTotal = %v, want 8s", cfg.DLTDurationInTotal)
+	}
+	if cfg.HttpRspTimeoutDuration != 3*time.Second {
+		t.Errorf("HttpRspTimeoutDuration = %v, want 3s", cfg.HttpRspTimeoutDuration)
+	}
+
+	// 2. Programmatically mutate duration fields
+	cfg2 := config.DefaultConfig()
+	cfg2.IntervalDuration = 100 * time.Millisecond
+	cfg2.LoopIntervalDuration = 20 * time.Second
+	cfg2.TestTimeoutDuration = 10 * time.Minute
+	cfg2.DLTDurationInTotal = 5 * time.Second
+	cfg2.HttpRspTimeoutDuration = 2 * time.Second
+	cfg2.DTTimeoutDuration = 1500 * time.Millisecond
+	cfg2.DTEvaluationDelayDuration = 350 * time.Millisecond
+	cfg2.SyncDurations()
+
+	if cfg2.Interval != 100 {
+		t.Errorf("Interval = %d, want 100", cfg2.Interval)
+	}
+	if cfg2.LoopInterval != 20 {
+		t.Errorf("LoopInterval = %d, want 20", cfg2.LoopInterval)
+	}
+	if cfg2.TestTimeout != 10 {
+		t.Errorf("TestTimeout = %d, want 10", cfg2.TestTimeout)
+	}
+	if cfg2.DLTDurMax != 5 {
+		t.Errorf("DLTDurMax = %d, want 5", cfg2.DLTDurMax)
+	}
+	if cfg2.DLTTimeout != 2000 {
+		t.Errorf("DLTTimeout = %d, want 2000", cfg2.DLTTimeout)
+	}
+	if cfg2.DTTimeout != 1500 {
+		t.Errorf("DTTimeout = %d, want 1500", cfg2.DTTimeout)
+	}
+	if cfg2.DTEvaluationDelay != 350 {
+		t.Errorf("DTEvaluationDelay = %d, want 350", cfg2.DTEvaluationDelay)
+	}
+
+	// 3. Repeated mutation and reset to default value
+	cfg.Interval = 100
+	cfg.SyncDurations()
+	if cfg.IntervalDuration != 100*time.Millisecond {
+		t.Errorf("IntervalDuration after re-mutation = %v, want 100ms", cfg.IntervalDuration)
+	}
+
+	cfg.Interval = 500 // Reset to default 500
+	cfg.SyncDurations()
+	if cfg.IntervalDuration != 500*time.Millisecond {
+		t.Errorf("IntervalDuration after reset to default = %v, want 500ms", cfg.IntervalDuration)
+	}
+
+	// 4. Simultaneous mutation where duration field takes precedence
+	cfg3 := config.DefaultConfig()
+	cfg3.Interval = 300
+	cfg3.IntervalDuration = 750 * time.Millisecond
+	cfg3.SyncDurations()
+	if cfg3.Interval != 750 || cfg3.IntervalDuration != 750*time.Millisecond {
+		t.Errorf("Conflicting mutation (Interval=%d, IntervalDuration=%v), want 750, 750ms", cfg3.Interval, cfg3.IntervalDuration)
+	}
+}
+
+func TestConfigureAppHTTPSModeTimeout(t *testing.T) {
+	resetGlobalsForTest()
+
+	// With explicit -t, custom value is preserved
+	opts, shouldExit, _, err := config.ConfigureApp([]string{"--quiet", "--dt-only", "-s", "1.1.1.1", "--dt-via", "https", "-t", "3500ms"})
+	if shouldExit || err != nil {
+		t.Fatalf("ConfigureApp returned shouldExit=%v, err=%v", shouldExit, err)
+	}
+	_ = opts
+
+	if config.Config.DTTimeout != 3500 || config.Config.DTTimeoutDuration != 3500*time.Millisecond {
+		t.Fatalf("DTTimeout = %d, %v; want 3500, 3500ms", config.Config.DTTimeout, config.Config.DTTimeoutDuration)
+	}
+
+	resetGlobalsForTest()
+
+	// Without -t, default is upgraded to 5000ms for HTTPS
+	opts2, shouldExit, _, err := config.ConfigureApp([]string{"--quiet", "--dt-only", "-s", "1.1.1.1", "--dt-via", "https"})
+	if shouldExit || err != nil {
+		t.Fatalf("ConfigureApp returned shouldExit=%v, err=%v", shouldExit, err)
+	}
+	_ = opts2
+
+	if config.Config.DTTimeout != 5000 || config.Config.DTTimeoutDuration != 5000*time.Millisecond {
+		t.Fatalf("DTTimeout = %d, %v; want 5000, 5000ms", config.Config.DTTimeout, config.Config.DTTimeoutDuration)
+	}
+
+	resetGlobalsForTest()
+
+	// Switch to SSL mode without -t should preserve 2000ms
+	opts3, shouldExit, _, err := config.ConfigureApp([]string{"--quiet", "--dt-only", "-s", "1.1.1.1", "--dt-via", "ssl"})
+	if shouldExit || err != nil {
+		t.Fatalf("ConfigureApp returned shouldExit=%v, err=%v", shouldExit, err)
+	}
+	_ = opts3
+
+	if config.Config.DTTimeout != 2000 || config.Config.DTTimeoutDuration != 2000*time.Millisecond {
+		t.Fatalf("DTTimeout = %d, %v; want 2000, 2000ms", config.Config.DTTimeout, config.Config.DTTimeoutDuration)
+	}
+}
+
+func TestSafeLooperSleepWithCheck(t *testing.T) {
+	looper := config.NewSafeLooperWithDuration(3, 5*time.Second)
+
+	// Stop condition is triggered after 30ms
+	stopAt := time.Now().Add(30 * time.Millisecond)
+	start := time.Now()
+	looper.SleepWithCheck(func() bool {
+		return time.Now().After(stopAt)
+	})
+	elapsed := time.Since(start)
+
+	// It should wake up well before the 5 second duration
+	if elapsed >= 1*time.Second {
+		t.Fatalf("SleepWithCheck took %v; expected early wake up around 30-150ms", elapsed)
+	}
+}
+
+

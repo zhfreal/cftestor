@@ -60,7 +60,13 @@ func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 		}
 
 		if i < round-1 {
-			time.Sleep(time.Duration(config.Config.Interval) * time.Millisecond)
+			interval := config.Config.IntervalDuration
+			if interval <= 0 && config.Config.Interval > 0 {
+				interval = time.Duration(config.Config.Interval) * time.Millisecond
+			}
+			if interval > 0 {
+				time.Sleep(interval)
+			}
 		}
 	}
 
@@ -92,9 +98,14 @@ func performDownloadRound(host, targetUrl string, httpRspTimeoutDur time.Duratio
 		tReq.Header.Set("Pragma", "no-cache")
 	}
 
+	dltDur := config.Config.DLTDurationInTotal
+	if dltDur <= 0 && config.Config.DLTDurMax > 0 {
+		dltDur = time.Duration(config.Config.DLTDurMax) * time.Second
+	}
+
 	t_timeout := httpRspTimeoutDur
-	if !doDTOnly && config.Config.DLTDurationInTotal > httpRspTimeoutDur {
-		t_timeout = config.Config.DLTDurationInTotal
+	if !doDTOnly {
+		t_timeout = httpRspTimeoutDur + dltDur
 	}
 
 	client, tr := NewHttpClient(config.Config.TLSClientID, host, t_timeout)
@@ -131,7 +142,7 @@ func performDownloadRound(host, targetUrl string, httpRspTimeoutDur time.Duratio
 	currentResult.DTDuration, currentResult.HttpReqRspDur = tr.Stat()
 
 	readAt := time.Now()
-	timeEndExpected := readAt.Add(config.Config.DLTDurationInTotal)
+	timeEndExpected := readAt.Add(dltDur)
 	contentLength := response.ContentLength
 	if contentLength <= 0 {
 		contentLength = config.FileDefaultSize
@@ -226,7 +237,7 @@ LOOP:
 }
 
 func sslDTHandlerNew(host *string, max_failure int) []config.SingleResult {
-	var allResult = make([]config.SingleResult, 0)
+	var allResult = make([]config.SingleResult, 0, config.Config.DTCount)
 	t_failure_counter := 0
 	for i := 0; i < config.Config.DTCount; i++ {
 		var currentResult = config.SingleResult{
@@ -239,7 +250,11 @@ func sslDTHandlerNew(host *string, max_failure int) []config.SingleResult {
 			DLTDataSize:   0,
 		}
 		var timeStart = time.Now()
-		ok := PerformUtlsDial(*host, config.Config.HostName, config.Config.DTTimeoutDuration, config.Config.TLSClientID)
+		dtTimeout := config.Config.DTTimeoutDuration
+		if dtTimeout <= 0 && config.Config.DTTimeout > 0 {
+			dtTimeout = time.Duration(config.Config.DTTimeout) * time.Millisecond
+		}
+		ok := PerformUtlsDial(*host, config.Config.HostName, dtTimeout, config.Config.TLSClientID)
 		tDur := time.Since(timeStart)
 		if !ok {
 			allResult = append(allResult, currentResult)
@@ -252,7 +267,15 @@ func sslDTHandlerNew(host *string, max_failure int) []config.SingleResult {
 		if (!config.Config.EnableDTEvaluation && currentResult.DTPassed) || t_failure_counter > max_failure {
 			break
 		}
-		time.Sleep(time.Duration(config.Config.Interval) * time.Millisecond)
+		if i < config.Config.DTCount-1 {
+			interval := config.Config.IntervalDuration
+			if interval <= 0 && config.Config.Interval > 0 {
+				interval = time.Duration(config.Config.Interval) * time.Millisecond
+			}
+			if interval > 0 {
+				time.Sleep(interval)
+			}
+		}
 	}
 	if !config.Config.EnableDTEvaluation && len(allResult) > 0 {
 		allResult = allResult[len(allResult)-1:]

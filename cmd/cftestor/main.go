@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -47,8 +48,12 @@ func print_version() {
 }
 
 func validDTResult(tVerifyResult *config.VerifyResults) bool {
+	maxDelay := float64(config.Config.DTEvaluationDelay)
+	if config.Config.DTEvaluationDelayDuration > 0 {
+		maxDelay = float64(config.Config.DTEvaluationDelayDuration) / float64(time.Millisecond)
+	}
 	if tVerifyResult.Da > 0.0 &&
-		tVerifyResult.Da <= float64(config.Config.DTEvaluationDelay) &&
+		tVerifyResult.Da <= maxDelay &&
 		tVerifyResult.Dtpr*100.0 >= float64(config.Config.DTEvaluationDTPR) &&
 		(!config.Config.EnableStdEv || (config.Config.EnableStdEv && tVerifyResult.DaStd <= config.Config.DTStdExp)) {
 		return true
@@ -130,7 +135,7 @@ func runDLTSingleRound(ips []*string, handler func(config.SingleVerifyResult)) {
 
 func calcResult(out config.SingleVerifyResult, statDownload bool) config.VerifyResults {
 	var tVerifyResult = config.VerifyResults{}
-	tVerifyResult.DtDList = make([]float64, 0)
+	tVerifyResult.DtDList = make([]float64, 0, len(out.ResultSlice))
 	tVerifyResult.TestTime = out.TestTime
 	tIP := out.Host
 	tVerifyResult.IP = &tIP
@@ -193,24 +198,26 @@ func printDetails(logLvl logger.LogLevel, v []config.VerifyResults, showSpeed bo
 	if len(indent) == 0 {
 		indent = " "
 	}
+	var sb strings.Builder
 	for i := 0; i < len(v); i++ {
-		t_ip := ""
+		sb.Reset()
+		sb.WriteString("IP:")
 		if v[i].IP != nil {
-			t_ip = *v[i].IP
+			sb.WriteString(*v[i].IP)
 		}
 		if v[i].Loc != nil && len(*v[i].Loc) > 0 {
-			t_ip = fmt.Sprintf("%s#%s", t_ip, *v[i].Loc)
+			sb.WriteString("#")
+			sb.WriteString(*v[i].Loc)
 		}
-		msg := fmt.Sprintf("IP:%v%s", t_ip, indent)
+		sb.WriteString(indent)
 		if showSpeed {
-			msg += fmt.Sprintf("Spd:%.2f%s", v[i].Dls, indent)
+			fmt.Fprintf(&sb, "Spd:%.2f%s", v[i].Dls, indent)
 		}
-		msg += fmt.Sprintf("Dly:%.0f", v[i].Da)
-		msg += fmt.Sprintf("%sStb:%.2f", indent, v[i].Dtpr*100)
+		fmt.Fprintf(&sb, "Dly:%.0f%sStb:%.2f", v[i].Da, indent, v[i].Dtpr*100)
 		if config.Config.EnableStdEv {
-			msg += fmt.Sprintf("%sStd:%.2f", indent, v[i].DaStd)
+			fmt.Fprintf(&sb, "%sStd:%.2f", indent, v[i].DaStd)
 		}
-		logger.Log.Logf(logLvl, "%s", msg)
+		logger.Log.Logf(logLvl, "%s", sb.String())
 	}
 }
 
@@ -281,11 +288,20 @@ func runWorker() {
 
 	logger.Log.Infof("%s Starting test with %s source IPs (target: %d results)", elapsed(start_time), utils.FormatHostCount(thisSourceIPs.TotalHosts()), t_result_min)
 
+	testTimeout := config.Config.TestTimeoutDuration
+	if testTimeout <= 0 && config.Config.TestTimeout > 0 {
+		testTimeout = time.Duration(config.Config.TestTimeout) * time.Minute
+	}
+
 RETRY_LOOP:
 	for {
 		tmpResultMap := make(map[string]config.VerifyResults)
 		var tmpTestSlice map[string]bool
-		looper := config.NewSafeLooperWithInterval(config.Config.Loop, config.Config.LoopInterval*1000)
+		loopInterval := config.Config.LoopIntervalDuration
+		if loopInterval <= 0 && config.Config.LoopInterval > 0 {
+			loopInterval = time.Duration(config.Config.LoopInterval) * time.Second
+		}
+		looper := config.NewSafeLooperWithDuration(config.Config.Loop, loopInterval)
 		loopCandidateCount := 0
 	LOOP:
 		for {
@@ -299,7 +315,7 @@ RETRY_LOOP:
 				if isInterrupted() {
 					break RETRY_LOOP
 				}
-				if time.Since(start_time) >= time.Duration(config.Config.TestTimeout)*time.Minute {
+				if testTimeout > 0 && time.Since(start_time) >= testTimeout {
 					break SINGLE_ROUND
 				}
 				if !config.Config.DLTOnly {
@@ -498,6 +514,9 @@ RETRY_LOOP:
 				logger.Log.Infof("%s Round complete: %d candidates found (%d needed)", elapsed(start_time), len(tmpTestSlice), t_result_min)
 			}
 
+			if testTimeout > 0 && time.Since(start_time) >= testTimeout {
+				break LOOP
+			}
 			if len(tmpResultMap) == 0 {
 				break LOOP
 			}
@@ -519,12 +538,14 @@ RETRY_LOOP:
 					logger.Log.Errorf("failed to add configured ports for loop retest: %v\n", err)
 					break LOOP
 				}
-				if isInterrupted() {
+				if isInterrupted() || (testTimeout > 0 && time.Since(start_time) >= testTimeout) {
 					break LOOP
 				}
 				thisSourceIPs = newSourceIPs
-				logger.Log.Infof("%s Waiting %ds before next loop cycle...", elapsed(start_time), config.Config.LoopInterval)
-				looper.Sleep()
+				logger.Log.Infof("%s Waiting %v before next loop cycle...", elapsed(start_time), looper.GetDuration())
+				looper.SleepWithCheck(func() bool {
+					return isInterrupted() || (testTimeout > 0 && time.Since(start_time) >= testTimeout)
+				})
 			}
 		}
 
@@ -547,13 +568,13 @@ RETRY_LOOP:
 		thisSourceIPs = config.SrcIPs
 		
 		hasReachedMin := !config.Config.TestAll && len(config.VerifyResultsMap) >= config.Config.ResultMin
-		isTimedOut := time.Since(start_time) >= time.Duration(config.Config.TestTimeout)*time.Minute
+		isTimedOut := testTimeout > 0 && time.Since(start_time) >= testTimeout
 		
 		if hasReachedMin || isTimedOut {
 			if hasReachedMin {
 				logger.Log.Infof("%s Target reached: %d/%d results", elapsed(start_time), len(config.VerifyResultsMap), config.Config.ResultMin)
 			} else {
-				logger.Log.Infof("%s Test timeout reached (%d min), stopping with %d results", elapsed(start_time), config.Config.TestTimeout, len(config.VerifyResultsMap))
+				logger.Log.Infof("%s Test timeout reached (%v), stopping with %d results", elapsed(start_time), testTimeout, len(config.VerifyResultsMap))
 			}
 			break RETRY_LOOP
 		}
