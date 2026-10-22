@@ -16,8 +16,10 @@ import (
 	"cftestor/internal/utils"
 )
 
-// GetGeoInfoFromCF gets loc from https://<cloudflared_url>/cdn-cgi/trace
 func GetGeoInfoFromCF(ipStr *string) (loc string) {
+	if ipStr == nil || len(*ipStr) == 0 {
+		return ""
+	}
 	baseUrl := getCFCDNCgiTraceUrl()
 	t_ip := *ipStr
 	t_port := -1
@@ -53,10 +55,13 @@ func GetGeoInfoFromCF(ipStr *string) (loc string) {
 		return
 	}
 	fullAddress := net.JoinHostPort(t_ip, fmt.Sprint(t_port))
+	tr := &http.Transport{
+		DialContext:       GetDialContextByAddr(fullAddress),
+		DisableKeepAlives: true,
+	}
+	defer tr.CloseIdleConnections()
 	var client = http.Client{
-		Transport: &http.Transport{
-			DialContext: GetDialContextByAddr(fullAddress),
-		},
+		Transport:     tr,
 		CheckRedirect: nil,
 		Jar:           nil,
 		Timeout:       config.Config.HttpRspTimeoutDuration + 5*time.Second,
@@ -64,10 +69,12 @@ func GetGeoInfoFromCF(ipStr *string) (loc string) {
 	response, err := client.Do(tReq)
 	if err != nil || response == nil {
 		logger.Log.Errorf("failed to request Cloudflare trace location: %v\n", err)
-		time.Sleep(time.Duration(config.Config.Interval) * time.Millisecond)
 		return
 	}
 	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return ""
+	}
 	loc, err = get_loc_from_cf_resp(response.Body)
 	if err != nil {
 		logger.Log.Errorf("failed to read Cloudflare trace response body: %v\n", err)
@@ -113,12 +120,12 @@ func get_loc_from_cf_resp(body io.ReadCloser) (string, error) {
 	scanner := bufio.NewScanner(body)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		t_slice := strings.Split(line, "=")
-		if len(t_slice) != 2 {
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
 			continue
 		}
-		if strings.ToLower(t_slice[0]) == "colo" {
-			loc = strings.ToUpper(t_slice[1])
+		if strings.EqualFold(k, "colo") {
+			loc = strings.ToUpper(v)
 			if len(loc) > 3 {
 				loc = loc[:3]
 			}

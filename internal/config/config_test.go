@@ -1023,3 +1023,42 @@ func TestResolveLocParValidation(t *testing.T) {
 		t.Fatal("expected error for --resolve-loc-par 0")
 	}
 }
+
+func TestVerifyResultsCombineMinMax(t *testing.T) {
+	ip := "1.1.1.1"
+	dtRes := config.VerifyResults{
+		IP:      &ip,
+		Dtc:     4,
+		Dtpc:    4,
+		Dtpr:    1.0,
+		Da:      50.0,
+		Dmi:     40.0,
+		Dmx:     60.0,
+		DtDList: []float64{40.0, 50.0, 50.0, 60.0},
+	}
+
+	dltRes := config.VerifyResults{
+		IP:    &ip,
+		Dltc:  1,
+		Dltpc: 1,
+		Dltpr: 1.0,
+		Dls:   5000.0,
+		Dlds:  10000000,
+		Dltd:  2.0,
+	}
+
+	dltRes.Combine(dtRes)
+
+	if dltRes.Dmi != 40.0 {
+		t.Errorf("expected combined Dmi = 40.0, got %v", dltRes.Dmi)
+	}
+	if dltRes.Dmx != 60.0 {
+		t.Errorf("expected combined Dmx = 60.0, got %v", dltRes.Dmx)
+	}
+	if dltRes.Da != 50.0 {
+		t.Errorf("expected combined Da = 50.0, got %v", dltRes.Da)
+	}
+	if dltRes.Dls != 5000.0 {
+		t.Errorf("expected combined Dls = 5000.0, got %v", dltRes.Dls)
+	}
+}

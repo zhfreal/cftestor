@@ -40,11 +40,21 @@ func (a *DBRecord) TableName() string {
 
 func OpenSqlite(dbFilePath string) (*gorm.DB, error) {
 	dial := gormlite.Open(dbFilePath)
-	return gorm.Open(dial, &gorm.Config{
+	gdb, err := gorm.Open(dial, &gorm.Config{
 		NowFunc: func() time.Time {
 			return time.Now()
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+	sqlDB, err := gdb.DB()
+	if err == nil {
+		_, _ = sqlDB.Exec("PRAGMA journal_mode = WAL;")
+		_, _ = sqlDB.Exec("PRAGMA synchronous = NORMAL;")
+		_, _ = sqlDB.Exec("PRAGMA busy_timeout = 5000;")
+	}
+	return gdb, nil
 }
 
 func AddTableCFDT(db *gorm.DB) error {
@@ -52,6 +62,9 @@ func AddTableCFDT(db *gorm.DB) error {
 }
 
 func AddCFDTRecords(db *gorm.DB, records []DBRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
 	err := AddTableCFDT(db)
 	if err != nil {
 		return err

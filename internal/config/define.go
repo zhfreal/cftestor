@@ -464,7 +464,7 @@ func (a *VerifyResults) Combine(b VerifyResults) {
 	if a.IP == nil || b.IP == nil || *a.IP != *b.IP {
 		return
 	}
-	if a.TestTime.Before(b.TestTime) {
+	if a.TestTime.IsZero() || (!b.TestTime.IsZero() && a.TestTime.Before(b.TestTime)) {
 		a.TestTime = b.TestTime
 	}
 	if b.Loc != nil && len(*b.Loc) != 0 && (a.Loc == nil || len(*a.Loc) == 0) {
@@ -476,12 +476,15 @@ func (a *VerifyResults) Combine(b VerifyResults) {
 		a.Dtpr = float64(a.Dtpc) / float64(a.Dtc)
 	}
 	a.DtDList = append(a.DtDList, b.DtDList...)
-	for i := 0; i < len(a.DtDList); i++ {
-		if a.DtDList[i] == 0 {
-			a.DtDList = append(a.DtDList[:i], a.DtDList[i+1:]...)
-			i--
+	n := 0
+	for _, v := range a.DtDList {
+		if v > 0 {
+			a.DtDList[n] = v
+			n++
 		}
 	}
+	a.DtDList = a.DtDList[:n]
+
 	totalDelay := 0.0
 	for _, v := range a.DtDList {
 		totalDelay += v
@@ -491,11 +494,13 @@ func (a *VerifyResults) Combine(b VerifyResults) {
 	}
 	a.DaStd = utils.Std(a.DtDList)
 	a.DaVar = utils.Variance(a.DtDList)
-	if a.Dmi > b.Dmi && b.Dtpc > 0 {
-		a.Dmi = b.Dmi
-	}
-	if a.Dmx < b.Dmx && b.Dtpc > 0 {
-		a.Dmx = b.Dmx
+	if b.Dtpc > 0 {
+		if a.Dmi <= 0.0 || (b.Dmi > 0.0 && b.Dmi < a.Dmi) {
+			a.Dmi = b.Dmi
+		}
+		if a.Dmx <= 0.0 || (b.Dmx > 0.0 && b.Dmx > a.Dmx) {
+			a.Dmx = b.Dmx
+		}
 	}
 	a.Dltc += b.Dltc
 	a.Dltpc += b.Dltpc
@@ -643,22 +648,27 @@ func NewSafeLooperWithInterval(t, interv int) *SafeLooper {
 }
 
 type SourceIPs struct {
-	mu               sync.Mutex
-	srcHosts         []*string
-	srcIPRsRaw       []*utils.IPRange
-	srcIPRsExtracted []net.IP
-	Ports            []int
-	tRnd             *rand.Rand
+	mu                  sync.Mutex
+	srcHosts            []*string
+	srcIPRsRawV4        []*utils.IPRange
+	srcIPRsRawV6        []*utils.IPRange
+	srcIPRsExtractedV4  []net.IP
+	srcIPRsExtractedV6  []net.IP
+	Ports               []int
+	tRnd                *rand.Rand
 }
 
 func (s *SourceIPs) TotalHosts() *big.Int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t_qty := big.NewInt(0)
-	for i := 0; i < len(s.srcIPRsRaw); i++ {
-		t_qty = t_qty.Add(t_qty, s.srcIPRsRaw[i].Length())
+	for i := 0; i < len(s.srcIPRsRawV4); i++ {
+		t_qty = t_qty.Add(t_qty, s.srcIPRsRawV4[i].Length())
 	}
-	t_qty = t_qty.Add(t_qty, big.NewInt(int64(len(s.srcIPRsExtracted))))
+	for i := 0; i < len(s.srcIPRsRawV6); i++ {
+		t_qty = t_qty.Add(t_qty, s.srcIPRsRawV6[i].Length())
+	}
+	t_qty = t_qty.Add(t_qty, big.NewInt(int64(len(s.srcIPRsExtractedV4)+len(s.srcIPRsExtractedV6))))
 	portCount := int64(len(s.Ports))
 	if portCount > 1 {
 		t_qty = t_qty.Mul(t_qty, big.NewInt(portCount))
@@ -675,8 +685,10 @@ func (s *SourceIPs) LenInt() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t_qty := 0
-	t_qty += len(s.srcIPRsRaw)
-	t_qty += len(s.srcIPRsExtracted)
+	t_qty += len(s.srcIPRsRawV4)
+	t_qty += len(s.srcIPRsRawV6)
+	t_qty += len(s.srcIPRsExtractedV4)
+	t_qty += len(s.srcIPRsExtractedV6)
 	t_qty += len(s.srcHosts)
 	return t_qty
 }
@@ -684,12 +696,14 @@ func (s *SourceIPs) LenInt() int {
 func (s *SourceIPs) IsEmpty() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.srcIPRsRaw) == 0 && len(s.srcIPRsExtracted) == 0 && len(s.srcHosts) == 0
+	return len(s.srcIPRsRawV4) == 0 && len(s.srcIPRsRawV6) == 0 &&
+		len(s.srcIPRsExtractedV4) == 0 && len(s.srcIPRsExtractedV6) == 0 &&
+		len(s.srcHosts) == 0
 }
 
 func (s *SourceIPs) add(IPs string, mode int8) error {
 	ips := strings.TrimSpace(IPs)
-	ips = strings.Split(ips, "#")[0]
+	ips, _, _ = strings.Cut(ips, "#")
 	if utils.IsValidIPs(ips) {
 		tV := utils.GetIPsVer(ips)
 		if tV == TypeIPErr {
@@ -703,9 +717,18 @@ func (s *SourceIPs) add(IPs string, mode int8) error {
 			return fmt.Errorf("\"%v\" is invalid", ips)
 		}
 		if ipr.Len.Cmp(MaxHostLenBig) < 1 {
-			s.srcIPRsExtracted = append(s.srcIPRsExtracted, ipr.ExtractAll(MaxHostLen)...)
+			extracted := ipr.ExtractAll(MaxHostLen)
+			if ipr.IsV6() {
+				s.srcIPRsExtractedV6 = append(s.srcIPRsExtractedV6, extracted...)
+			} else {
+				s.srcIPRsExtractedV4 = append(s.srcIPRsExtractedV4, extracted...)
+			}
 		} else {
-			s.srcIPRsRaw = append(s.srcIPRsRaw, ipr)
+			if ipr.IsV6() {
+				s.srcIPRsRawV6 = append(s.srcIPRsRawV6, ipr)
+			} else {
+				s.srcIPRsRawV4 = append(s.srcIPRsRawV4, ipr)
+			}
 		}
 	} else if utils.IsValidHost(ips) {
 		tV := utils.GetHostVer(ips)
@@ -862,79 +885,84 @@ func (s *SourceIPs) retrieveHosts(amount int) (targetHosts []*string) {
 }
 
 func (s *SourceIPs) hasIP4() bool {
-	for _, ip := range s.srcIPRsExtracted {
-		if ip.To4() != nil {
-			return true
-		}
-	}
-	for _, ipr := range s.srcIPRsRaw {
-		if !ipr.IsV6() && ipr.Len.Cmp(big.NewInt(0)) > 0 {
-			return true
-		}
-	}
-	return false
+	return len(s.srcIPRsExtractedV4) > 0 || len(s.srcIPRsRawV4) > 0
 }
 
 func (s *SourceIPs) hasIP6() bool {
-	for _, ip := range s.srcIPRsExtracted {
-		if ip.To4() == nil {
-			return true
-		}
-	}
-	for _, ipr := range s.srcIPRsRaw {
-		if ipr.IsV6() && ipr.Len.Cmp(big.NewInt(0)) > 0 {
-			return true
-		}
-	}
-	return false
+	return len(s.srcIPRsExtractedV6) > 0 || len(s.srcIPRsRawV6) > 0
 }
 
 func (s *SourceIPs) retrieveOneIP(isV6 bool, isRandom bool) net.IP {
-	for i, ip := range s.srcIPRsExtracted {
-		ipIsV6 := ip.To4() == nil
-		if ipIsV6 == isV6 {
-			s.srcIPRsExtracted = append(s.srcIPRsExtracted[:i], s.srcIPRsExtracted[i+1:]...)
+	rnd := s.tRnd
+	if rnd == nil {
+		rnd = MyRand
+	}
+	if isV6 {
+		if n := len(s.srcIPRsExtractedV6); n > 0 {
+			if isRandom {
+				idx := rnd.Intn(n)
+				ip := s.srcIPRsExtractedV6[idx]
+				s.srcIPRsExtractedV6[idx] = s.srcIPRsExtractedV6[n-1]
+				s.srcIPRsExtractedV6 = s.srcIPRsExtractedV6[:n-1]
+				return ip
+			}
+			ip := s.srcIPRsExtractedV6[0]
+			s.srcIPRsExtractedV6 = s.srcIPRsExtractedV6[1:]
 			return ip
 		}
-	}
-
-	var matchingIndices []int
-	for i, ipr := range s.srcIPRsRaw {
-		if ipr.IsV6() == isV6 && ipr.Len.Cmp(big.NewInt(0)) > 0 {
-			matchingIndices = append(matchingIndices, i)
+		if len(s.srcIPRsRawV6) > 0 {
+			idx := 0
+			if isRandom {
+				idx = rnd.Intn(len(s.srcIPRsRawV6))
+			}
+			ipr := s.srcIPRsRawV6[idx]
+			var extracted []net.IP
+			if isRandom {
+				extracted = ipr.GetRandomX(rnd, 1)
+			} else {
+				extracted = ipr.Extract(1)
+			}
+			if ipr.Len.Cmp(big.NewInt(0)) == 0 {
+				s.srcIPRsRawV6 = append(s.srcIPRsRawV6[:idx], s.srcIPRsRawV6[idx+1:]...)
+			}
+			if len(extracted) > 0 {
+				return extracted[0]
+			}
 		}
-	}
-
-	if len(matchingIndices) == 0 {
 		return nil
 	}
 
-	var idx int
-	if isRandom {
-		idx = matchingIndices[MyRand.Intn(len(matchingIndices))]
-	} else {
-		idx = matchingIndices[0]
-	}
-
-	ipr := s.srcIPRsRaw[idx]
-	var extracted []net.IP
-	if isRandom {
-		extracted = ipr.GetRandomX(MyRand, 1)
-	} else {
-		extracted = ipr.Extract(1)
-	}
-
-	if ipr.Len.Cmp(big.NewInt(0)) == 0 {
-		for i, r := range s.srcIPRsRaw {
-			if r == ipr {
-				s.srcIPRsRaw = append(s.srcIPRsRaw[:i], s.srcIPRsRaw[i+1:]...)
-				break
-			}
+	// IPv4
+	if n := len(s.srcIPRsExtractedV4); n > 0 {
+		if isRandom {
+			idx := rnd.Intn(n)
+			ip := s.srcIPRsExtractedV4[idx]
+			s.srcIPRsExtractedV4[idx] = s.srcIPRsExtractedV4[n-1]
+			s.srcIPRsExtractedV4 = s.srcIPRsExtractedV4[:n-1]
+			return ip
 		}
+		ip := s.srcIPRsExtractedV4[0]
+		s.srcIPRsExtractedV4 = s.srcIPRsExtractedV4[1:]
+		return ip
 	}
-
-	if len(extracted) > 0 {
-		return extracted[0]
+	if len(s.srcIPRsRawV4) > 0 {
+		idx := 0
+		if isRandom {
+			idx = rnd.Intn(len(s.srcIPRsRawV4))
+		}
+		ipr := s.srcIPRsRawV4[idx]
+		var extracted []net.IP
+		if isRandom {
+			extracted = ipr.GetRandomX(rnd, 1)
+		} else {
+			extracted = ipr.Extract(1)
+		}
+		if ipr.Len.Cmp(big.NewInt(0)) == 0 {
+			s.srcIPRsRawV4 = append(s.srcIPRsRawV4[:idx], s.srcIPRsRawV4[idx+1:]...)
+		}
+		if len(extracted) > 0 {
+			return extracted[0]
+		}
 	}
 	return nil
 }
@@ -942,6 +970,11 @@ func (s *SourceIPs) retrieveOneIP(isV6 bool, isRandom bool) net.IP {
 func (s *SourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*string) {
 	if amount <= 0 {
 		return
+	}
+
+	rnd := s.tRnd
+	if rnd == nil {
+		rnd = MyRand
 	}
 
 	t_ips := make([]net.IP, 0, amount)
@@ -954,7 +987,7 @@ func (s *SourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*
 
 		var chooseV6 bool
 		if hasV4 && hasV6 {
-			chooseV6 = MyRand.Float64() < 0.5
+			chooseV6 = rnd.Float64() < 0.5
 		} else {
 			chooseV6 = hasV6
 		}
@@ -972,7 +1005,7 @@ func (s *SourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*
 		targetIPs = append(targetIPs, &tIP)
 	}
 
-	MyRand.Shuffle(len(targetIPs), func(m, n int) {
+	rnd.Shuffle(len(targetIPs), func(m, n int) {
 		targetIPs[m], targetIPs[n] = targetIPs[n], targetIPs[m]
 	})
 	return
@@ -981,14 +1014,24 @@ func (s *SourceIPs) retrieveIPsFromIPR(amount int, isRandom bool) (targetIPs []*
 func (s *SourceIPs) Shuffle() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	MyRand.Shuffle(len(s.srcHosts), func(m, n int) {
+	rnd := s.tRnd
+	if rnd == nil {
+		rnd = MyRand
+	}
+	rnd.Shuffle(len(s.srcHosts), func(m, n int) {
 		s.srcHosts[m], s.srcHosts[n] = s.srcHosts[n], s.srcHosts[m]
 	})
-	MyRand.Shuffle(len(s.srcIPRsRaw), func(m, n int) {
-		s.srcIPRsRaw[m], s.srcIPRsRaw[n] = s.srcIPRsRaw[n], s.srcIPRsRaw[m]
+	rnd.Shuffle(len(s.srcIPRsRawV4), func(m, n int) {
+		s.srcIPRsRawV4[m], s.srcIPRsRawV4[n] = s.srcIPRsRawV4[n], s.srcIPRsRawV4[m]
 	})
-	MyRand.Shuffle(len(s.srcIPRsExtracted), func(m, n int) {
-		s.srcIPRsExtracted[m], s.srcIPRsExtracted[n] = s.srcIPRsExtracted[n], s.srcIPRsExtracted[m]
+	rnd.Shuffle(len(s.srcIPRsRawV6), func(m, n int) {
+		s.srcIPRsRawV6[m], s.srcIPRsRawV6[n] = s.srcIPRsRawV6[n], s.srcIPRsRawV6[m]
+	})
+	rnd.Shuffle(len(s.srcIPRsExtractedV4), func(m, n int) {
+		s.srcIPRsExtractedV4[m], s.srcIPRsExtractedV4[n] = s.srcIPRsExtractedV4[n], s.srcIPRsExtractedV4[m]
+	})
+	rnd.Shuffle(len(s.srcIPRsExtractedV6), func(m, n int) {
+		s.srcIPRsExtractedV6[m], s.srcIPRsExtractedV6[n] = s.srcIPRsExtractedV6[n], s.srcIPRsExtractedV6[m]
 	})
 }
 
@@ -1002,18 +1045,22 @@ func (s *SourceIPs) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.srcHosts = []*string{}
-	s.srcIPRsRaw = []*utils.IPRange{}
-	s.srcIPRsExtracted = []net.IP{}
+	s.srcIPRsRawV4 = []*utils.IPRange{}
+	s.srcIPRsRawV6 = []*utils.IPRange{}
+	s.srcIPRsExtractedV4 = []net.IP{}
+	s.srcIPRsExtractedV6 = []net.IP{}
 	s.Ports = []int{}
 }
 
 func NewSourceIPs() *SourceIPs {
 	return &SourceIPs{
-		srcHosts:         make([]*string, 0),
-		srcIPRsRaw:       make([]*utils.IPRange, 0),
-		srcIPRsExtracted: make([]net.IP, 0),
-		Ports:            []int{},
-		tRnd:             utils.NewRand(),
+		srcHosts:           make([]*string, 0),
+		srcIPRsRawV4:       make([]*utils.IPRange, 0),
+		srcIPRsRawV6:       make([]*utils.IPRange, 0),
+		srcIPRsExtractedV4: make([]net.IP, 0),
+		srcIPRsExtractedV6: make([]net.IP, 0),
+		Ports:              []int{},
+		tRnd:               utils.NewRand(),
 	}
 }
 
@@ -1024,10 +1071,14 @@ func NewSourceIPsWithRand(tRnd *rand.Rand) *SourceIPs {
 }
 
 func CopySourceIPs(src *SourceIPs) *SourceIPs {
+	src.mu.Lock()
+	defer src.mu.Unlock()
 	mSrc := NewSourceIPs()
 	mSrc.srcHosts = append(mSrc.srcHosts, src.srcHosts...)
-	mSrc.srcIPRsRaw = append(mSrc.srcIPRsRaw, src.srcIPRsRaw...)
-	mSrc.srcIPRsExtracted = append(mSrc.srcIPRsExtracted, src.srcIPRsExtracted...)
+	mSrc.srcIPRsRawV4 = append(mSrc.srcIPRsRawV4, src.srcIPRsRawV4...)
+	mSrc.srcIPRsRawV6 = append(mSrc.srcIPRsRawV6, src.srcIPRsRawV6...)
+	mSrc.srcIPRsExtractedV4 = append(mSrc.srcIPRsExtractedV4, src.srcIPRsExtractedV4...)
+	mSrc.srcIPRsExtractedV6 = append(mSrc.srcIPRsExtractedV6, src.srcIPRsExtractedV6...)
 	mSrc.Ports = append(mSrc.Ports, src.Ports...)
 	mSrc.tRnd = utils.NewRand()
 	return mSrc

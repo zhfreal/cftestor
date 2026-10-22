@@ -2,6 +2,8 @@ package outbound
 
 import (
 	"fmt"
+	"io"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -107,4 +109,35 @@ func TestResolveLocationsParallelEmptyAndNil(t *testing.T) {
 		{IP: nil, Loc: nil},
 	}
 	ResolveLocationsParallelWithResolver(results, 5, nil)
+}
+
+func TestGetGeoInfoFromCFNilAndEmpty(t *testing.T) {
+	if got := GetGeoInfoFromCF(nil); got != "" {
+		t.Errorf("GetGeoInfoFromCF(nil) = %q, want empty string", got)
+	}
+	empty := ""
+	if got := GetGeoInfoFromCF(&empty); got != "" {
+		t.Errorf("GetGeoInfoFromCF(\"\") = %q, want empty string", got)
+	}
+}
+
+func TestGetLocFromCFRespParsing(t *testing.T) {
+	body := "fl=123f1\nh=speed.cloudflare.com\nip=1.2.3.4\ncolo=sjc\nwarp=off\n"
+	loc, err := get_loc_from_cf_resp(io.NopCloser(strings.NewReader(body)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if loc == "" {
+		t.Fatalf("expected resolved location, got empty")
+	}
+
+	// Multiple '=' on a line
+	bodyWithEqual := "k=v=rest\ncolo=HKG\n"
+	loc2, err := get_loc_from_cf_resp(io.NopCloser(strings.NewReader(bodyWithEqual)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if loc2 == "" {
+		t.Fatalf("expected HKG location, got empty")
+	}
 }

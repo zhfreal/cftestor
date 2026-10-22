@@ -172,3 +172,52 @@ func TestUrlHelpers(t *testing.T) {
 		t.Errorf("NewUrl unexpected URL: %s", newUrl)
 	}
 }
+
+func TestIPRangeCrossByteBoundary(t *testing.T) {
+	startStr := "192.168.1.200"
+	endStr := "192.168.2.50"
+	ipr := NewIPRangeFromString(&startStr, &endStr)
+	if ipr == nil {
+		t.Fatalf("expected NewIPRangeFromString to succeed for cross-byte range %s to %s", startStr, endStr)
+	}
+	if ipr.Length().Int64() != 107 {
+		t.Errorf("expected length 107, got %v", ipr.Length())
+	}
+}
+
+func TestIPRangeExtractReverseWithBorrow(t *testing.T) {
+	startStr := "10.0.0.1"
+	endStr := "10.0.1.5"
+	ipr := NewIPRangeFromString(&startStr, &endStr)
+	if ipr == nil {
+		t.Fatalf("NewIPRangeFromString failed")
+	}
+	extracted := ipr.ExtractReverse(10)
+	if len(extracted) != 10 {
+		t.Fatalf("expected 10 extracted IPs, got %d", len(extracted))
+	}
+	if extracted[0].String() != "10.0.1.5" {
+		t.Errorf("expected first extracted IP to be 10.0.1.5, got %s", extracted[0].String())
+	}
+	if extracted[6].String() != "10.0.0.255" {
+		t.Errorf("expected 7th extracted IP to be 10.0.0.255, got %s", extracted[6].String())
+	}
+}
+
+func TestFileExistsAndSuffix(t *testing.T) {
+	if FileExists("") {
+		t.Error("FileExists(\"\") should be false")
+	}
+	if FileExists("/non/existent/path/123456") {
+		t.Error("FileExists on non-existent path should be false")
+	}
+	// Directory should be false
+	if FileExists(".") {
+		t.Error("FileExists on directory should be false")
+	}
+
+	suffix := GetTimeNowStrSuffix()
+	if len(suffix) != 14 {
+		t.Errorf("GetTimeNowStrSuffix() = %q, expected length 14", suffix)
+	}
+}

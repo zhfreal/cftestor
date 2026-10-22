@@ -2,6 +2,7 @@ package fetcher
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
@@ -27,6 +28,12 @@ const (
 
 var (
 	DNSConcurrencyLimit = 100
+	FallbackPrefixes    []string
+	cfDomainsMu         sync.Mutex
+	cachedCFDomains     []string
+	cachedServer        string
+	cachedLimit         int
+	cachedAt            time.Time
 )
 
 var dohClient = &http.Client{
@@ -81,7 +88,8 @@ func (list IPNetList) Contains(ip net.IP) bool {
 
 func fetchRawBGPPrefixes() ([]string, error) {
 	logger.Log.Debugln("Fetching BGP prefixes from RIPEstat...")
-	resp, err := http.Get("https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS13335")
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get("https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS13335")
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +114,13 @@ func fetchRawBGPPrefixes() ([]string, error) {
 func fetchBGPPrefixes(ipVersion int) ([]string, error) {
 	rawPrefixes, err := fetchRawBGPPrefixes()
 	if err != nil {
-		return nil, err
+		if len(FallbackPrefixes) > 0 {
+			logger.Log.Warningf("Failed to fetch BGP prefixes from RIPEstat: %v; falling back to static prefixes", err)
+			rawPrefixes = FallbackPrefixes
+			err = nil
+		} else {
+			return nil, err
+		}
 	}
 
 	var prefixes []string
@@ -131,7 +145,8 @@ func fetchBGPPrefixes(ipVersion int) ([]string, error) {
 
 func fetchTrancoDomains(limit int) ([]string, error) {
 	logger.Log.Debugln("Fetching top domains from Tranco...")
-	resp, err := http.Get("https://tranco-list.eu/top-1m.csv.zip")
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get("https://tranco-list.eu/top-1m.csv.zip")
 	if err != nil {
 		return nil, err
 	}
@@ -157,17 +172,12 @@ func fetchTrancoDomains(limit int) ([]string, error) {
 	}
 	defer f.Close()
 
-	content, err := io.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
-
-	lines := strings.Split(string(content), "\n")
+	scanner := bufio.NewScanner(f)
 	var domains []string
-	for _, line := range lines {
-		parts := strings.SplitN(line, ",", 2)
-		if len(parts) == 2 {
-			domain := strings.TrimSpace(parts[1])
+	for scanner.Scan() {
+		line := scanner.Text()
+		if idx := strings.IndexByte(line, ','); idx != -1 {
+			domain := strings.TrimSpace(line[idx+1:])
 			if domain != "" {
 				domains = append(domains, domain)
 			}
@@ -175,6 +185,9 @@ func fetchTrancoDomains(limit int) ([]string, error) {
 		if len(domains) >= limit {
 			break
 		}
+	}
+	if err := scanner.Err(); err != nil && len(domains) == 0 {
+		return nil, err
 	}
 	return domains, nil
 }
@@ -216,7 +229,14 @@ func resolveDomain(qname string, qtype uint16, netType, server string) (*dns.Msg
 	c.Net = netType
 	c.Timeout = DefaultDNSTimeout
 	if netType == "tcp-tls" {
-		c.TLSConfig = &tls.Config{InsecureSkipVerify: false}
+		host, _, err := net.SplitHostPort(server)
+		if err != nil {
+			host = server
+		}
+		c.TLSConfig = &tls.Config{
+			ServerName:         host,
+			InsecureSkipVerify: false,
+		}
 	}
 	r, _, err := c.Exchange(m, server)
 	return r, err
@@ -275,11 +295,22 @@ func resolveDomainWithFallback(qname string, qtype uint16, netType, serverAddr s
 }
 
 func FetchCloudflareDomains(dnsServerStr string, trancoLimit int) ([]string, error) {
+	cfDomainsMu.Lock()
+	if len(cachedCFDomains) > 0 && cachedServer == dnsServerStr && cachedLimit == trancoLimit && time.Since(cachedAt) < 10*time.Minute {
+		res := append([]string{}, cachedCFDomains...)
+		cfDomainsMu.Unlock()
+		return res, nil
+	}
+	cfDomainsMu.Unlock()
+
 	bgpPrefixes, err := fetchRawBGPPrefixes()
 	if err != nil {
 		logger.Log.Warningf("Failed to fetch BGP prefixes for domain check: %v\n", err)
 	}
 	bgpIPNets := parseCIDRs(bgpPrefixes)
+	if len(bgpIPNets) == 0 && len(FallbackPrefixes) > 0 {
+		bgpIPNets = parseCIDRs(FallbackPrefixes)
+	}
 
 	domains, err := fetchTrancoDomains(trancoLimit)
 	if err != nil {
@@ -349,6 +380,13 @@ func FetchCloudflareDomains(dnsServerStr string, trancoLimit int) ([]string, err
 		results = append(results, d)
 	}
 
+	cfDomainsMu.Lock()
+	cachedCFDomains = append([]string{}, results...)
+	cachedServer = dnsServerStr
+	cachedLimit = trancoLimit
+	cachedAt = time.Now()
+	cfDomainsMu.Unlock()
+
 	logger.Log.Debugf("Found %d verified Cloudflare CDN served domains.", len(results))
 	return results, nil
 }
@@ -390,8 +428,8 @@ func FetchDynamicIPv4(dnsServerStr string, trancoLimit int) ([]string, error) {
 						ip32 := ip.Mask(net.CIDRMask(32, 32))
 
 						mu.Lock()
-						mappedCIDRs[fmt.Sprintf("%s/24", ip24.String())] = true
-						mappedCIDRs[fmt.Sprintf("%s/32", ip32.String())] = true
+						mappedCIDRs[ip24.String()+"/24"] = true
+						mappedCIDRs[ip32.String()+"/32"] = true
 						mu.Unlock()
 					}
 				}
@@ -406,19 +444,20 @@ func FetchDynamicIPv4(dnsServerStr string, trancoLimit int) ([]string, error) {
 		finalMap[p] = true
 	}
 	for p := range mappedCIDRs {
-		parts := strings.Split(p, "/")
-		if len(parts) == 2 {
-			maskSize, err := strconv.Atoi(parts[1])
-			if err == nil && maskSize < 16 {
-				continue
-			}
-		}
 		finalMap[p] = true
 	}
 
 	var results []string
 	for p := range finalMap {
 		results = append(results, p)
+	}
+
+	if len(results) == 0 && len(FallbackPrefixes) > 0 {
+		for _, p := range FallbackPrefixes {
+			if !strings.Contains(p, ":") {
+				results = append(results, p)
+			}
+		}
 	}
 
 	logger.Log.Infof("Dynamically fetched %d valid Cloudflare IPv4 CIDRs.", len(results))
@@ -463,8 +502,8 @@ func FetchDynamicIPv6(dnsServerStr string, trancoLimit int) ([]string, error) {
 						ip112 := ip.Mask(net.CIDRMask(112, 128))
 
 						mu.Lock()
-						mappedCIDRs[fmt.Sprintf("%s/48", ip48.String())] = true
-						mappedCIDRs[fmt.Sprintf("%s/112", ip112.String())] = true
+						mappedCIDRs[ip48.String()+"/48"] = true
+						mappedCIDRs[ip112.String()+"/112"] = true
 						mu.Unlock()
 					}
 				}
@@ -485,6 +524,14 @@ func FetchDynamicIPv6(dnsServerStr string, trancoLimit int) ([]string, error) {
 	var results []string
 	for p := range finalMap {
 		results = append(results, p)
+	}
+
+	if len(results) == 0 && len(FallbackPrefixes) > 0 {
+		for _, p := range FallbackPrefixes {
+			if strings.Contains(p, ":") {
+				results = append(results, p)
+			}
+		}
 	}
 
 	logger.Log.Infof("Dynamically fetched %d valid Cloudflare IPv6 CIDRs.", len(results))

@@ -24,13 +24,12 @@ func GetTimeNowStr() string {
 }
 
 func GetTimeNowStrSuffix() string {
-	s := time.Now().Format("20060102150405")
-	return strings.ReplaceAll(s, ".", "")
+	return time.Now().Format("20060102150405")
 }
 
 func FileExists(filename string) bool {
 	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 	return !info.IsDir()
@@ -108,8 +107,10 @@ func GetGeoInfoFromIncolumitas(ipStr string, interval int) (ASN int, city, count
 		logger.Log.Errorf("failed to create Incolumitas request: %v\n", err)
 		return
 	}
+	tr := &http.Transport{DisableKeepAlives: true}
+	defer tr.CloseIdleConnections()
 	var client = http.Client{
-		Transport:     nil,
+		Transport:     tr,
 		CheckRedirect: nil,
 		Jar:           nil,
 		Timeout:       5 * time.Second,
@@ -123,22 +124,20 @@ func GetGeoInfoFromIncolumitas(ipStr string, interval int) (ASN int, city, count
 		return
 	}
 	defer response.Body.Close()
-	// read response.Body as string
+	// read response.Body as []byte
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		logger.Log.Errorf("failed to read Incolumitas response body: %v\n", err)
 		return
 	}
-	// decode body []byte into string
-	bodyStr := string(body)
-	asn := gjson.Get(bodyStr, "asn.asn")
+	asn := gjson.GetBytes(body, "asn.asn")
 	if asn.Exists() {
 		if ASN, err = strconv.Atoi(asn.String()); err != nil {
 			logger.Log.Errorf("failed to parse ASN from Incolumitas response: %T, %v\n", asn.String(), asn.String())
 		}
 	}
-	city = gjson.Get(bodyStr, "location.city").String()
-	country = gjson.Get(bodyStr, "location.country_code").String()
+	city = gjson.GetBytes(body, "location.city").String()
+	country = gjson.GetBytes(body, "location.country_code").String()
 	return
 }
 
@@ -340,11 +339,11 @@ func WriteStringsToFile(filename string, lines []string) error {
 }
 
 func UniqueIntSlice(strSlice []int) []int {
-	keys := make(map[int]bool)
-	list := []int{}
+	keys := make(map[int]struct{}, len(strSlice))
+	list := make([]int, 0, len(strSlice))
 	for _, entry := range strSlice {
-		if _, value := keys[entry]; !value {
-			keys[entry] = true
+		if _, exists := keys[entry]; !exists {
+			keys[entry] = struct{}{}
 			list = append(list, entry)
 		}
 	}
@@ -352,8 +351,11 @@ func UniqueIntSlice(strSlice []int) []int {
 }
 
 func Mean(v []float64) float64 {
+	n := len(v)
+	if n == 0 {
+		return 0
+	}
 	var res float64 = 0
-	var n int = len(v)
 	for i := 0; i < n; i++ {
 		res += v[i]
 	}

@@ -2,6 +2,8 @@ package ping
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -57,14 +59,37 @@ func TestGetMaxFailureCalculations(t *testing.T) {
 }
 
 func TestUTLSTransportHTTPRouting(t *testing.T) {
-	tr := NewUTLSTransport(utls.HelloChrome_Auto, "127.0.0.1:80", 5*time.Second)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	u, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatalf("url.Parse failed: %v", err)
+	}
+
+	tr := NewUTLSTransport(utls.HelloChrome_Auto, u.Host, 5*time.Second)
 	defer tr.CloseIdleConnections()
 
-	httpReq, err := http.NewRequest("GET", "http://127.0.0.1:80", nil)
+	httpReq, err := http.NewRequest("GET", ts.URL, nil)
 	if err != nil {
 		t.Fatalf("http.NewRequest failed: %v", err)
 	}
 
-	// Should route via tr1
-	_, _ = tr.RoundTrip(httpReq)
+	resp, err := tr.RoundTrip(httpReq)
+	if err != nil {
+		t.Fatalf("tr.RoundTrip failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	stat1, stat2 := tr.Stat()
+	if stat1 < 0 || stat2 < 0 {
+		t.Errorf("invalid stat durations: %v, %v", stat1, stat2)
+	}
 }

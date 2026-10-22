@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"os/signal"
 	"sort"
 	"sync"
+	"syscall"
 	"time"
 
 	"cftestor/internal/config"
@@ -16,6 +18,29 @@ import (
 	"cftestor/internal/ping"
 	"cftestor/internal/utils"
 )
+
+var (
+	interrupted   bool
+	interruptedMu sync.Mutex
+)
+
+func isInterrupted() bool {
+	interruptedMu.Lock()
+	defer interruptedMu.Unlock()
+	return interrupted
+}
+
+func setupSignalHandler() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		interruptedMu.Lock()
+		interrupted = true
+		interruptedMu.Unlock()
+		logger.Log.Warningln("\nReceived termination signal, wrapping up and saving gathered results...")
+	}()
+}
 
 func print_version() {
 	config.PrintVersionInfo()
@@ -169,8 +194,11 @@ func printDetails(logLvl logger.LogLevel, v []config.VerifyResults, showSpeed bo
 		indent = " "
 	}
 	for i := 0; i < len(v); i++ {
-		t_ip := *v[i].IP
-		if len(*v[i].Loc) > 0 {
+		t_ip := ""
+		if v[i].IP != nil {
+			t_ip = *v[i].IP
+		}
+		if v[i].Loc != nil && len(*v[i].Loc) > 0 {
 			t_ip = fmt.Sprintf("%s#%s", t_ip, *v[i].Loc)
 		}
 		msg := fmt.Sprintf("IP:%v%s", t_ip, indent)
@@ -193,7 +221,10 @@ func displayDetails(showSpeed, loopEnabled bool, v []config.VerifyResults) {
 		if config.Config.SilenceMode {
 			if !loopEnabled {
 				for _, t_v := range v {
-					tStr := *t_v.IP
+					tStr := ""
+					if t_v.IP != nil {
+						tStr = *t_v.IP
+					}
 					if t_v.Loc != nil && len(*t_v.Loc) > 0 {
 						tStr = fmt.Sprintf("%s#%s", tStr, *t_v.Loc)
 					}
@@ -265,6 +296,9 @@ RETRY_LOOP:
 
 		SINGLE_ROUND:
 			for {
+				if isInterrupted() {
+					break RETRY_LOOP
+				}
 				if time.Since(start_time) >= time.Duration(config.Config.TestTimeout)*time.Minute {
 					break SINGLE_ROUND
 				}
@@ -485,6 +519,9 @@ RETRY_LOOP:
 					logger.Log.Errorf("failed to add configured ports for loop retest: %v\n", err)
 					break LOOP
 				}
+				if isInterrupted() {
+					break LOOP
+				}
 				thisSourceIPs = newSourceIPs
 				logger.Log.Infof("%s Waiting %ds before next loop cycle...", elapsed(start_time), config.Config.LoopInterval)
 				looper.Sleep()
@@ -622,6 +659,7 @@ func main() {
 		os.Exit(0)
 	}
 
+	setupSignalHandler()
 	runWorker()
 
 	if len(config.VerifyResultsMap) > 0 {

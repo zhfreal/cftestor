@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"fmt"
 	"math/big"
 	"math/rand"
@@ -20,16 +21,11 @@ func (ipr *IPRange) isValid() bool {
 	}
 	if len(ipr.IPStart) != len(ipr.IPEnd) {
 		return false
-	} else if len(ipr.IPStart) != net.IPv4len && len(ipr.IPStart) != net.IPv6len {
-		return false
-	} else {
-		for i := 0; i < len(ipr.IPStart); i++ {
-			if (ipr.IPStart)[i] > (ipr.IPEnd)[i] {
-				return false
-			}
-		}
 	}
-	return true
+	if len(ipr.IPStart) != net.IPv4len && len(ipr.IPStart) != net.IPv6len {
+		return false
+	}
+	return bytes.Compare(ipr.IPStart, ipr.IPEnd) <= 0
 }
 
 func (ipr *IPRange) IsValid() bool {
@@ -40,26 +36,10 @@ func (ipr *IPRange) length() *big.Int {
 	if !ipr.isValid() {
 		return big.NewInt(0)
 	}
-	var newLenBytes = make([]byte, len(ipr.IPEnd), cap(ipr.IPEnd))
-	reduce := 0
-	for i := len(ipr.IPStart) - 1; i >= 0; i-- {
-		m := (ipr.IPStart)[i]
-		n := (ipr.IPEnd)[i]
-		newValue := int(n) - int(m) - reduce
-		// n < m + reduce, borrow from i - 1
-		if newValue < 0 {
-			reduce = 1
-			newValue += int(1 << 8)
-		} else {
-			// reset reduce
-			reduce = 0
-		}
-		newLenBytes[i] = byte(newValue)
-	}
-	newLen := big.NewInt(0).SetBytes(newLenBytes)
-	// add 1 more
-	newLen = newLen.Add(newLen, big.NewInt(1))
-	return newLen
+	startInt := new(big.Int).SetBytes(ipr.IPStart)
+	endInt := new(big.Int).SetBytes(ipr.IPEnd)
+	diff := new(big.Int).Sub(endInt, startInt)
+	return diff.Add(diff, big.NewInt(1))
 }
 
 func (ipr *IPRange) Length() *big.Int {
@@ -126,12 +106,18 @@ func (ipr *IPRange) Extract(num int) (IPList []net.IP) {
 		numBig = big.NewInt(int64(num))
 	}
 
+	curr := make(net.IP, len(ipr.IPStart))
+	copy(curr, ipr.IPStart)
+	IPList = make([]net.IP, 0, num)
 	for i := 0; i < num; i++ {
-		n := big.NewInt(int64(i))
-		num_in_bytes := fillBytes(n.Bytes(), len(ipr.IPStart))
-		newIP := ipShift(ipr.IPStart, num_in_bytes)
-		if newIP != nil {
-			IPList = append(IPList, newIP)
+		ipCopy := make(net.IP, len(curr))
+		copy(ipCopy, curr)
+		IPList = append(IPList, ipCopy)
+		for j := len(curr) - 1; j >= 0; j-- {
+			curr[j]++
+			if curr[j] != 0 {
+				break
+			}
 		}
 	}
 
@@ -141,8 +127,7 @@ func (ipr *IPRange) Extract(num int) (IPList []net.IP) {
 		ipr.Len = big.NewInt(0)
 		ipr.IPStart = ipr.IPEnd
 	} else {
-		num_in_bytes := fillBytes(numBig.Bytes(), len(ipr.IPStart))
-		ipr.IPStart = ipShift(ipr.IPStart, num_in_bytes)
+		ipr.IPStart = curr
 		ipr.Len = ipr.length()
 	}
 	return
@@ -158,12 +143,20 @@ func (ipr *IPRange) ExtractReverse(num int) (IPList []net.IP) {
 		numBig = big.NewInt(int64(num))
 	}
 
+	curr := make(net.IP, len(ipr.IPEnd))
+	copy(curr, ipr.IPEnd)
+	IPList = make([]net.IP, 0, num)
 	for i := 0; i < num; i++ {
-		n := big.NewInt(int64(i))
-		num_in_bytes := fillBytes(n.Bytes(), len(ipr.IPEnd))
-		newIP := ipShiftReverse(ipr.IPEnd, num_in_bytes)
-		if newIP != nil {
-			IPList = append(IPList, newIP)
+		ipCopy := make(net.IP, len(curr))
+		copy(ipCopy, curr)
+		IPList = append(IPList, ipCopy)
+		for j := len(curr) - 1; j >= 0; j-- {
+			if curr[j] == 0 {
+				curr[j] = 255
+			} else {
+				curr[j]--
+				break
+			}
 		}
 	}
 
@@ -173,8 +166,7 @@ func (ipr *IPRange) ExtractReverse(num int) (IPList []net.IP) {
 		ipr.Len = big.NewInt(0)
 		ipr.IPEnd = ipr.IPStart
 	} else {
-		num_in_bytes := fillBytes(numBig.Bytes(), len(ipr.IPEnd))
-		ipr.IPEnd = ipShiftReverse(ipr.IPEnd, num_in_bytes)
+		ipr.IPEnd = curr
 		ipr.Len = ipr.length()
 	}
 	return
@@ -319,6 +311,7 @@ func ipShiftReverse(ip net.IP, num []byte) net.IP {
 		m := int(newIP[i]) - int(num[i]) - reduce
 		if m >= 0 {
 			newIP[i] = byte(m)
+			reduce = 0
 		} else {
 			newIP[i] = byte(1<<8 + m)
 			reduce = 1

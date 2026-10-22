@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,6 +22,7 @@ type LogLevel int
 type MyLogger struct {
 	LoggerLevel LogLevel
 	Indent      string
+	mu          sync.Mutex
 }
 
 var Log MyLogger = NewLogger(LogLevelInfo)
@@ -56,11 +58,12 @@ func (myLogger *MyLogger) getLogLevelString(lv LogLevel) string {
 }
 
 func NewLogger(lv LogLevel) MyLogger {
-	return MyLogger{lv, myIndent}
+	return MyLogger{LoggerLevel: lv, Indent: myIndent}
 }
 
-func getTimeNowStr() string {
-	return time.Now().Format("15:04:05")
+func appendTimeNow(b *strings.Builder) {
+	var buf [8]byte
+	b.Write(time.Now().AppendFormat(buf[:0], "15:04:05"))
 }
 
 func (myLogger *MyLogger) matchLogLevel(lv LogLevel) bool {
@@ -71,29 +74,46 @@ func (myLogger *MyLogger) log_newline(lv LogLevel, newline bool, info ...any) {
 	if !myLogger.matchLogLevel(lv) {
 		return
 	}
-	fmt.Print(getTimeNowStr())
-	fmt.Print(myLogger.Indent)
-	t_log_type_str := myLogger.getLogLevelString(lv)
-	fmt.Printf("%v", t_log_type_str)
-	fmt.Print(myLogger.Indent)
-	myLogger.print(newline, info...)
+	myLogger.mu.Lock()
+	defer myLogger.mu.Unlock()
+	var b strings.Builder
+	appendTimeNow(&b)
+	b.WriteString(myLogger.Indent)
+	b.WriteString(myLogger.getLogLevelString(lv))
+	b.WriteString(myLogger.Indent)
+	if len(info) >= 1 {
+		b.WriteString(fmt.Sprint(info[0]))
+		for _, t := range info[1:] {
+			b.WriteString(myLogger.Indent)
+			b.WriteString(fmt.Sprint(t))
+		}
+	}
+	if newline {
+		b.WriteByte('\n')
+	}
+	fmt.Print(b.String())
 }
 
 func (myLogger *MyLogger) log_newlinef(lv LogLevel, format string, info ...any) {
 	if !myLogger.matchLogLevel(lv) {
 		return
 	}
-	fmt.Print(getTimeNowStr())
-	fmt.Print(myLogger.Indent)
-	t_log_type_str := myLogger.getLogLevelString(lv)
-	fmt.Printf("%v", t_log_type_str)
-	fmt.Print(myLogger.Indent)
+	myLogger.mu.Lock()
+	defer myLogger.mu.Unlock()
+	var b strings.Builder
+	appendTimeNow(&b)
+	b.WriteString(myLogger.Indent)
+	b.WriteString(myLogger.getLogLevelString(lv))
+	b.WriteString(myLogger.Indent)
 	format = strings.TrimSuffix(strings.TrimSuffix(format, "\n"), "\r")
-	myLogger.printf(format, info...)
-	fmt.Println()
+	fmt.Fprintf(&b, format, info...)
+	b.WriteByte('\n')
+	fmt.Print(b.String())
 }
 
 func (myLogger *MyLogger) print(newline bool, info ...any) {
+	myLogger.mu.Lock()
+	defer myLogger.mu.Unlock()
 	if len(info) >= 1 {
 		fmt.Printf("%v", info[0])
 		if len(info) > 1 {
@@ -108,6 +128,8 @@ func (myLogger *MyLogger) print(newline bool, info ...any) {
 }
 
 func (myLogger *MyLogger) printf(format string, info ...any) {
+	myLogger.mu.Lock()
+	defer myLogger.mu.Unlock()
 	fmt.Printf(format, info...)
 }
 

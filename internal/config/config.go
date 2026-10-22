@@ -5,7 +5,6 @@ import (
 	"math/big"
 	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -38,6 +37,10 @@ type CliOptions struct {
 	XMarkChanged          bool
 	ResolveLocChanged     bool
 	ResolveLocParChanged  bool
+}
+
+func init() {
+	fetcher.FallbackPrefixes = append(append([]string{}, CFIPV4FULL...), CFIPV6FULL...)
 }
 
 func DefaultConfig() AppConfig {
@@ -695,9 +698,8 @@ func prepareDownloadTest() error {
 func prepareOutputTargets() {
 	if len(Config.ResultFile) > 0 {
 		Config.StoreToFile = true
-		re := regexp.MustCompile(`.[c|C][s|S][V|v]$`)
-		if !re.Match([]byte(Config.ResultFile)) {
-			Config.ResultFile = Config.ResultFile + ".csv"
+		if !strings.HasSuffix(strings.ToLower(Config.ResultFile), ".csv") {
+			Config.ResultFile += ".csv"
 		}
 	} else {
 		Config.ResultFile = "Result_" + utils.GetTimeNowStrSuffix() + "-" + Config.SuffixLabel + ".csv"

@@ -3,6 +3,7 @@ package ping
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"math"
 	"net"
@@ -15,6 +16,13 @@ import (
 	"cftestor/internal/logger"
 	"cftestor/internal/utils"
 )
+
+var dltBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 128*1024)
+		return &b
+	},
+}
 
 func downloadHandlerNew(host, tUrl *string, httpRspTimeoutDur time.Duration,
 	round int, doDTOnly bool, max_failure int) ([]config.SingleResult, string) {
@@ -102,7 +110,7 @@ func performDownloadRound(host, targetUrl string, httpRspTimeoutDur time.Duratio
 	}
 	defer response.Body.Close()
 
-	if response.Request.URL.Path == "/cdn-cgi/trace" && response.StatusCode == 200 {
+	if response.Request != nil && response.Request.URL != nil && response.Request.URL.Path == "/cdn-cgi/trace" && response.StatusCode == 200 {
 		loc, _ = getLocFromCFResp(response.Body)
 	}
 
@@ -129,7 +137,10 @@ func performDownloadRound(host, targetUrl string, httpRspTimeoutDur time.Duratio
 		contentLength = config.FileDefaultSize
 	}
 
-	buffer := make([]byte, 128*1024)
+	bufPtr := dltBufPool.Get().(*[]byte)
+	defer dltBufPool.Put(bufPtr)
+	buffer := *bufPtr
+
 	var contentRead int64
 	for contentRead < contentLength && time.Now().Before(timeEndExpected) {
 		n, tErr := response.Body.Read(buffer)
@@ -140,12 +151,20 @@ func performDownloadRound(host, targetUrl string, httpRspTimeoutDur time.Duratio
 		if tErr != nil {
 			if tErr == io.EOF {
 				currentResult.DLTPassed = true
+			} else if errors.Is(tErr, context.DeadlineExceeded) || errors.Is(tErr, context.Canceled) {
+				if contentRead > 0 {
+					currentResult.DLTPassed = true
+				}
 			} else if nErr, ok := tErr.(net.Error); ok && nErr.Timeout() {
 				if contentRead > 0 {
 					currentResult.DLTPassed = true
 				}
 			} else {
-				currentResult.DLTPassed = false
+				if contentRead > 0 {
+					currentResult.DLTPassed = true
+				} else {
+					currentResult.DLTPassed = false
+				}
 			}
 			break
 		}
@@ -161,12 +180,12 @@ func getLocFromCFResp(body io.Reader) (string, error) {
 	scanner := bufio.NewScanner(body)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		t_slice := strings.Split(line, "=")
-		if len(t_slice) != 2 {
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
 			continue
 		}
-		if strings.ToLower(t_slice[0]) == "colo" {
-			loc = strings.ToUpper(t_slice[1])
+		if strings.EqualFold(k, "colo") {
+			loc = strings.ToUpper(v)
 			if len(loc) > 3 {
 				loc = loc[:3]
 			}
@@ -230,12 +249,12 @@ func sslDTHandlerNew(host *string, max_failure int) []config.SingleResult {
 			currentResult.DTDuration = tDur
 			allResult = append(allResult, currentResult)
 		}
-		if !config.Config.EnableDTEvaluation || t_failure_counter > max_failure {
+		if (!config.Config.EnableDTEvaluation && currentResult.DTPassed) || t_failure_counter > max_failure {
 			break
 		}
 		time.Sleep(time.Duration(config.Config.Interval) * time.Millisecond)
 	}
-	if !config.Config.EnableDTEvaluation {
+	if !config.Config.EnableDTEvaluation && len(allResult) > 0 {
 		allResult = allResult[len(allResult)-1:]
 	}
 	return allResult

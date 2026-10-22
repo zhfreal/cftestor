@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,8 +41,22 @@ func (b *UTLSTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		b.tr2 = &http2.Transport{}
 		return b.httpsRoundTrip(req)
 	case "http":
-		b.tr1 = &http.Transport{}
-		return b.tr1.RoundTrip(req)
+		b.startAt = time.Now()
+		targetAddr := b.hostWithPort
+		if len(targetAddr) == 0 {
+			targetAddr = req.URL.Host
+			if !strings.Contains(targetAddr, ":") {
+				targetAddr = net.JoinHostPort(targetAddr, "80")
+			}
+		}
+		b.tr1 = &http.Transport{
+			DialContext:       outbound.GetDialContextByAddr(targetAddr),
+			DisableKeepAlives: true,
+		}
+		resp, err := b.tr1.RoundTrip(req)
+		b.tlsHandShookAt = time.Now()
+		b.responseAt = time.Now()
+		return resp, err
 	default:
 		return nil, fmt.Errorf("unsupported scheme: %s", req.URL.Scheme)
 	}
@@ -53,7 +68,7 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 		if port == "" {
 			port = "443"
 		}
-		b.hostWithPort = fmt.Sprintf("%s:%s", req.URL.Host, port)
+		b.hostWithPort = net.JoinHostPort(req.URL.Hostname(), port)
 	}
 
 	b.startAt = time.Now()
@@ -64,8 +79,8 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	b.tlsConn, err = b.tlsConnect(b.conn, req)
-	b.tlsHandShookAt = time.Now()
 	if err != nil {
+		_ = b.conn.Close()
 		return nil, fmt.Errorf("tls connect fail: %w", err)
 	}
 	b.tlsHandShookAt = time.Now()
@@ -77,6 +92,8 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 		h2_conn, err = b.tr2.NewClientConn(b.tlsConn)
 		b.h2Conn = h2_conn
 		if err != nil {
+			_ = b.tlsConn.Close()
+			_ = b.conn.Close()
 			resp, err = nil, fmt.Errorf("create http2 client with connection fail: %w", err)
 		} else {
 			resp, err = h2_conn.RoundTrip(req)
@@ -84,11 +101,19 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 	case "http/1.1", "":
 		err = req.Write(b.tlsConn)
 		if err != nil {
+			_ = b.tlsConn.Close()
+			_ = b.conn.Close()
 			resp, err = nil, fmt.Errorf("write http1 tls connection fail: %w", err)
 		} else {
-			resp, err = http.ReadResponse(bufio.NewReaderSize(b.tlsConn, 64*1024), req)
+			resp, err = http.ReadResponse(bufio.NewReader(b.tlsConn), req)
+			if err != nil {
+				_ = b.tlsConn.Close()
+				_ = b.conn.Close()
+			}
 		}
 	default:
+		_ = b.tlsConn.Close()
+		_ = b.conn.Close()
 		resp, err = nil, fmt.Errorf("unsupported http version: %s", httpVersion)
 	}
 	b.responseAt = time.Now()
@@ -161,14 +186,14 @@ func PerformUtlsDial(host string, hostNameStr string, timeout time.Duration, hel
 	if err != nil {
 		return false
 	}
+	defer dialConn.Close()
 
 	conf := &utls.Config{
 		ServerName: hostNameStr,
 	}
 	tlsConn := utls.UClient(dialConn, conf, hellID)
+	defer tlsConn.Close()
 
 	err = tlsConn.HandshakeContext(ctx)
-	tlsConn.Close()
-	dialConn.Close()
 	return err == nil
 }

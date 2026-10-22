@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"text/tabwriter"
 
 	"cftestor/internal/config"
@@ -40,30 +41,30 @@ func WriteCSVResult(data []DBRecord, filePath string) error {
 	}
 	defer func() { _ = fp.Close() }()
 
+	row := make([]string, 16)
 	for _, tD := range data {
 		asnStr, city := "", ""
 		if tD.Asn > 0 {
-			asnStr = fmt.Sprintf("AS%v", tD.Asn)
+			asnStr = "AS" + strconv.Itoa(tD.Asn)
 			city = tD.City
 		}
-		if err = w.Write([]string{
-			tD.TestTimeStr,
-			tD.IP,
-			fmt.Sprintf("%.2f", tD.DLS),
-			fmt.Sprintf("%.0f", tD.DA),
-			tD.DS,
-			fmt.Sprintf("%.2f", tD.DTPR*100),
-			fmt.Sprintf("%d", tD.DTC),
-			fmt.Sprintf("%d", tD.DTPC),
-			fmt.Sprintf("%.0f", tD.DMI),
-			fmt.Sprintf("%.0f", tD.DMX),
-			fmt.Sprintf("%d", tD.DLTC),
-			fmt.Sprintf("%d", tD.DLTPC),
-			fmt.Sprintf("%.2f", tD.DLTPR*100),
-			city,
-			asnStr,
-			tD.Loc,
-		}); err != nil {
+		row[0] = tD.TestTimeStr
+		row[1] = tD.IP
+		row[2] = strconv.FormatFloat(tD.DLS, 'f', 2, 64)
+		row[3] = strconv.FormatFloat(tD.DA, 'f', 0, 64)
+		row[4] = tD.DS
+		row[5] = strconv.FormatFloat(tD.DTPR*100, 'f', 2, 64)
+		row[6] = strconv.Itoa(tD.DTC)
+		row[7] = strconv.Itoa(tD.DTPC)
+		row[8] = strconv.FormatFloat(tD.DMI, 'f', 0, 64)
+		row[9] = strconv.FormatFloat(tD.DMX, 'f', 0, 64)
+		row[10] = strconv.Itoa(tD.DLTC)
+		row[11] = strconv.Itoa(tD.DLTPC)
+		row[12] = strconv.FormatFloat(tD.DLTPR*100, 'f', 2, 64)
+		row[13] = city
+		row[14] = asnStr
+		row[15] = tD.Loc
+		if err = w.Write(row); err != nil {
 			return fmt.Errorf("failed to write CSV record to %q: %w", filePath, err)
 		}
 	}
@@ -75,8 +76,9 @@ func WriteCSVResult(data []DBRecord, filePath string) error {
 }
 
 func GenDBRecords(verifyResultsSlice []config.VerifyResults, getLocalAsnAndCity bool) (dbRecords []DBRecord) {
-	if len(verifyResultsSlice) > 0 {
-		dbRecords = make([]DBRecord, 0)
+	n := len(verifyResultsSlice)
+	if n > 0 {
+		dbRecords = make([]DBRecord, 0, n)
 		ASN, city := 0, ""
 		if getLocalAsnAndCity {
 			ASN, city, _ = utils.GetGeoInfoFromIncolumitas("", config.Config.Interval)
@@ -88,8 +90,12 @@ func GenDBRecords(verifyResultsSlice []config.VerifyResults, getLocalAsnAndCity 
 			record.Label = config.Config.SuffixLabel
 			record.DS = config.Config.DTSource
 			record.TestTimeStr = v.TestTime.Format("2006-01-02 15:04:05")
-			record.IP = *v.IP
-			record.Loc = *v.Loc
+			if v.IP != nil {
+				record.IP = *v.IP
+			}
+			if v.Loc != nil {
+				record.Loc = *v.Loc
+			}
 			record.DTC = v.Dtc
 			record.DTPC = v.Dtpc
 			record.DTPR = v.Dtpr
@@ -128,8 +134,12 @@ func PrintFinalStat(v []config.VerifyResults, isDtOnly, inSilence bool) {
 		header += "\t"
 		fmt.Fprintln(w, header)
 		for i := 0; i < len(v); i++ {
-			line := fmt.Sprintf("%s\t%s", v[i].TestTime.Format("15:04:05"), *v[i].IP)
-			if len(*v[i].Loc) > 0 {
+			ipStr := ""
+			if v[i].IP != nil {
+				ipStr = *v[i].IP
+			}
+			line := fmt.Sprintf("%s\t%s", v[i].TestTime.Format("15:04:05"), ipStr)
+			if v[i].Loc != nil && len(*v[i].Loc) > 0 {
 				line = fmt.Sprintf("%s#%s", line, *v[i].Loc)
 			}
 			if !isDtOnly {
@@ -149,7 +159,10 @@ func PrintFinalStat(v []config.VerifyResults, isDtOnly, inSilence bool) {
 		w.Flush()
 	} else {
 		for i := 0; i < len(v); i++ {
-			t_str := *v[i].IP
+			t_str := ""
+			if v[i].IP != nil {
+				t_str = *v[i].IP
+			}
 			if v[i].Loc != nil && len(*v[i].Loc) > 0 {
 				t_str += fmt.Sprintf("#%s", *v[i].Loc)
 			}
@@ -165,6 +178,9 @@ func SaveDBRecords(dbRecords []DBRecord, dbFilePath string) error {
 	db, err := OpenSqlite(dbFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to open SQLite database %q: %w", dbFilePath, err)
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		defer sqlDB.Close()
 	}
 	if err = AddCFDTRecords(db, dbRecords); err != nil {
 		return fmt.Errorf("failed to add CFTD records to SQLite database %q: %w", dbFilePath, err)

@@ -182,3 +182,24 @@ func TestGenDBRecords(t *testing.T) {
 		t.Errorf("DBRecord mismatch: %+v", rec)
 	}
 }
+
+func TestNilIPAndLocHandling(t *testing.T) {
+	results := []config.VerifyResults{
+		{
+			IP:       nil,
+			Loc:      nil,
+			TestTime: time.Now(),
+		},
+	}
+
+	records := GenDBRecords(results, false)
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].IP != "" || records[0].Loc != "" {
+		t.Errorf("expected empty IP and Loc, got IP=%q Loc=%q", records[0].IP, records[0].Loc)
+	}
+
+	PrintFinalStat(results, false, false)
+	PrintFinalStat(results, false, true)
+}
