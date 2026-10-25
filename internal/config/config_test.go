@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"runtime"
@@ -1393,5 +1394,36 @@ func TestSafeLooperSleepWithCheck(t *testing.T) {
 		t.Fatalf("SleepWithCheck took %v; expected early wake up around 30-150ms", elapsed)
 	}
 }
+
+func TestSourceIPsRetrieveSomeNilEvictionAndCompaction(t *testing.T) {
+	s := config.NewSourceIPs()
+	hosts := make([]string, 2000)
+	for i := 0; i < 2000; i++ {
+		hosts[i] = fmt.Sprintf("192.0.2.%d:443", i%256)
+	}
+	if err := s.AddFromSlice(hosts, config.TypeIPv4); err != nil {
+		t.Fatalf("AddFromSlice failed: %v", err)
+	}
+
+	// Retrieve in chunks of 50
+	totalRetrieved := 0
+	for {
+		batch := s.RetrieveSome(50, false)
+		if len(batch) == 0 {
+			break
+		}
+		totalRetrieved += len(batch)
+	}
+
+	if totalRetrieved != 2000 {
+		t.Fatalf("expected 2000 retrieved hosts, got %d", totalRetrieved)
+	}
+
+	// When exhausted, retrieveSome should return empty and s.IsEmpty() should be true
+	if !s.IsEmpty() {
+		t.Fatalf("expected SourceIPs to be empty after full retrieval")
+	}
+}
+
 
 

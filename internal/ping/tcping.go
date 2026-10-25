@@ -188,7 +188,7 @@ func performDownloadRound(host, targetUrl string, httpRspTimeoutDur time.Duratio
 
 func getLocFromCFResp(body io.Reader) (string, error) {
 	loc := ""
-	scanner := bufio.NewScanner(body)
+	scanner := bufio.NewScanner(io.LimitReader(body, 8192))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		k, v, ok := strings.Cut(line, "=")

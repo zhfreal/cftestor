@@ -117,7 +117,7 @@ func getCFCDNCgiTraceUrl() (baseurl string) {
 
 func get_loc_from_cf_resp(body io.ReadCloser) (string, error) {
 	loc := ""
-	scanner := bufio.NewScanner(body)
+	scanner := bufio.NewScanner(io.LimitReader(body, 8192))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		k, v, ok := strings.Cut(line, "=")

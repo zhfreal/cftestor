@@ -932,7 +932,15 @@ func (s *SourceIPs) RetrieveSome(amount int, isRand bool) (targetIPs []*string) 
 	if numHosts > 0 {
 		takeHosts := utils.MinInt(amount, numHosts)
 		targetIPs = append(targetIPs, s.srcHosts[:takeHosts]...)
+		for i := 0; i < takeHosts; i++ {
+			s.srcHosts[i] = nil
+		}
 		s.srcHosts = s.srcHosts[takeHosts:]
+		if len(s.srcHosts) == 0 {
+			s.srcHosts = nil
+		} else if cap(s.srcHosts) > 1024 && len(s.srcHosts) < cap(s.srcHosts)/4 {
+			s.srcHosts = append([]*string(nil), s.srcHosts...)
+		}
 	}
 
 	left := amount - len(targetIPs)
@@ -960,7 +968,15 @@ func (s *SourceIPs) retrieveHosts(amount int) (targetHosts []*string) {
 	}
 	t_amount := utils.MinInt(amount, len(s.srcHosts))
 	targetHosts = append(targetHosts, s.srcHosts[:t_amount]...)
+	for i := 0; i < t_amount; i++ {
+		s.srcHosts[i] = nil
+	}
 	s.srcHosts = s.srcHosts[t_amount:]
+	if len(s.srcHosts) == 0 {
+		s.srcHosts = nil
+	} else if cap(s.srcHosts) > 1024 && len(s.srcHosts) < cap(s.srcHosts)/4 {
+		s.srcHosts = append([]*string(nil), s.srcHosts...)
+	}
 	return
 }
 
@@ -983,11 +999,21 @@ func (s *SourceIPs) retrieveOneIP(isV6 bool, isRandom bool) net.IP {
 				idx := rnd.Intn(n)
 				ip := s.srcIPRsExtractedV6[idx]
 				s.srcIPRsExtractedV6[idx] = s.srcIPRsExtractedV6[n-1]
+				s.srcIPRsExtractedV6[n-1] = nil
 				s.srcIPRsExtractedV6 = s.srcIPRsExtractedV6[:n-1]
+				if len(s.srcIPRsExtractedV6) == 0 {
+					s.srcIPRsExtractedV6 = nil
+				}
 				return ip
 			}
 			ip := s.srcIPRsExtractedV6[0]
+			s.srcIPRsExtractedV6[0] = nil
 			s.srcIPRsExtractedV6 = s.srcIPRsExtractedV6[1:]
+			if len(s.srcIPRsExtractedV6) == 0 {
+				s.srcIPRsExtractedV6 = nil
+			} else if cap(s.srcIPRsExtractedV6) > 1024 && len(s.srcIPRsExtractedV6) < cap(s.srcIPRsExtractedV6)/4 {
+				s.srcIPRsExtractedV6 = append([]net.IP(nil), s.srcIPRsExtractedV6...)
+			}
 			return ip
 		}
 		if len(s.srcIPRsRawV6) > 0 {
@@ -1003,7 +1029,13 @@ func (s *SourceIPs) retrieveOneIP(isV6 bool, isRandom bool) net.IP {
 				extracted = ipr.Extract(1)
 			}
 			if ipr.Len.Cmp(big.NewInt(0)) == 0 {
-				s.srcIPRsRawV6 = append(s.srcIPRsRawV6[:idx], s.srcIPRsRawV6[idx+1:]...)
+				lastIdx := len(s.srcIPRsRawV6) - 1
+				copy(s.srcIPRsRawV6[idx:], s.srcIPRsRawV6[idx+1:])
+				s.srcIPRsRawV6[lastIdx] = nil
+				s.srcIPRsRawV6 = s.srcIPRsRawV6[:lastIdx]
+				if len(s.srcIPRsRawV6) == 0 {
+					s.srcIPRsRawV6 = nil
+				}
 			}
 			if len(extracted) > 0 {
 				return extracted[0]
@@ -1018,11 +1050,21 @@ func (s *SourceIPs) retrieveOneIP(isV6 bool, isRandom bool) net.IP {
 			idx := rnd.Intn(n)
 			ip := s.srcIPRsExtractedV4[idx]
 			s.srcIPRsExtractedV4[idx] = s.srcIPRsExtractedV4[n-1]
+			s.srcIPRsExtractedV4[n-1] = nil
 			s.srcIPRsExtractedV4 = s.srcIPRsExtractedV4[:n-1]
+			if len(s.srcIPRsExtractedV4) == 0 {
+				s.srcIPRsExtractedV4 = nil
+			}
 			return ip
 		}
 		ip := s.srcIPRsExtractedV4[0]
+		s.srcIPRsExtractedV4[0] = nil
 		s.srcIPRsExtractedV4 = s.srcIPRsExtractedV4[1:]
+		if len(s.srcIPRsExtractedV4) == 0 {
+			s.srcIPRsExtractedV4 = nil
+		} else if cap(s.srcIPRsExtractedV4) > 1024 && len(s.srcIPRsExtractedV4) < cap(s.srcIPRsExtractedV4)/4 {
+			s.srcIPRsExtractedV4 = append([]net.IP(nil), s.srcIPRsExtractedV4...)
+		}
 		return ip
 	}
 	if len(s.srcIPRsRawV4) > 0 {
@@ -1038,7 +1080,13 @@ func (s *SourceIPs) retrieveOneIP(isV6 bool, isRandom bool) net.IP {
 			extracted = ipr.Extract(1)
 		}
 		if ipr.Len.Cmp(big.NewInt(0)) == 0 {
-			s.srcIPRsRawV4 = append(s.srcIPRsRawV4[:idx], s.srcIPRsRawV4[idx+1:]...)
+			lastIdx := len(s.srcIPRsRawV4) - 1
+			copy(s.srcIPRsRawV4[idx:], s.srcIPRsRawV4[idx+1:])
+			s.srcIPRsRawV4[lastIdx] = nil
+			s.srcIPRsRawV4 = s.srcIPRsRawV4[:lastIdx]
+			if len(s.srcIPRsRawV4) == 0 {
+				s.srcIPRsRawV4 = nil
+			}
 		}
 		if len(extracted) > 0 {
 			return extracted[0]

@@ -125,7 +125,7 @@ func GetGeoInfoFromIncolumitas(ipStr string, interval int) (ASN int, city, count
 	}
 	defer response.Body.Close()
 	// read response.Body as []byte
-	body, err := io.ReadAll(response.Body)
+	body, err := io.ReadAll(io.LimitReader(response.Body, 65536))
 	if err != nil {
 		logger.Log.Errorf("failed to read Incolumitas response body: %v\n", err)
 		return

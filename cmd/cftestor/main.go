@@ -587,6 +587,10 @@ RETRY_LOOP:
 		close(dltTaskChan)
 	}
 	workerWG.Wait()
+	dtTaskChan = nil
+	dtResultChan = nil
+	dltTaskChan = nil
+	dltResultChan = nil
 }
 
 func main() {
