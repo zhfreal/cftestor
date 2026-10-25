@@ -16,7 +16,7 @@ require (
 replace github.com/metacubex/utls => github.com/zhfreal/utls v1.9.0-patch5
 
 require (
-	github.com/andybalholm/brotli v1.2.6 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/cloudflare/circl v1.6.5 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
