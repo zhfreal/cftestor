@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -35,6 +36,23 @@ type UTLSTransport struct {
 	tlsConn        *utls.UConn
 }
 
+type utlsBodyCloser struct {
+	io.ReadCloser
+	tr   *UTLSTransport
+	once sync.Once
+}
+
+func (c *utlsBodyCloser) Close() error {
+	var err error
+	c.once.Do(func() {
+		if c.ReadCloser != nil {
+			err = c.ReadCloser.Close()
+		}
+		c.tr.CloseIdleConnections()
+	})
+	return err
+}
+
 func (b *UTLSTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch req.URL.Scheme {
 	case "https":
@@ -49,13 +67,19 @@ func (b *UTLSTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				targetAddr = net.JoinHostPort(targetAddr, "80")
 			}
 		}
-		b.tr1 = &http.Transport{
+		tr1 := &http.Transport{
 			DialContext:       outbound.GetDialContextByAddr(targetAddr),
 			DisableKeepAlives: true,
 		}
-		resp, err := b.tr1.RoundTrip(req)
+		b.mu.Lock()
+		b.tr1 = tr1
+		b.mu.Unlock()
+		resp, err := tr1.RoundTrip(req)
 		b.tlsHandShookAt = time.Now()
 		b.responseAt = time.Now()
+		if resp != nil && resp.Body != nil {
+			resp.Body = &utlsBodyCloser{ReadCloser: resp.Body, tr: b}
+		}
 		return resp, err
 	default:
 		return nil, fmt.Errorf("unsupported scheme: %s", req.URL.Scheme)
@@ -72,51 +96,61 @@ func (b *UTLSTransport) httpsRoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	b.startAt = time.Now()
-	var err error
-	b.conn, err = outbound.OutboundDialContext(req.Context(), "tcp", b.hostWithPort)
+	conn, err := outbound.OutboundDialContext(req.Context(), "tcp", b.hostWithPort)
 	if err != nil {
 		return nil, fmt.Errorf("tcp net dial fail: %w", err)
 	}
+	b.mu.Lock()
+	b.conn = conn
+	b.mu.Unlock()
 
-	b.tlsConn, err = b.tlsConnect(b.conn, req)
+	tlsConn, err := b.tlsConnect(conn, req)
 	if err != nil {
-		_ = b.conn.Close()
+		b.CloseIdleConnections()
 		return nil, fmt.Errorf("tls connect fail: %w", err)
 	}
+	b.mu.Lock()
+	b.tlsConn = tlsConn
+	b.mu.Unlock()
+
 	b.tlsHandShookAt = time.Now()
-	httpVersion := b.tlsConn.ConnectionState().NegotiatedProtocol
+	httpVersion := tlsConn.ConnectionState().NegotiatedProtocol
 	resp := &http.Response{}
 	switch httpVersion {
 	case "h2":
 		var h2_conn *http2.ClientConn
-		h2_conn, err = b.tr2.NewClientConn(b.tlsConn)
-		b.h2Conn = h2_conn
+		h2_conn, err = b.tr2.NewClientConn(tlsConn)
 		if err != nil {
-			_ = b.tlsConn.Close()
-			_ = b.conn.Close()
+			b.CloseIdleConnections()
 			resp, err = nil, fmt.Errorf("create http2 client with connection fail: %w", err)
 		} else {
+			b.mu.Lock()
+			b.h2Conn = h2_conn
+			b.mu.Unlock()
 			resp, err = h2_conn.RoundTrip(req)
+			if err != nil {
+				b.CloseIdleConnections()
+			}
 		}
 	case "http/1.1", "":
-		err = req.Write(b.tlsConn)
+		err = req.Write(tlsConn)
 		if err != nil {
-			_ = b.tlsConn.Close()
-			_ = b.conn.Close()
+			b.CloseIdleConnections()
 			resp, err = nil, fmt.Errorf("write http1 tls connection fail: %w", err)
 		} else {
-			resp, err = http.ReadResponse(bufio.NewReader(b.tlsConn), req)
+			resp, err = http.ReadResponse(bufio.NewReader(tlsConn), req)
 			if err != nil {
-				_ = b.tlsConn.Close()
-				_ = b.conn.Close()
+				b.CloseIdleConnections()
 			}
 		}
 	default:
-		_ = b.tlsConn.Close()
-		_ = b.conn.Close()
+		b.CloseIdleConnections()
 		resp, err = nil, fmt.Errorf("unsupported http version: %s", httpVersion)
 	}
 	b.responseAt = time.Now()
+	if resp != nil && resp.Body != nil {
+		resp.Body = &utlsBodyCloser{ReadCloser: resp.Body, tr: b}
+	}
 	return resp, err
 }
 
@@ -155,17 +189,21 @@ func (b *UTLSTransport) SetClientHello(hello utls.ClientHelloID) {
 func (b *UTLSTransport) CloseIdleConnections() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.conn != nil {
-		b.conn.Close()
+	if b.h2Conn != nil {
+		_ = b.h2Conn.Close()
+		b.h2Conn = nil
 	}
 	if b.tlsConn != nil {
-		b.tlsConn.Close()
+		_ = b.tlsConn.Close()
+		b.tlsConn = nil
 	}
-	if b.h2Conn != nil {
-		b.h2Conn.Close()
+	if b.conn != nil {
+		_ = b.conn.Close()
+		b.conn = nil
 	}
 	if b.tr1 != nil {
 		b.tr1.CloseIdleConnections()
+		b.tr1 = nil
 	}
 }
 

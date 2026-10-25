@@ -89,6 +89,7 @@ func (list IPNetList) Contains(ip net.IP) bool {
 func fetchRawBGPPrefixes() ([]string, error) {
 	logger.Log.Debugln("Fetching BGP prefixes from RIPEstat...")
 	client := &http.Client{Timeout: 15 * time.Second}
+	defer client.CloseIdleConnections()
 	resp, err := client.Get("https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS13335")
 	if err != nil {
 		return nil, err
@@ -100,7 +101,7 @@ func fetchRawBGPPrefixes() ([]string, error) {
 	}
 
 	var data ripeStatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 10*1024*1024)).Decode(&data); err != nil {
 		return nil, err
 	}
 
@@ -146,6 +147,7 @@ func fetchBGPPrefixes(ipVersion int) ([]string, error) {
 func fetchTrancoDomains(limit int) ([]string, error) {
 	logger.Log.Debugln("Fetching top domains from Tranco...")
 	client := &http.Client{Timeout: 30 * time.Second}
+	defer client.CloseIdleConnections()
 	resp, err := client.Get("https://tranco-list.eu/top-1m.csv.zip")
 	if err != nil {
 		return nil, err
@@ -155,7 +157,7 @@ func fetchTrancoDomains(limit int) ([]string, error) {
 		return nil, fmt.Errorf("Tranco download returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 50*1024*1024))
 	if err != nil {
 		return nil, err
 	}
@@ -214,9 +216,10 @@ func resolveDomain(qname string, qtype uint16, netType, server string) (*dns.Msg
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != 200 {
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 			return nil, fmt.Errorf("DoH bad status: %d", resp.StatusCode)
 		}
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 65536))
 		if err != nil {
 			return nil, err
 		}

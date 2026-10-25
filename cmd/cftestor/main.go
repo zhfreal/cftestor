@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"os/signal"
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"cftestor/internal/config"
@@ -19,29 +17,6 @@ import (
 	"cftestor/internal/ping"
 	"cftestor/internal/utils"
 )
-
-var (
-	interrupted   bool
-	interruptedMu sync.Mutex
-)
-
-func isInterrupted() bool {
-	interruptedMu.Lock()
-	defer interruptedMu.Unlock()
-	return interrupted
-}
-
-func setupSignalHandler() {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		interruptedMu.Lock()
-		interrupted = true
-		interruptedMu.Unlock()
-		logger.Log.Warningln("\nReceived termination signal, wrapping up and saving gathered results...")
-	}()
-}
 
 func print_version() {
 	config.PrintVersionInfo()
@@ -312,9 +287,6 @@ RETRY_LOOP:
 
 		SINGLE_ROUND:
 			for {
-				if isInterrupted() {
-					break RETRY_LOOP
-				}
 				if testTimeout > 0 && time.Since(start_time) >= testTimeout {
 					break SINGLE_ROUND
 				}
@@ -436,6 +408,7 @@ RETRY_LOOP:
 									}
 								}
 							})
+
 							logger.Log.Infof("%s DLT batch done: %d/%d passed, %d qualified so far", elapsed(start_time), batchDLTPassed, len(dltBatch), len(tmpTestSlice))
 							displayStat(len(tmpTestSlice), dtDoneTasks, dtTotalStr, dltDoneTasks, dltDoneTasks)
 						}
@@ -497,6 +470,7 @@ RETRY_LOOP:
 							}
 						}
 					})
+
 					dltTotal := new(big.Int).Add(big.NewInt(int64(dltDoneTasks)), thisSourceIPs.TotalHosts())
 					dltTotalStr := utils.FormatHostCount(dltTotal)
 					logger.Log.Infof("%s DLT batch done: %d/%d passed, %d qualified so far", elapsed(start_time), batchDLTPassed, len(dltBatch), len(tmpTestSlice))
@@ -538,13 +512,13 @@ RETRY_LOOP:
 					logger.Log.Errorf("failed to add configured ports for loop retest: %v\n", err)
 					break LOOP
 				}
-				if isInterrupted() || (testTimeout > 0 && time.Since(start_time) >= testTimeout) {
+				if testTimeout > 0 && time.Since(start_time) >= testTimeout {
 					break LOOP
 				}
 				thisSourceIPs = newSourceIPs
 				logger.Log.Infof("%s Waiting %v before next loop cycle...", elapsed(start_time), looper.GetDuration())
 				looper.SleepWithCheck(func() bool {
-					return isInterrupted() || (testTimeout > 0 && time.Since(start_time) >= testTimeout)
+					return testTimeout > 0 && time.Since(start_time) >= testTimeout
 				})
 			}
 		}
@@ -680,7 +654,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	setupSignalHandler()
 	runWorker()
 
 	if len(config.VerifyResultsMap) > 0 {
