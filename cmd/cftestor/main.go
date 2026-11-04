@@ -23,6 +23,9 @@ func print_version() {
 }
 
 func validDTResult(tVerifyResult *config.VerifyResults) bool {
+	if config.Config.FilterECH && !tVerifyResult.ECHSupported {
+		return false
+	}
 	maxDelay := float64(config.Config.DTEvaluationDelay)
 	if config.Config.DTEvaluationDelayDuration > 0 {
 		maxDelay = float64(config.Config.DTEvaluationDelayDuration) / float64(time.Millisecond)
@@ -37,6 +40,9 @@ func validDTResult(tVerifyResult *config.VerifyResults) bool {
 }
 
 func validDLTResult(tVerifyResult *config.VerifyResults) bool {
+	if config.Config.FilterECH && !tVerifyResult.ECHSupported {
+		return false
+	}
 	if tVerifyResult.Dls >= config.Config.DLTEvaluationSpeed && tVerifyResult.Dlds > config.DownloadSizeMin {
 		return true
 	}
@@ -110,6 +116,7 @@ func runDLTSingleRound(ips []*string, handler func(config.SingleVerifyResult)) {
 
 func calcResult(out config.SingleVerifyResult, statDownload bool) config.VerifyResults {
 	var tVerifyResult = config.VerifyResults{}
+	tVerifyResult.ECHSupported = out.ECHSupported
 	tVerifyResult.DtDList = make([]float64, 0, len(out.ResultSlice))
 	tVerifyResult.TestTime = out.TestTime
 	tIP := out.Host
@@ -192,6 +199,13 @@ func printDetails(logLvl logger.LogLevel, v []config.VerifyResults, showSpeed bo
 		if config.Config.EnableStdEv {
 			fmt.Fprintf(&sb, "%sStd:%.2f", indent, v[i].DaStd)
 		}
+		if config.Config.TestECH {
+			echTag := "N"
+			if v[i].ECHSupported {
+				echTag = "Y"
+			}
+			fmt.Fprintf(&sb, "%sECH:%s", indent, echTag)
+		}
 		logger.Log.Logf(logLvl, "%s", sb.String())
 	}
 }
@@ -209,6 +223,13 @@ func displayDetails(showSpeed, loopEnabled bool, v []config.VerifyResults) {
 					}
 					if t_v.Loc != nil && len(*t_v.Loc) > 0 {
 						tStr = fmt.Sprintf("%s#%s", tStr, *t_v.Loc)
+					}
+					if config.Config.TestECH {
+						echTag := "#no-ECH"
+						if t_v.ECHSupported {
+							echTag = "#ECH"
+						}
+						tStr += echTag
 					}
 					logger.Log.Println(tStr)
 				}

@@ -1425,5 +1425,143 @@ func TestSourceIPsRetrieveSomeNilEvictionAndCompaction(t *testing.T) {
 	}
 }
 
+func TestECHFlagsParsing(t *testing.T) {
+	// 1. Default when not specified
+	opts, err := config.ParseCLI([]string{"-s", "1.1.1.1"})
+	if err != nil {
+		t.Fatalf("ParseCLI failed: %v", err)
+	}
+	if opts.Config.TestECH {
+		t.Errorf("expected TestECH to be false by default")
+	}
+	if opts.Config.FilterECH {
+		t.Errorf("expected FilterECH to be false by default")
+	}
+
+	// 2. --test-ech without argument (default domain)
+	opts, err = config.ParseCLI([]string{"--test-ech", "-s", "1.1.1.1"})
+	if err != nil {
+		t.Fatalf("ParseCLI with --test-ech failed: %v", err)
+	}
+	if !opts.Config.TestECH {
+		t.Errorf("expected TestECH to be true")
+	}
+	if opts.Config.ECHDomain != config.DefaultECHDomain {
+		t.Errorf("expected ECHDomain to be %s, got %s", config.DefaultECHDomain, opts.Config.ECHDomain)
+	}
+
+	// 3. --test-ech with custom domain (space separated)
+	opts, err = config.ParseCLI([]string{"--test-ech", "custom.domain.com", "-s", "1.1.1.1"})
+	if err != nil {
+		t.Fatalf("ParseCLI with --test-ech custom.domain.com failed: %v", err)
+	}
+	if !opts.Config.TestECH {
+		t.Errorf("expected TestECH to be true")
+	}
+	if opts.Config.ECHDomain != "custom.domain.com" {
+		t.Errorf("expected ECHDomain to be custom.domain.com, got %s", opts.Config.ECHDomain)
+	}
+
+	// 4. --test-ech=custom.domain.com (equals separated)
+	opts, err = config.ParseCLI([]string{"--test-ech=custom.domain.com", "-s", "1.1.1.1"})
+	if err != nil {
+		t.Fatalf("ParseCLI with --test-ech=custom.domain.com failed: %v", err)
+	}
+	if !opts.Config.TestECH {
+		t.Errorf("expected TestECH to be true")
+	}
+	if opts.Config.ECHDomain != "custom.domain.com" {
+		t.Errorf("expected ECHDomain to be custom.domain.com, got %s", opts.Config.ECHDomain)
+	}
+
+	// 5. --ech alias with custom domain
+	opts, err = config.ParseCLI([]string{"--ech", "alias.domain.com", "-s", "1.1.1.1"})
+	if err != nil {
+		t.Fatalf("ParseCLI with --ech alias.domain.com failed: %v", err)
+	}
+	if !opts.Config.TestECH {
+		t.Errorf("expected TestECH to be true")
+	}
+	if opts.Config.ECHDomain != "alias.domain.com" {
+		t.Errorf("expected ECHDomain to be alias.domain.com, got %s", opts.Config.ECHDomain)
+	}
+
+	// 6. --filter-ech implies --test-ech
+	opts, err = config.ParseCLI([]string{"--filter-ech", "-s", "1.1.1.1"})
+	if err != nil {
+		t.Fatalf("ParseCLI with --filter-ech failed: %v", err)
+	}
+	if !opts.Config.FilterECH {
+		t.Errorf("expected FilterECH to be true")
+	}
+	if !opts.Config.TestECH {
+		t.Errorf("expected TestECH to be true when FilterECH is enabled")
+	}
+	if opts.Config.ECHDomain != config.DefaultECHDomain {
+		t.Errorf("expected ECHDomain to default to %s, got %s", config.DefaultECHDomain, opts.Config.ECHDomain)
+	}
+
+	// 7. --ech-only and --require-ech aliases
+	for _, alias := range []string{"--ech-only", "--require-ech"} {
+		opts, err = config.ParseCLI([]string{alias, "-s", "1.1.1.1"})
+		if err != nil {
+			t.Fatalf("ParseCLI with %s failed: %v", alias, err)
+		}
+		if !opts.Config.FilterECH {
+			t.Errorf("expected FilterECH to be true for %s", alias)
+		}
+		if !opts.Config.TestECH {
+			t.Errorf("expected TestECH to be true for %s", alias)
+		}
+	}
+
+	// 8. --filter-ech together with custom --test-ech
+	opts, err = config.ParseCLI([]string{"--filter-ech", "--test-ech", "both.domain.com", "-s", "1.1.1.1"})
+	if err != nil {
+		t.Fatalf("ParseCLI with both failed: %v", err)
+	}
+	if !opts.Config.FilterECH || !opts.Config.TestECH {
+		t.Errorf("expected both FilterECH and TestECH to be true")
+	}
+	if opts.Config.ECHDomain != "both.domain.com" {
+		t.Errorf("expected ECHDomain to be both.domain.com, got %s", opts.Config.ECHDomain)
+	}
+
+	// 9. --ech-config raw string
+	opts, err = config.ParseCLI([]string{"--ech-config", "raw-b64-string", "-s", "1.1.1.1"})
+	if err != nil {
+		t.Fatalf("ParseCLI with --ech-config failed: %v", err)
+	}
+	if opts.Config.ECHConfigRaw != "raw-b64-string" {
+		t.Errorf("expected ECHConfigRaw to be raw-b64-string, got %s", opts.Config.ECHConfigRaw)
+	}
+
+	// 10. Mixed case domain should be normalized to lowercase
+	opts, err = config.ParseCLI([]string{"--test-ech", "MyCustomDomain.COM", "-s", "1.1.1.1"})
+	if err != nil {
+		t.Fatalf("ParseCLI with mixed case failed: %v", err)
+	}
+	if opts.Config.ECHDomain != "mycustomdomain.com" {
+		t.Errorf("expected lowercase domain, got %s", opts.Config.ECHDomain)
+	}
+
+	// 11. Flag precedence when both --ech and --test-ech are passed
+	opts, err = config.ParseCLI([]string{"--ech", "--test-ech", "firstwins.com", "-s", "1.1.1.1"})
+	if err != nil {
+		t.Fatalf("ParseCLI with --ech and --test-ech failed: %v", err)
+	}
+	if opts.Config.ECHDomain != "firstwins.com" {
+		t.Errorf("expected firstwins.com, got %s", opts.Config.ECHDomain)
+	}
+
+	opts, err = config.ParseCLI([]string{"--test-ech", "--ech", "secondwins.com", "-s", "1.1.1.1"})
+	if err != nil {
+		t.Fatalf("ParseCLI with --test-ech and --ech failed: %v", err)
+	}
+	if opts.Config.ECHDomain != "secondwins.com" {
+		t.Errorf("expected secondwins.com, got %s", opts.Config.ECHDomain)
+	}
+}
+
 
 

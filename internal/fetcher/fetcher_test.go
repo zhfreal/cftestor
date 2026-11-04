@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -203,5 +205,109 @@ func TestRipeStatJSONDecoding(t *testing.T) {
 	}
 	if data.Data.Prefixes[0].Prefix != "104.16.0.0/13" {
 		t.Errorf("prefix 0 mismatch: %s", data.Data.Prefixes[0].Prefix)
+	}
+}
+
+func TestLoadECHConfig(t *testing.T) {
+	// 1. Direct base64 string
+	bytes, err := LoadECHConfig(DefaultCloudflareECHConfigBase64, "1.1.1.1:53", "cloudflare-ech.com")
+	if err != nil {
+		t.Fatalf("LoadECHConfig with base64 failed: %v", err)
+	}
+	if len(bytes) == 0 {
+		t.Fatalf("expected non-empty ECH config bytes")
+	}
+
+	// 2. From temporary file
+	tmpFile, err := os.CreateTemp(t.TempDir(), "ech-*.txt")
+	if err != nil {
+		t.Fatalf("create temp file failed: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.WriteString(DefaultCloudflareECHConfigBase64); err != nil {
+		t.Fatalf("write to temp file failed: %v", err)
+	}
+	tmpFile.Close()
+
+	fileBytes, err := LoadECHConfig(tmpFile.Name(), "1.1.1.1:53", "cloudflare-ech.com")
+	if err != nil {
+		t.Fatalf("LoadECHConfig with file failed: %v", err)
+	}
+	if len(fileBytes) != len(bytes) {
+		t.Errorf("expected len %d, got %d", len(bytes), len(fileBytes))
+	}
+
+	// 3. Invalid base64
+	_, err = LoadECHConfig("invalid!base64!", "1.1.1.1:53", "cloudflare-ech.com")
+	if err == nil {
+		t.Errorf("expected error for invalid base64")
+	}
+
+	// 4. Fallback on invalid DNS server for default domain
+	fbBytes, err := LoadECHConfig("", "127.0.0.1:65530", "cloudflare-ech.com")
+	if err != nil {
+		t.Fatalf("LoadECHConfig fallback failed: %v", err)
+	}
+	if len(fbBytes) != len(bytes) {
+		t.Errorf("expected fallback bytes to match embedded base64")
+	}
+
+	// 5. Custom domain with invalid DNS server should fail
+	_, err = LoadECHConfig("", "127.0.0.1:65530", "custom-domain.example.com")
+	if err == nil {
+		t.Errorf("expected error for custom domain with invalid DNS server")
+	}
+
+	// 5b. Default domain with uppercase and trailing dot should still fallback
+	fbBytesCase, err := LoadECHConfig("", "127.0.0.1:65530", "Cloudflare-ECH.com.")
+	if err != nil || len(fbBytesCase) != len(bytes) {
+		t.Errorf("expected fallback for Cloudflare-ECH.com. to succeed, got %v", err)
+	}
+
+	// 6. Raw binary ECH file
+	binFile, err := os.CreateTemp(t.TempDir(), "ech-*.bin")
+	if err != nil {
+		t.Fatalf("create temp bin file failed: %v", err)
+	}
+	defer os.Remove(binFile.Name())
+	if _, err := binFile.Write(bytes); err != nil {
+		t.Fatalf("write to temp bin file failed: %v", err)
+	}
+	binFile.Close()
+
+	binBytes, err := LoadECHConfig(binFile.Name(), "1.1.1.1:53", "cloudflare-ech.com")
+	if err != nil {
+		t.Fatalf("LoadECHConfig with bin file failed: %v", err)
+	}
+	if len(binBytes) != len(bytes) {
+		t.Errorf("expected len %d, got %d", len(bytes), len(binBytes))
+	}
+
+	// 7. Unpadded base64 string
+	unpadded := strings.TrimRight(DefaultCloudflareECHConfigBase64, "=")
+	unpaddedBytes, err := LoadECHConfig(unpadded, "1.1.1.1:53", "cloudflare-ech.com")
+	if err != nil {
+		t.Fatalf("LoadECHConfig with unpadded base64 failed: %v", err)
+	}
+	if len(unpaddedBytes) != len(bytes) {
+		t.Errorf("expected len %d, got %d", len(bytes), len(unpaddedBytes))
+	}
+}
+
+func TestValidateECHConfigList(t *testing.T) {
+	// Too short (< 4 bytes)
+	if err := ValidateECHConfigList([]byte{0x00, 0x01}); err == nil {
+		t.Errorf("expected error for short ECH bytes")
+	}
+
+	// Invalid length header
+	if err := ValidateECHConfigList([]byte{0x00, 0x10, 0x00, 0x01}); err == nil {
+		t.Errorf("expected error for mismatched length header")
+	}
+
+	// Valid header
+	validBytes := []byte{0x00, 0x02, 0xfe, 0x0d}
+	if err := ValidateECHConfigList(validBytes); err != nil {
+		t.Errorf("expected valid for proper length header, got: %v", err)
 	}
 }

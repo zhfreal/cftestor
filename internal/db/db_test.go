@@ -36,6 +36,7 @@ func TestSqliteDatabaseOperations(t *testing.T) {
 			City:        "San Francisco",
 			Loc:         "SFO",
 			IP:          "1.1.1.1:443",
+			ECH:         true,
 			Label:       "test-node",
 			DS:          "https",
 			DTC:         4,
@@ -80,10 +81,10 @@ func TestSqliteDatabaseOperations(t *testing.T) {
 	if len(fetched) != 2 {
 		t.Fatalf("expected 2 records in sqlite database, got %d", len(fetched))
 	}
-	if fetched[0].IP != "1.1.1.1:443" || fetched[0].Loc != "SFO" || fetched[0].Asn != 13335 {
+	if fetched[0].IP != "1.1.1.1:443" || fetched[0].Loc != "SFO" || fetched[0].Asn != 13335 || !fetched[0].ECH {
 		t.Errorf("record 0 mismatch: %+v", fetched[0])
 	}
-	if fetched[1].IP != "1.0.0.1:443" || fetched[1].Loc != "LAX" {
+	if fetched[1].IP != "1.0.0.1:443" || fetched[1].Loc != "LAX" || fetched[1].ECH {
 		t.Errorf("record 1 mismatch: %+v", fetched[1])
 	}
 }
@@ -110,6 +111,7 @@ func TestWriteCSVResultAndReadBack(t *testing.T) {
 			DLTPC:       1,
 			DLTPR:       1.0,
 			DLS:         20000.5,
+			ECH:         true,
 		},
 	}
 
@@ -146,6 +148,12 @@ func TestWriteCSVResultAndReadBack(t *testing.T) {
 	if rows[1][1] != "1.1.1.1:443" {
 		t.Errorf("expected data column 1 to be 1.1.1.1:443, got %s", rows[1][1])
 	}
+	if rows[0][16] != "ECH" {
+		t.Errorf("expected header column 16 to be ECH, got %s", rows[0][16])
+	}
+	if rows[1][16] != "Y" {
+		t.Errorf("expected data column 16 to be Y, got %s", rows[1][16])
+	}
 }
 
 func TestGenDBRecords(t *testing.T) {
@@ -155,9 +163,10 @@ func TestGenDBRecords(t *testing.T) {
 
 	results := []config.VerifyResults{
 		{
-			IP:       &ip1,
-			Loc:      &loc1,
-			TestTime: now,
+			IP:           &ip1,
+			Loc:          &loc1,
+			ECHSupported: true,
+			TestTime:     now,
 			Dtc:      4,
 			Dtpc:     4,
 			Dtpr:     1.0,
@@ -178,7 +187,7 @@ func TestGenDBRecords(t *testing.T) {
 		t.Fatalf("expected 1 DBRecord, got %d", len(records))
 	}
 	rec := records[0]
-	if rec.IP != ip1 || rec.Loc != loc1 || rec.DTC != 4 || rec.DTPC != 4 || rec.DLS != 50000.0 {
+	if rec.IP != ip1 || rec.Loc != loc1 || rec.DTC != 4 || rec.DTPC != 4 || rec.DLS != 50000.0 || !rec.ECH {
 		t.Errorf("DBRecord mismatch: %+v", rec)
 	}
 }
@@ -202,4 +211,64 @@ func TestNilIPAndLocHandling(t *testing.T) {
 
 	PrintFinalStat(results, false, false)
 	PrintFinalStat(results, false, true)
+}
+
+func TestSqliteMigrationFromLegacyTable(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "legacy_ip.db")
+
+	database, err := OpenSqlite(dbPath)
+	if err != nil {
+		t.Fatalf("OpenSqlite failed: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("database.DB() failed: %v", err)
+	}
+	defer sqlDB.Close()
+
+	// Create legacy table without ECH column
+	_, err = sqlDB.Exec(`CREATE TABLE CFTD (
+		TestTime TEXT,
+		ASN INTEGER,
+		CITY TEXT,
+		LOC TEXT,
+		IP TEXT,
+		LABEL TEXT,
+		DS TEXT,
+		DTC INTEGER,
+		DTPC INTEGER,
+		DTPR REAL,
+		DA REAL,
+		DMI REAL,
+		DMX REAL,
+		DLTC INTEGER,
+		DLTPC INTEGER,
+		DLTPR REAL,
+		DLS REAL,
+		DLDS INTEGER,
+		DLTD REAL
+	);`)
+	if err != nil {
+		t.Fatalf("create legacy table failed: %v", err)
+	}
+
+	// Insert into legacy table using AddCFDTRecords which runs AutoMigrate
+	records := []DBRecord{
+		{
+			IP:  "1.2.3.4:443",
+			ECH: true,
+		},
+	}
+	if err := AddCFDTRecords(database, records); err != nil {
+		t.Fatalf("AddCFDTRecords on legacy table failed: %v", err)
+	}
+
+	var fetched []DBRecord
+	if err := database.Find(&fetched).Error; err != nil {
+		t.Fatalf("database.Find failed: %v", err)
+	}
+	if len(fetched) != 1 || !fetched[0].ECH {
+		t.Errorf("expected ECH column migrated and set to true, got: %+v", fetched)
+	}
 }

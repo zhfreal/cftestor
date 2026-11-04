@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,5 +92,39 @@ func TestUTLSTransportHTTPRouting(t *testing.T) {
 	stat1, stat2 := tr.Stat()
 	if stat1 < 0 || stat2 < 0 {
 		t.Errorf("invalid stat durations: %v, %v", stat1, stat2)
+	}
+}
+
+func TestCheckECHSupport(t *testing.T) {
+	// 1. With empty ECHConfigBytes, CheckECHSupport should return false immediately
+	config.Config.ECHConfigBytes = nil
+	if CheckECHSupport("1.1.1.1:443", 1*time.Second) {
+		t.Errorf("expected CheckECHSupport to return false when ECHConfigBytes is empty")
+	}
+
+	// 2. With invalid/unreachable host
+	config.Config.ECHConfigBytes = []byte{0x00, 0x01, 0x02}
+	if CheckECHSupport("127.0.0.1:65530", 50*time.Millisecond) {
+		t.Errorf("expected CheckECHSupport to return false for unreachable host")
+	}
+}
+
+func TestPerformUtlsDialWithECH(t *testing.T) {
+	// Unreachable target should return passed=false, echAccepted=false, err != nil
+	passed, echAccepted, err := PerformUtlsDialWithECH("127.0.0.1:65530", "cloudflare-ech.com", 50*time.Millisecond, utls.HelloChrome_Auto, []byte{0x00, 0x01})
+	if passed || echAccepted || err == nil {
+		t.Errorf("expected dial to unreachable target to fail, got passed=%v, echAccepted=%v, err=%v", passed, echAccepted, err)
+	}
+
+	// Host without port should default to port 443 rather than failing with "missing port in address"
+	_, _, err = PerformUtlsDialWithECH("127.0.0.1", "cloudflare-ech.com:443.", 50*time.Millisecond, utls.HelloChrome_Auto, []byte{0x00, 0x01})
+	if err != nil && err.Error() == "missing port in address" {
+		t.Errorf("expected port to be automatically appended, but got 'missing port in address'")
+	}
+
+	// Bracketed IPv6 host without port should not produce double brackets
+	_, _, err = PerformUtlsDialWithECH("[::1]", "cloudflare-ech.com", 50*time.Millisecond, utls.HelloChrome_Auto, []byte{0x00, 0x01})
+	if err != nil && strings.Contains(err.Error(), "[[") {
+		t.Errorf("bracketed IPv6 resulted in double-bracketed address: %v", err)
 	}
 }

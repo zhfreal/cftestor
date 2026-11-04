@@ -18,6 +18,7 @@ type DBRecord struct {
 	City        string  `gorm:"column:CITY"`
 	Loc         string  `gorm:"column:LOC"`
 	IP          string  `gorm:"column:IP"`
+	ECH         bool    `gorm:"column:ECH"`
 	Label       string  `gorm:"column:LABEL"`
 	DS          string  `gorm:"column:DS"`
 	DTC         int     `gorm:"column:DTC"`

@@ -214,6 +214,24 @@ func getLocFromCFResp(body io.Reader) (string, error) {
 	}
 }
 
+func CheckECHSupport(host string, timeout time.Duration) bool {
+	if len(config.Config.ECHConfigBytes) == 0 {
+		return false
+	}
+	domain := config.Config.ECHDomain
+	if domain == "" {
+		domain = config.DefaultECHDomain
+	}
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	_, echAccepted, err := PerformUtlsDialWithECH(host, domain, timeout, config.Config.TLSClientID, config.Config.ECHConfigBytes)
+	if err != nil {
+		return false
+	}
+	return echAccepted
+}
+
 func DownloadWorkerNew(chanIn chan *config.Task, chanOut chan config.SingleVerifyResult, wg *sync.WaitGroup, tUrl *string,
 	httpRspTimeoutDur time.Duration, round int, doDTOnly bool) {
 	defer wg.Done()
@@ -226,11 +244,35 @@ LOOP:
 		host := t.GetHost()
 		max_failure := t.GetMaxFailure()
 		tResultSlice, tLoc := downloadHandlerNew(host, tUrl, httpRspTimeoutDur, round, doDTOnly, max_failure)
+		echSupported := false
+		if config.Config.TestECH && (doDTOnly || config.Config.DLTOnly) {
+			anyPassed := false
+			for _, r := range tResultSlice {
+				if r.DTPassed || r.DLTPassed {
+					anyPassed = true
+					break
+				}
+			}
+			if anyPassed {
+				timeout := httpRspTimeoutDur
+				if doDTOnly {
+					dtTimeout := config.Config.DTTimeoutDuration
+					if dtTimeout <= 0 && config.Config.DTTimeout > 0 {
+						dtTimeout = time.Duration(config.Config.DTTimeout) * time.Millisecond
+					}
+					if dtTimeout > 0 {
+						timeout = dtTimeout
+					}
+				}
+				echSupported = CheckECHSupport(*host, timeout)
+			}
+		}
 		tVerifyResult := config.SingleVerifyResult{
-			TestTime:    time.Now(),
-			Host:        *host,
-			Loc:         tLoc,
-			ResultSlice: tResultSlice,
+			TestTime:     time.Now(),
+			Host:         *host,
+			Loc:          tLoc,
+			ECHSupported: echSupported,
+			ResultSlice:  tResultSlice,
 		}
 		chanOut <- tVerifyResult
 	}
@@ -294,11 +336,29 @@ LOOP:
 		host := t.GetHost()
 		max_failure := t.GetMaxFailure()
 		tResultSlice := sslDTHandlerNew(host, max_failure)
+		echSupported := false
+		if config.Config.TestECH {
+			anyPassed := false
+			for _, r := range tResultSlice {
+				if r.DTPassed {
+					anyPassed = true
+					break
+				}
+			}
+			if anyPassed {
+				dtTimeout := config.Config.DTTimeoutDuration
+				if dtTimeout <= 0 && config.Config.DTTimeout > 0 {
+					dtTimeout = time.Duration(config.Config.DTTimeout) * time.Millisecond
+				}
+				echSupported = CheckECHSupport(*host, dtTimeout)
+			}
+		}
 		tVerifyResult := config.SingleVerifyResult{
-			TestTime:    time.Now(),
-			Host:        *host,
-			Loc:         "",
-			ResultSlice: tResultSlice,
+			TestTime:     time.Now(),
+			Host:         *host,
+			Loc:          "",
+			ECHSupported: echSupported,
+			ResultSlice:  tResultSlice,
 		}
 		chanOut <- tVerifyResult
 	}

@@ -3,6 +3,7 @@ package ping
 import (
 	"bufio"
 	"context"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -234,4 +235,70 @@ func PerformUtlsDial(host string, hostNameStr string, timeout time.Duration, hel
 
 	err = tlsConn.HandshakeContext(ctx)
 	return err == nil
+}
+
+func PerformUtlsDialWithECH(host string, hostNameStr string, timeout time.Duration, helloID utls.ClientHelloID, echConfig []byte) (passed bool, echAccepted bool, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	target := host
+	if _, _, err := net.SplitHostPort(target); err != nil {
+		target = net.JoinHostPort(strings.Trim(target, "[]"), "443")
+	}
+
+	dialConn, err := outbound.OutboundDialContext(ctx, "tcp", target)
+	if err != nil {
+		return false, false, err
+	}
+	defer dialConn.Close()
+
+	sni := hostNameStr
+	if h, _, err := net.SplitHostPort(sni); err == nil {
+		sni = h
+	}
+	sni = strings.TrimSuffix(strings.TrimSpace(sni), ".")
+
+	effectiveHello := helloID
+	if strings.Contains(strings.ToLower(helloID.Client), "safari") {
+		effectiveHello = utls.HelloChrome_Auto
+	}
+
+	conf := &utls.Config{
+		ServerName:                     sni,
+		EncryptedClientHelloConfigList: echConfig,
+		MinVersion:                     utls.VersionTLS13,
+		NextProtos:                     []string{"h2", "http/1.1"},
+		InsecureSkipVerify:             true,
+		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			return nil
+		},
+		EncryptedClientHelloRejectionVerify: func(cs utls.ConnectionState) error {
+			return nil
+		},
+	}
+	tlsConn := utls.UClient(dialConn, conf, effectiveHello)
+	defer tlsConn.Close()
+
+	if err = tlsConn.HandshakeContext(ctx); err != nil {
+		if rej, ok := err.(*utls.ECHRejectionError); ok && len(rej.RetryConfigList) > 0 {
+			dialConn2, err2 := outbound.OutboundDialContext(ctx, "tcp", target)
+			if err2 != nil {
+				return false, false, err2
+			}
+			defer dialConn2.Close()
+
+			conf2 := conf.Clone()
+			conf2.EncryptedClientHelloConfigList = rej.RetryConfigList
+			tlsConn2 := utls.UClient(dialConn2, conf2, effectiveHello)
+			defer tlsConn2.Close()
+
+			if err2 = tlsConn2.HandshakeContext(ctx); err2 == nil {
+				cs2 := tlsConn2.ConnectionState()
+				return true, cs2.ECHAccepted, nil
+			}
+		}
+		return false, false, err
+	}
+	cs := tlsConn.ConnectionState()
+	return true, cs.ECHAccepted, nil
 }

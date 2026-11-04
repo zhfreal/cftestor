@@ -5,11 +5,13 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -540,4 +542,121 @@ func FetchDynamicIPv6(dnsServerStr string, trancoLimit int) ([]string, error) {
 	logger.Log.Infof("Dynamically fetched %d valid Cloudflare IPv6 CIDRs.", len(results))
 
 	return results, nil
+}
+
+const DefaultCloudflareECHConfigBase64 = "AEX+DQBB8gAgACACgMkH67E2ktkZA2KDanrHMAcqclpOo95ZMClgCS99fgAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA="
+
+func DecodeBase64Flexible(s string) ([]byte, error) {
+	s = strings.TrimSpace(s)
+	if len(s) == 0 {
+		return nil, fmt.Errorf("empty base64 string")
+	}
+	if b, err := base64.StdEncoding.DecodeString(s); err == nil && len(b) > 0 {
+		return b, nil
+	}
+	if b, err := base64.RawStdEncoding.DecodeString(s); err == nil && len(b) > 0 {
+		return b, nil
+	}
+	if b, err := base64.URLEncoding.DecodeString(s); err == nil && len(b) > 0 {
+		return b, nil
+	}
+	if b, err := base64.RawURLEncoding.DecodeString(s); err == nil && len(b) > 0 {
+		return b, nil
+	}
+	return nil, fmt.Errorf("failed to decode base64")
+}
+
+func ValidateECHConfigList(data []byte) error {
+	if len(data) < 4 {
+		return fmt.Errorf("ech config too short (%d bytes)", len(data))
+	}
+	listLen := int(data[0])<<8 | int(data[1])
+	if listLen != len(data)-2 {
+		return fmt.Errorf("invalid ECHConfigList length (header specifies %d bytes, got %d bytes)", listLen, len(data)-2)
+	}
+	return nil
+}
+
+func FetchECHConfig(dnsServer string, domain string) ([]byte, error) {
+	netType, serverAddr := parseDNSServer(dnsServer)
+	currDomain := strings.TrimSuffix(strings.TrimSpace(domain), ".")
+	for hop := 0; hop < 3; hop++ {
+		r, err := resolveDomainWithFallback(currDomain, dns.TypeHTTPS, netType, serverAddr)
+		if err != nil {
+			return nil, fmt.Errorf("dns query error: %w", err)
+		}
+		if r == nil {
+			return nil, fmt.Errorf("no response from dns server")
+		}
+		for _, ans := range append(r.Answer, r.Extra...) {
+			if https, ok := ans.(*dns.HTTPS); ok {
+				for _, val := range https.Value {
+					if echVal, ok := val.(*dns.SVCBECHConfig); ok {
+						if len(echVal.ECH) > 0 {
+							return echVal.ECH, nil
+						}
+					}
+				}
+			}
+		}
+		cnameFound := false
+		for _, ans := range r.Answer {
+			if cname, ok := ans.(*dns.CNAME); ok {
+				currDomain = strings.TrimSuffix(cname.Target, ".")
+				cnameFound = true
+				break
+			}
+		}
+		if !cnameFound {
+			break
+		}
+	}
+	return nil, fmt.Errorf("no ECH config found in HTTPS records for %s", domain)
+}
+
+func LoadECHConfig(echConfigRaw, dnsServer, echDomain string) ([]byte, error) {
+	if echConfigRaw != "" {
+		if data, err := os.ReadFile(echConfigRaw); err == nil {
+			trimmed := strings.TrimSpace(string(data))
+			if decoded, decErr := DecodeBase64Flexible(trimmed); decErr == nil && len(decoded) > 0 {
+				if err := ValidateECHConfigList(decoded); err != nil {
+					return nil, fmt.Errorf("invalid ECH config in file %q: %w", echConfigRaw, err)
+				}
+				return decoded, nil
+			}
+			if err := ValidateECHConfigList(data); err == nil {
+				return data, nil
+			}
+			return nil, fmt.Errorf("invalid ECH config format in file %q", echConfigRaw)
+		}
+		if decoded, err := DecodeBase64Flexible(echConfigRaw); err == nil && len(decoded) > 0 {
+			if err := ValidateECHConfigList(decoded); err != nil {
+				return nil, fmt.Errorf("invalid ECH config: %w", err)
+			}
+			return decoded, nil
+		}
+		return nil, fmt.Errorf("invalid ech-config: cannot decode base64 or read file")
+	}
+
+	echDomain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(echDomain), "."))
+	if echDomain == "" {
+		echDomain = "cloudflare-ech.com"
+	}
+
+	echBytes, err := FetchECHConfig(dnsServer, echDomain)
+	if err != nil {
+		if echDomain == "cloudflare-ech.com" {
+			logger.Log.Warningf("Failed to fetch DNS HTTPS ECH record for %s: %v, falling back to embedded Cloudflare ECH config", echDomain, err)
+			return base64.StdEncoding.DecodeString(DefaultCloudflareECHConfigBase64)
+		}
+		return nil, fmt.Errorf("failed to fetch ECH config for %s: %w", echDomain, err)
+	}
+	if err := ValidateECHConfigList(echBytes); err != nil {
+		if echDomain == "cloudflare-ech.com" {
+			logger.Log.Warningf("Fetched ECH config for %s is invalid (%v), falling back to embedded Cloudflare ECH config", echDomain, err)
+			return base64.StdEncoding.DecodeString(DefaultCloudflareECHConfigBase64)
+		}
+		return nil, fmt.Errorf("invalid ECH config fetched for %s: %w", echDomain, err)
+	}
+	return echBytes, nil
 }

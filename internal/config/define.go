@@ -36,6 +36,7 @@ const (
 
 	DefaultDBFile        = "ip.db"
 	DefaultTestHost      = "speed.cloudflare.com"
+	DefaultECHDomain     = "cloudflare-ech.com"
 	MaxHostLen           = 1 << 12
 	DtsSSL               = "SSL"
 	DtsHTTPS             = "HTTPS"
@@ -200,6 +201,7 @@ var (
 		"City(Src)",
 		"ASN(Src)",
 		"Location(CF)",
+		"ECH",
 	}
 	BaseCfCDNCgiTraceUrl = "https://speed.cloudflare.com/cdn-cgi/trace"
 	SourceLevelUser      = 0
@@ -319,6 +321,11 @@ type AppConfig struct {
 	FetchCFDomainsFile          string
 	DNSServer                   string
 	TrancoLimit                 int
+	TestECH                     bool
+	FilterECH                   bool
+	ECHDomain                   string
+	ECHConfigRaw                string
+	ECHConfigBytes              []byte
 }
 
 var Config AppConfig = DefaultConfig()
@@ -394,6 +401,15 @@ Fingerprinting Options:
         --hello-edge              Simulate Edge TLS fingerprint.
         --hello-safari            Simulate Safari TLS fingerprint.
 
+ECH Options:
+        --test-ech     string     Test ECH (Encrypted Client Hello) support with optional customized SNI
+                                  (defaults to "cloudflare-ech.com" if omitted).
+        --ech          string     Alias for --test-ech.
+        --filter-ech              Only accept candidate hosts that support ECH (implies --test-ech).
+        --ech-only                Alias for --filter-ech.
+        --require-ech             Alias for --filter-ech.
+        --ech-config   string     Custom ECHConfigList in base64 format or path to file containing ECH config.
+
 Output & Storage Options:
     -w, --to-file                 Save results to a CSV file.
     -o, --out-file     string     Path for the output CSV file.
@@ -451,31 +467,33 @@ type SingleResult struct {
 }
 
 type SingleVerifyResult struct {
-	TestTime    time.Time
-	Host        string
-	Loc         string
-	ResultSlice []SingleResult
+	TestTime     time.Time
+	Host         string
+	Loc          string
+	ECHSupported bool
+	ResultSlice  []SingleResult
 }
 
 type VerifyResults struct {
-	TestTime time.Time
-	IP       *string
-	Loc      *string
-	Dtc      int
-	Dtpc     int
-	Dtpr     float64
-	Da       float64
-	DaVar    float64
-	DaStd    float64
-	Dmi      float64
-	Dmx      float64
-	Dltc     int
-	Dltpc    int
-	Dltpr    float64
-	Dls      float64
-	Dlds     int64
-	Dltd     float64
-	DtDList  []float64
+	TestTime     time.Time
+	IP           *string
+	Loc          *string
+	ECHSupported bool
+	Dtc          int
+	Dtpc         int
+	Dtpr         float64
+	Da           float64
+	DaVar        float64
+	DaStd        float64
+	Dmi          float64
+	Dmx          float64
+	Dltc         int
+	Dltpc        int
+	Dltpr        float64
+	Dls          float64
+	Dlds         int64
+	Dltd         float64
+	DtDList      []float64
 }
 
 func (a *VerifyResults) Combine(b VerifyResults) {
@@ -487,6 +505,9 @@ func (a *VerifyResults) Combine(b VerifyResults) {
 	}
 	if b.Loc != nil && len(*b.Loc) != 0 && (a.Loc == nil || len(*a.Loc) == 0) {
 		a.Loc = b.Loc
+	}
+	if b.ECHSupported {
+		a.ECHSupported = true
 	}
 	a.Dtc += b.Dtc
 	a.Dtpc += b.Dtpc

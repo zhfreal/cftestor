@@ -39,6 +39,14 @@ type CliOptions struct {
 	ResolveLocChanged     bool
 	ResolveLocParChanged  bool
 
+	TestECHChanged   bool
+	FilterECHChanged bool
+	TestECHRaw       string
+	ECHRaw           string
+	FilterECH        bool
+	ECHOnly          bool
+	RequireECH       bool
+
 	DTTimeoutRaw         string
 	DLTTimeoutRaw        string
 	DLTDurMaxRaw         string
@@ -109,6 +117,7 @@ func DefaultConfig() AppConfig {
 		DNSServer:                   "1.1.1.1:53",
 		TrancoLimit:                 1000,
 		ResolveLocPar:               10,
+		ECHDomain:                   DefaultECHDomain,
 	}
 	cfg.initLastSync()
 	return cfg
@@ -272,7 +281,37 @@ func (cfg *AppConfig) SyncDurations() {
 	syncMs(&cfg.HttpRspTimeoutDuration, &cfg.DLTTimeout, &cfg.lastHttpRspTimeoutDuration, &cfg.lastDLTTimeout)
 }
 
+func normalizeOptionalArgFlags(args []string, flagNames ...string) []string {
+	flags := make(map[string]struct{}, len(flagNames)*2)
+	for _, f := range flagNames {
+		flags["--"+f] = struct{}{}
+		flags["-"+f] = struct{}{}
+	}
+	res := make([]string, 0, len(args))
+	endOfFlags := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			endOfFlags = true
+			res = append(res, arg)
+			continue
+		}
+		if !endOfFlags {
+			if _, ok := flags[arg]; ok {
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					res = append(res, arg+"="+args[i+1])
+					i++
+					continue
+				}
+			}
+		}
+		res = append(res, arg)
+	}
+	return res
+}
+
 func ParseCLI(args []string) (CliOptions, error) {
+	args = normalizeOptionalArgFlags(args, "test-ech", "ech")
 	opts := CliOptions{
 		Config:      DefaultConfig(),
 		IPs:         []string{},
@@ -303,6 +342,8 @@ func ParseCLI(args []string) (CliOptions, error) {
 	opts.SupplementIPv6Changed = FlagChanged(fs, "supplement-ipv6")
 	opts.ResolveLocChanged = FlagChanged(fs, "resolve-loc", "resolve-location")
 	opts.ResolveLocParChanged = FlagChanged(fs, "resolve-loc-par", "resolve-loc-threads")
+	opts.TestECHChanged = FlagChanged(fs, "test-ech", "ech")
+	opts.FilterECHChanged = FlagChanged(fs, "filter-ech", "ech-only", "require-ech")
 
 	if opts.DTTimeoutChanged {
 		d, err := utils.ParseDurationString(opts.DTTimeoutRaw, time.Millisecond)
@@ -390,6 +431,37 @@ func ParseCLI(args []string) (CliOptions, error) {
 		opts.Config.SupplementIPv4 = false
 		opts.Config.SupplementIPv6 = true
 	}
+	if opts.ECHOnly || opts.RequireECH {
+		opts.Config.FilterECH = true
+	}
+	if opts.TestECHChanged {
+		opts.Config.TestECH = true
+		domain := ""
+		if FlagChanged(fs, "test-ech") && opts.TestECHRaw != "" && opts.TestECHRaw != DefaultECHDomain {
+			domain = opts.TestECHRaw
+		}
+		if FlagChanged(fs, "ech") && opts.ECHRaw != "" && opts.ECHRaw != DefaultECHDomain {
+			domain = opts.ECHRaw
+		}
+		if domain == "" {
+			if FlagChanged(fs, "ech") && opts.ECHRaw != "" {
+				domain = opts.ECHRaw
+			} else if FlagChanged(fs, "test-ech") && opts.TestECHRaw != "" {
+				domain = opts.TestECHRaw
+			}
+		}
+		domain = strings.ToLower(strings.TrimSpace(domain))
+		if domain == "" {
+			domain = DefaultECHDomain
+		}
+		opts.Config.ECHDomain = domain
+	}
+	if opts.Config.FilterECH {
+		opts.Config.TestECH = true
+		if opts.Config.ECHDomain == "" {
+			opts.Config.ECHDomain = DefaultECHDomain
+		}
+	}
 	ApplyTLSFingerprint(&opts)
 	opts.Config.SyncDurations()
 	return opts, nil
@@ -469,6 +541,19 @@ func RegisterCLIFlags(fs *flag.FlagSet, opts *CliOptions) {
 	fs.BoolVar(&opts.TLSHelloEdge, "hello-edge", opts.TLSHelloEdge, "Simulate Edge TLS fingerprint.")
 	fs.BoolVar(&opts.TLSHelloSafari, "hello-safari", opts.TLSHelloSafari, "Simulate Safari TLS fingerprint.")
 	fs.StringVar(&opts.TestTimeoutRaw, "test-timeout", opts.TestTimeoutRaw, "Test timeout in minutes or duration (e.g. 50mins, 50s, 30m).")
+
+	fs.StringVar(&opts.TestECHRaw, "test-ech", opts.TestECHRaw, "Test ECH (Encrypted Client Hello) support with optional customized SNI.")
+	if f := fs.Lookup("test-ech"); f != nil {
+		f.NoOptDefVal = DefaultECHDomain
+	}
+	fs.StringVar(&opts.ECHRaw, "ech", opts.ECHRaw, "Alias for --test-ech.")
+	if f := fs.Lookup("ech"); f != nil {
+		f.NoOptDefVal = DefaultECHDomain
+	}
+	fs.BoolVar(&cfg.FilterECH, "filter-ech", cfg.FilterECH, "Only accept candidate hosts that support ECH (implies --test-ech).")
+	fs.BoolVar(&opts.ECHOnly, "ech-only", opts.ECHOnly, "Alias for --filter-ech.")
+	fs.BoolVar(&opts.RequireECH, "require-ech", opts.RequireECH, "Alias for --filter-ech.")
+	fs.StringVar(&cfg.ECHConfigRaw, "ech-config", cfg.ECHConfigRaw, "Custom ECHConfigList in base64 format or path to file containing ECH config.")
 
 	fs.BoolVarP(&cfg.StoreToFile, "to-file", "w", cfg.StoreToFile, "Save results to a CSV file.")
 	fs.BoolVar(&cfg.StoreToFile, "to-csv", cfg.StoreToFile, "Alias for --to-file.")
@@ -787,6 +872,20 @@ func prepareRuntime(opts *CliOptions) error {
 	}
 
 	prepareOutputTargets()
+	if Config.TestECH {
+		if err := InitECHConfig(&Config); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func InitECHConfig(cfg *AppConfig) error {
+	echBytes, err := fetcher.LoadECHConfig(cfg.ECHConfigRaw, cfg.DNSServer, cfg.ECHDomain)
+	if err != nil {
+		return err
+	}
+	cfg.ECHConfigBytes = echBytes
 	return nil
 }
 
@@ -829,6 +928,8 @@ func trimConfigStrings() {
 	Config.DLTUrl = strings.TrimSpace(Config.DLTUrl)
 	Config.DBFile = strings.TrimSpace(Config.DBFile)
 	Config.OutboundInterface = strings.TrimSpace(Config.OutboundInterface)
+	Config.ECHDomain = strings.ToLower(strings.TrimSpace(Config.ECHDomain))
+	Config.ECHConfigRaw = strings.TrimSpace(Config.ECHConfigRaw)
 }
 
 func validateURLs() error {

@@ -41,7 +41,7 @@ func WriteCSVResult(data []DBRecord, filePath string) error {
 	}
 	defer func() { _ = fp.Close() }()
 
-	row := make([]string, 16)
+	row := make([]string, 17)
 	for _, tD := range data {
 		asnStr, city := "", ""
 		if tD.Asn > 0 {
@@ -64,6 +64,11 @@ func WriteCSVResult(data []DBRecord, filePath string) error {
 		row[13] = city
 		row[14] = asnStr
 		row[15] = tD.Loc
+		echStr := "N"
+		if tD.ECH {
+			echStr = "Y"
+		}
+		row[16] = echStr
 		if err = w.Write(row); err != nil {
 			return fmt.Errorf("failed to write CSV record to %q: %w", filePath, err)
 		}
@@ -96,6 +101,7 @@ func GenDBRecords(verifyResultsSlice []config.VerifyResults, getLocalAsnAndCity 
 			if v.Loc != nil {
 				record.Loc = *v.Loc
 			}
+			record.ECH = v.ECHSupported
 			record.DTC = v.Dtc
 			record.DTPC = v.Dtpc
 			record.DTPR = v.Dtpr
@@ -131,6 +137,9 @@ func PrintFinalStat(v []config.VerifyResults, isDtOnly, inSilence bool) {
 				header += "\tStd"
 			}
 		}
+		if config.Config.TestECH {
+			header += "\tECH"
+		}
 		header += "\t"
 		fmt.Fprintln(w, header)
 		for i := 0; i < len(v); i++ {
@@ -152,6 +161,13 @@ func PrintFinalStat(v []config.VerifyResults, isDtOnly, inSilence bool) {
 					line += fmt.Sprintf("\t%.2f", v[i].DaStd)
 				}
 			}
+			if config.Config.TestECH {
+				echTag := "N"
+				if v[i].ECHSupported {
+					echTag = "Y"
+				}
+				line += fmt.Sprintf("\t%s", echTag)
+			}
 			line += "\t"
 			fmt.Fprintln(w, line)
 		}
@@ -165,6 +181,13 @@ func PrintFinalStat(v []config.VerifyResults, isDtOnly, inSilence bool) {
 			}
 			if v[i].Loc != nil && len(*v[i].Loc) > 0 {
 				t_str += fmt.Sprintf("#%s", *v[i].Loc)
+			}
+			if config.Config.TestECH {
+				echTag := "#no-ECH"
+				if v[i].ECHSupported {
+					echTag = "#ECH"
+				}
+				t_str += echTag
 			}
 			fmt.Println(t_str)
 		}
