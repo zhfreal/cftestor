@@ -53,7 +53,7 @@ jobs:
     steps:
       - name: Set BUILDDATE and BUILDTAG
         run: |
-          echo "BUILDDATE=$(date -u +'%Y-%m-%d %H:%M:%S +0000')" >> $GITHUB_ENV
+          echo "BUILDDATE=$(date -u +'%F %T %z')" >> $GITHUB_ENV
           echo "BUILDTAG=release, by zhfreal" >> $GITHUB_ENV
 
       - name: Checkout codebase
