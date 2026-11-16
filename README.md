@@ -105,21 +105,59 @@ All specified entries across all `-s` and `-i` flags are parsed, filtered accord
 
 User-provided sources and `--fast` are **not mixed** into the initial test pool. If both are specified together, `cftestor` tests only the user-provided targets and outputs a guidance warning:
 
-- **Without `--supplement`**:
-  `WARNING: --fast wouldn't work when user provide sources (-s/-i), you can try --supplement and -r <N>.`
-- **With `--supplement`**:
-  `WARNING: sources from --fast just tested after no enough -r <N> archived, --fast can be omitted while --supplement provided.`
+- **Without supplementation**:
+  `WARNING: --fast wouldn't work when user provide sources (-s/-i), you can try --supplement-auto (or --supplement) and -r <N>.`
+- **With supplementation**:
+  `WARNING: sources from --fast just tested after no enough -r <N> archived, --fast can be omitted while --supplement-auto (or --supplement) provided.`
 
-### Source Supplementation (`--supplement`)
+### Source Supplementation
 
-When `--supplement` is enabled and the initial candidate pool is exhausted before reaching the target result count (`-r, --result`), `cftestor` automatically falls back to broader pools in the following sequence:
+By default, when you supply fewer initial candidates than `-r, --result` without supplementation, `cftestor` adjusts the target result count down to the candidate pool size.
+
+When **source supplementation** is enabled, the target result count is preserved: if the initial candidate pool is exhausted before reaching the target result count (`-r, --result`), `cftestor` automatically refills the testing queue from designated supplementary pools until `--result` qualified candidates are found or all pools are exhausted.
+
+`cftestor` supports two distinct supplementation workflows:
+1. **Automatic Mode (`--supplement-auto`)**: Automatic multi-tier fallback cascade.
+2. **Manual Mode (`--supplement-with-file`, `--supplement-as-fast`, `--supplement-as-full`)**: Fine-grained, explicit selection of fallback candidate sources.
+
+> [!IMPORTANT]
+> **Mutual Exclusivity**: Automatic mode and manual mode are mutually exclusive. Specifying `--supplement-auto` (or its alias `--supplement`) alongside manual flags (`--supplement-with-file`, `--supplement-as-fast`, or `--supplement-as-full`) will produce a configuration validation error.
+
+#### Automatic Mode (`--supplement-auto`, alias `--supplement`)
+
+In automatic mode, when candidates exhaust before reaching `--result`, `cftestor` cascades through broader candidate pools:
+
 1. **User-provided sources (`-s` and/or `-i`)**: Tests user-provided IPs first. If exhausted and results remain below `--result`, supplements with `--fast` ranges (dynamically discovered active Cloudflare subnets). If still insufficient, falls back to full Cloudflare CIDR ranges.
 2. **Fast mode sources (`--fast` without `-s` / `-i`)**: Tests fast ranges first. If exhausted and results remain below `--result`, supplements with full Cloudflare CIDR ranges.
 3. **Default full scan (neither `-s`, `-i`, nor `--fast` provided)**: Scans full Cloudflare CIDR ranges only. `--fast` dynamic fetching is skipped since full CIDRs already encompass all Cloudflare ranges.
 
-Without `--supplement`, supplying fewer candidates than `--result` adjusts the target result count down to the candidate pool size. With `--supplement`, the target result count is preserved so supplementary pools can satisfy the target.
+> [!NOTE]
+> **Backward Compatibility**: `--supplement` is retained as a transparent alias for `--supplement-auto`. Existing scripts, workflows, and automated tasks continue to function without changes.
 
-### Independent IP Mode Staging (Primary vs Fallback)
+#### Manual Mode (`--supplement-with-file`, `--supplement-as-fast`, `--supplement-as-full`)
+
+Manual mode grants explicit control over exactly which backup sources are loaded if initial candidates exhaust:
+
+- **`--supplement-with-file <file>` (alias `--supplement-file`)**: Specify a file containing fallback IPs, CIDRs, or `host:port` endpoints (one per line). Can be specified multiple times (or comma-separated) to chain several backup files. Each file path is validated for accessibility at startup to fail fast if a file does not exist.
+- **`--supplement-as-fast`**: Supplement with dynamically fetched active Cloudflare ranges (or internal fast ranges) if initial candidates exhaust. Unlike automatic mode, testing stops after fast ranges and will **not** fall back to full Cloudflare CIDRs unless `--supplement-as-full` is also explicitly specified.
+- **`--supplement-as-full`**: Supplement with built-in full Cloudflare CIDR blocks if initial candidates exhaust. This allows jumping straight from user sources to full CIDR scanning while skipping dynamic fast-range discovery.
+
+#### Manual Supplementation Hierarchy
+
+When multiple manual supplementation flags are combined, `cftestor` executes fallback stages in strict order of specificity:
+
+$$\text{Custom Files (in CLI order)} \longrightarrow \text{Fast Ranges } (\texttt{--supplement-as-fast}) \longrightarrow \text{Full Ranges } (\texttt{--supplement-as-full})$$
+
+1. **Custom supplement files (`--supplement-with-file`)**, evaluated sequentially in the order specified on the command line.
+2. **Fast ranges (`--supplement-as-fast`)**, if specified.
+3. **Full ranges (`--supplement-as-full`)**, if specified.
+
+Each subsequent stage is only triggered if preceding candidate pools exhaust before reaching `-r, --result`. If the target result count is met during any stage, remaining fallback stages are skipped.
+
+> [!NOTE]
+> If manual supplement flags are specified without user sources (`-s` / `-i`) or `--fast`, `cftestor`'s primary scan defaults to the full Cloudflare CIDR pool (millions of IPs), which does not exhaust under normal limits. `cftestor` will issue a warning that manual supplement flags have no effect unless primary candidates are constrained.
+
+#### Independent IP Mode Staging (Primary vs Fallback)
 
 `cftestor` decouples IP family selection between the **primary test phase** and the **supplementation fallback phase**:
 
@@ -129,19 +167,25 @@ Without `--supplement`, supplying fewer candidates than `--result` adjusts the t
   - `-4`: Forces IPv4-only for primary candidates.
   - `-6`: Forces IPv6-only for primary candidates.
 - **Supplementation Fallback Phase (`--supplement-ipv4` / `--supplement-ipv6`)**:
-  - Governs candidate generation when falling back to `--fast` or full Cloudflare CIDRs.
+  - Governs candidate filtering during fallback across both automatic mode (`--supplement-auto`) and manual mode (`--supplement-with-file`, `--supplement-as-fast`, `--supplement-as-full`).
   - `--supplement-ipv4`: Default `true`.
   - `--supplement-ipv6`: Default `false`. Cloudflare's IPv6 ranges are vast and frequently unrouted or filtered on residential networks. Defaulting fallback to IPv4 ensures reliable results unless IPv6 fallback is explicitly desired.
+  - Both flags cannot be disabled simultaneously when supplementation is active; at least one IP family must remain enabled.
 
 #### Staging Matrix and Examples
 
-| CLI Command | Primary IP Family | Fallback IP Family | Behavior |
-| :--- | :--- | :--- | :--- |
-| `./cftestor -s nodes.txt --supplement` | IPv4 + IPv6 | IPv4 | Tests user nodes in dual-stack. If exhausted, supplements with Cloudflare IPv4 ranges. |
-| `./cftestor -4 -s nodes.txt --supplement` | IPv4 | IPv4 | Strict IPv4 test for both user nodes and fallback pools. |
-| `./cftestor -4 -s nodes.txt --supplement --supplement-ipv6` | IPv4 | IPv6 | Tests custom IPv4 nodes first. If insufficient, falls back to Cloudflare IPv6 ranges. |
-| `./cftestor -6 -s nodes.txt --supplement --supplement-ipv4` | IPv6 | IPv4 | Tests custom IPv6 nodes first. If insufficient, falls back to Cloudflare IPv4 ranges. |
-| `./cftestor -s nodes.txt --supplement --supplement-ipv4 --supplement-ipv6` | IPv4 + IPv6 | IPv4 + IPv6 | Full dual-stack testing across both user targets and fallback pools. |
+| CLI Command | Primary IP Family | Fallback Mode & Stages | Fallback IP Family | Behavior |
+| :--- | :--- | :--- | :--- | :--- |
+| `./cftestor -s nodes.txt -r 10 --supplement-auto` | IPv4 + IPv6 | Auto (Fast $\to$ Full) | IPv4 | Tests user nodes in dual-stack. If exhausted, supplements with Cloudflare fast subnets, then full IPv4 CIDRs. |
+| `./cftestor -s nodes.txt -r 10 --supplement` | IPv4 + IPv6 | Auto (Fast $\to$ Full) | IPv4 | Identical behavior using the legacy `--supplement` alias. |
+| `./cftestor -s nodes.txt -r 10 --supplement-with-file backup.txt` | IPv4 + IPv6 | Manual (File `backup.txt`) | IPv4 | Tests `nodes.txt`. If exhausted, tests candidates from `backup.txt` (IPv4 only). Does not test Cloudflare CIDRs. |
+| `./cftestor -s nodes.txt -r 20 --supplement-with-file b1.txt --supplement-with-file b2.txt` | IPv4 + IPv6 | Manual (Chained Files `b1.txt` $\to$ `b2.txt`) | IPv4 | Fallback chains through `b1.txt`, then `b2.txt` in order. |
+| `./cftestor -s nodes.txt -r 15 --supplement-as-fast` | IPv4 + IPv6 | Manual (Fast ranges only) | IPv4 | If `nodes.txt` exhausts, tests dynamically fetched active Cloudflare IPv4 ranges only; skips full CIDR scan. |
+| `./cftestor -s nodes.txt -r 20 --supplement-as-full` | IPv4 + IPv6 | Manual (Full CIDRs only) | IPv4 | If `nodes.txt` exhausts, jumps directly to full Cloudflare IPv4 CIDR blocks, skipping fast-range discovery. |
+| `./cftestor -s primary.txt -r 30 --supplement-with-file backup.txt --supplement-as-fast --supplement-as-full` | IPv4 + IPv6 | Manual (`backup.txt` $\to$ Fast $\to$ Full) | IPv4 | Full manual hierarchy: tests `backup.txt`, then fast ranges, then full Cloudflare CIDRs. |
+| `./cftestor -4 -s nodes.txt -r 10 --supplement-as-fast --supplement-ipv6` | IPv4 | Manual (Fast ranges) | IPv6 | Tests custom IPv4 nodes first. If insufficient, falls back to active Cloudflare IPv6 ranges. |
+| `./cftestor -6 -s nodes.txt -r 10 --supplement-auto --supplement-ipv4` | IPv6 | Auto (Fast $\to$ Full) | IPv4 | Tests custom IPv6 nodes first. If insufficient, falls back to Cloudflare IPv4 ranges. |
+| `./cftestor -s nodes.txt -r 10 --supplement-auto --supplement-ipv4 --supplement-ipv6` | IPv4 + IPv6 | Auto (Fast $\to$ Full) | IPv4 + IPv6 | Full dual-stack testing across both user targets and supplementary fallback pools. |
 
 The run stops when it reaches `--result`, exhausts all available (including supplemented) source pools, or reaches `--test-timeout`.
 
@@ -205,9 +249,12 @@ Mode Options:
                                   if fewer than --result remain.
         --loop-interval duration  Time to wait between loop cycles (e.g. 50s, 60s, 1m; default: 60s).
         --test-timeout duration   Total test timeout (e.g. 50mins, 50s, 30m; default: 30m).
-        --supplement              Enable multi-tier IP source supplementation when target result count is not met:
+        --supplement-auto         Enable automatic multi-tier source supplementation when target result count is not met:
                                   user sources (-s/-i) -> fast ranges (--fast) -> full Cloudflare CIDRs.
-                                  If default full scan is used, tests full Cloudflare CIDRs only.
+        --supplement-with-file strings Supplement candidate pool from specified file(s) if initial candidates exhaust.
+                                  Can be provided multiple times.
+        --supplement-as-fast      Supplement candidate pool with dynamically fetched active Cloudflare ranges.
+        --supplement-as-full      Supplement candidate pool with built-in full Cloudflare CIDR blocks.
         --supplement-ipv4         Enable IPv4 for supplementation fallback. Default: true.
         --supplement-ipv6         Enable IPv6 for supplementation fallback. Default: false.
 
@@ -230,6 +277,8 @@ Output & Storage Options:
 Alias Options:
         --source                  Alias for --ip.
         --source-file             Alias for --in.
+        --supplement              Alias for --supplement-auto.
+        --supplement-file         Alias for --supplement-with-file.
         --result-count            Alias for --result.
         --dt-workers              Alias for --dt-thread.
         --dt-timeout-ms           Alias for --dt-timeout.
@@ -269,6 +318,7 @@ Deprecated flags are still accepted for existing scripts:
 
 - `--disable-download` maps to `--dt-only`.
 - `--dt-via-https` maps to `--dt-via https`.
+- `--supplement` maps to `--supplement-auto`.
 
 Prefer the canonical names in new commands and documentation.
 

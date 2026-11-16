@@ -222,6 +222,80 @@ func GetSourceLevelName(level int) string {
 	}
 }
 
+type SupplementStageType int
+
+const (
+	SupplementStageFile SupplementStageType = iota
+	SupplementStageFast
+	SupplementStageFull
+)
+
+type SupplementStage struct {
+	Type   SupplementStageType
+	Target string // File path if Type == SupplementStageFile
+	Name   string // Human-readable description for logging
+}
+
+func (s SupplementStage) DisplayName() string {
+	if s.Name != "" {
+		return s.Name
+	}
+	switch s.Type {
+	case SupplementStageFile:
+		return fmt.Sprintf("file %s", s.Target)
+	case SupplementStageFast:
+		return "fast ranges (--fast)"
+	case SupplementStageFull:
+		return "full ranges (Cloudflare CIDRs)"
+	default:
+		return "unknown stage"
+	}
+}
+
+type SupplementPlan struct {
+	stages []SupplementStage
+	idx    int
+}
+
+func NewSupplementPlan(stages ...SupplementStage) *SupplementPlan {
+	s := make([]SupplementStage, len(stages))
+	copy(s, stages)
+	return &SupplementPlan{
+		stages: s,
+		idx:    0,
+	}
+}
+
+func (p *SupplementPlan) HasNext() bool {
+	if p == nil {
+		return false
+	}
+	return p.idx < len(p.stages)
+}
+
+func (p *SupplementPlan) Next() SupplementStage {
+	if !p.HasNext() {
+		return SupplementStage{}
+	}
+	stage := p.stages[p.idx]
+	p.idx++
+	return stage
+}
+
+func (p *SupplementPlan) AddStage(stage SupplementStage) {
+	if p == nil {
+		return
+	}
+	p.stages = append(p.stages, stage)
+}
+
+func (p *SupplementPlan) Stages() []SupplementStage {
+	if p == nil {
+		return nil
+	}
+	return p.stages
+}
+
 var (
 	MaxHostLenBig                            = big.NewInt(MaxHostLen)
 	Version, BuildTag, BuildDate, BuildHash string = "dev", "dev", "dev", "dev"
@@ -309,6 +383,11 @@ type AppConfig struct {
 	Supplement                  bool
 	SupplementIPv4              bool
 	SupplementIPv6              bool
+	SupplementAuto              bool
+	SupplementWithFiles         []string
+	SupplementAsFast            bool
+	SupplementAsFull            bool
+	SupplementPlan              *SupplementPlan
 	OutboundMark                uint32
 	OutboundMarkSet             bool
 	OutboundInterface           string
@@ -389,9 +468,13 @@ Mode Options:
                                   if fewer than --result remain.
         --loop-interval duration  Time to wait between loop cycles (e.g. 50s, 60s, 1m; default: 60s).
         --test-timeout duration   Total test timeout (e.g. 50mins, 50s, 30m; default: 30m).
-        --supplement              Enable multi-tier IP source supplementation when target result count is not met:
-                                  user sources (-s/-i) -> fast ranges (--fast) -> full Cloudflare CIDRs.
-                                  If default full scan is used, tests full Cloudflare CIDRs only.
+        --supplement-auto         Enable automatic multi-tier candidate supplementation when target result count
+                                  is not met: user sources (-s/-i) -> fast ranges (--fast) -> full Cloudflare CIDRs.
+        --supplement-with-file strings Custom file(s) containing candidates to supplement when initial pool exhausts.
+                                  Can be provided multiple times.
+        --supplement-as-fast      Supplement dynamically fetched active Cloudflare ranges when initial pool exhausts.
+        --supplement-as-full      Supplement built-in full Cloudflare CIDRs when initial pool exhausts.
+        --supplement              Alias for --supplement-auto.
         --supplement-ipv4         Enable IPv4 for supplementation fallback. Default: true.
         --supplement-ipv6         Enable IPv6 for supplementation fallback. Default: false.
 
@@ -448,6 +531,8 @@ Alias Options:
         --resolve-location        Alias for --resolve-loc.
         --resolve-loc-threads     Alias for --resolve-loc-par.
         --quiet                   Alias for --silence.
+        --supplement              Alias for --supplement-auto.
+        --supplement-file         Alias for --supplement-with-file.
 
 General Options:
     -S, --silence                 Enable silence mode with minimal output.
@@ -805,6 +890,10 @@ func (s *SourceIPs) IsEmpty() bool {
 func (s *SourceIPs) add(IPs string, mode int8) error {
 	ips := strings.TrimSpace(IPs)
 	ips, _, _ = strings.Cut(ips, "#")
+	ips = strings.TrimSpace(ips)
+	if len(ips) == 0 {
+		return nil
+	}
 	if utils.IsValidIPs(ips) {
 		tV := utils.GetIPsVer(ips)
 		if tV == TypeIPErr {

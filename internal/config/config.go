@@ -20,9 +20,11 @@ type CliOptions struct {
 	Config                AppConfig
 	IPs                   []string
 	SourceIPs             []string
-	IPFiles               []string
-	SourceFiles           []string
-	Mark                  string
+	IPFiles                  []string
+	SourceFiles              []string
+	SupplementWithFiles      []string
+	SupplementWithFilesAlias []string
+	Mark                     string
 	XMark                 string
 	PrintVersion          bool
 	TLSHelloFirefox       bool
@@ -111,6 +113,11 @@ func DefaultConfig() AppConfig {
 		IPv6Mode:                    true,
 		SupplementIPv4:              true,
 		SupplementIPv6:              false,
+		SupplementAuto:              false,
+		SupplementWithFiles:         []string{},
+		SupplementAsFast:            false,
+		SupplementAsFull:            false,
+		SupplementPlan:              nil,
 		TLSClientID:                 utls.HelloChrome_Auto,
 		UserAgent:                   UserAgentChrome,
 		PortStrSlice:                []string{},
@@ -316,8 +323,10 @@ func ParseCLI(args []string) (CliOptions, error) {
 		Config:      DefaultConfig(),
 		IPs:         []string{},
 		SourceIPs:   []string{},
-		IPFiles:     []string{},
-		SourceFiles: []string{},
+		IPFiles:                  []string{},
+		SourceFiles:              []string{},
+		SupplementWithFiles:      []string{},
+		SupplementWithFilesAlias: []string{},
 	}
 	fs := flag.NewFlagSet(RunTime, flag.ContinueOnError)
 	fs.Usage = func() {
@@ -333,6 +342,9 @@ func ParseCLI(args []string) (CliOptions, error) {
 	if len(opts.IPFiles) > 0 {
 		opts.Config.IPFile = opts.IPFiles[0]
 	}
+	opts.SupplementWithFiles = append(opts.SupplementWithFiles, opts.SupplementWithFilesAlias...)
+	opts.Config.SupplementWithFiles = opts.SupplementWithFiles
+	opts.Config.Supplement = opts.Config.SupplementAuto || len(opts.Config.SupplementWithFiles) > 0 || opts.Config.SupplementAsFast || opts.Config.SupplementAsFull
 	opts.IPv4Changed = FlagChanged(fs, "ipv4")
 	opts.IPv6Changed = FlagChanged(fs, "ipv6")
 	opts.DTTimeoutChanged = FlagChanged(fs, "dt-timeout", "dt-timeout-ms")
@@ -516,7 +528,12 @@ func RegisterCLIFlags(fs *flag.FlagSet, opts *CliOptions) {
 	fs.Float64Var(&cfg.DLTEvaluationSpeed, "min-speed", cfg.DLTEvaluationSpeed, "Alias for --speed.")
 	fs.IntVar(&cfg.Loop, "loop", cfg.Loop, "Retest qualified candidates for N confirmation cycles; refill from the original pool if fewer than --result remain.")
 	fs.StringVar(&opts.LoopIntervalRaw, "loop-interval", opts.LoopIntervalRaw, "Time to wait between loop cycles in seconds or duration (e.g. 50s, 60s, 1m).")
-	fs.BoolVar(&cfg.Supplement, "supplement", cfg.Supplement, "Enable multi-tier IP source supplementation when target result count is not met (User IPs -> --fast -> Full CF CIDRs).")
+	fs.BoolVar(&cfg.SupplementAuto, "supplement-auto", cfg.SupplementAuto, "Enable multi-tier IP source supplementation when target result count is not met (User IPs -> --fast -> Full CF CIDRs).")
+	fs.BoolVar(&cfg.SupplementAuto, "supplement", cfg.SupplementAuto, "Alias for --supplement-auto.")
+	fs.StringSliceVar(&opts.SupplementWithFiles, "supplement-with-file", opts.SupplementWithFiles, "Specify host/IP file(s) to test when initial candidates exhaust. Can be provided multiple times.")
+	fs.StringSliceVar(&opts.SupplementWithFilesAlias, "supplement-file", opts.SupplementWithFilesAlias, "Alias for --supplement-with-file.")
+	fs.BoolVar(&cfg.SupplementAsFast, "supplement-as-fast", cfg.SupplementAsFast, "Supplement dynamically fetched active Cloudflare ranges when initial candidates exhaust.")
+	fs.BoolVar(&cfg.SupplementAsFull, "supplement-as-full", cfg.SupplementAsFull, "Supplement built-in full Cloudflare CIDR blocks when initial candidates exhaust.")
 	fs.BoolVar(&cfg.SupplementIPv4, "supplement-ipv4", cfg.SupplementIPv4, "Enable IPv4 for supplementation fallback.")
 	fs.BoolVar(&cfg.SupplementIPv6, "supplement-ipv6", cfg.SupplementIPv6, "Enable IPv6 for supplementation fallback.")
 	fs.IntVarP(&cfg.ResultMin, "result", "r", cfg.ResultMin, "Target number of final qualified results.")
@@ -806,16 +823,102 @@ func normalizedURLPath(u *url.URL) string {
 }
 
 func prepareRuntime(opts *CliOptions) error {
-	if HasUserSources() && Config.FastMode {
-		if !Config.Supplement {
-			logger.Log.Warningln("--fast wouldn't work when user provide sources (-s/-i), you can try --supplement and -r <N>.")
-		} else {
-			logger.Log.Warningln("sources from --fast just tested after no enough -r <N> archived, --fast can be omitted while --supplement provided.")
+	// Deduplicate and trim cfg.SupplementWithFiles
+	cleanedSupplementFiles := make([]string, 0, len(Config.SupplementWithFiles))
+	seenFiles := make(map[string]bool)
+	for _, f := range Config.SupplementWithFiles {
+		trimmed := strings.TrimSpace(f)
+		if trimmed == "" {
+			return fmt.Errorf("supplement file path cannot be empty")
+		}
+		if !seenFiles[trimmed] {
+			seenFiles[trimmed] = true
+			cleanedSupplementFiles = append(cleanedSupplementFiles, trimmed)
 		}
 	}
-	if Config.Supplement && !Config.SupplementIPv4 && !Config.SupplementIPv6 {
-		return fmt.Errorf("%q and %q cannot both be disabled when %q is enabled", "--supplement-ipv4", "--supplement-ipv6", "--supplement")
+	Config.SupplementWithFiles = cleanedSupplementFiles
+	opts.Config.SupplementWithFiles = cleanedSupplementFiles
+
+	hasManual := len(Config.SupplementWithFiles) > 0 || Config.SupplementAsFast || Config.SupplementAsFull
+
+	if Config.SupplementAuto && hasManual {
+		return fmt.Errorf("\"--supplement-auto\" (or \"--supplement\") cannot be combined with manual supplement flags (\"--supplement-with-file\", \"--supplement-as-fast\", \"--supplement-as-full\")")
 	}
+
+	for _, f := range Config.SupplementWithFiles {
+		file, err := os.Open(f)
+		if err != nil {
+			return fmt.Errorf("supplement file %q is not accessible: %w", f, err)
+		}
+		info, err := file.Stat()
+		file.Close()
+		if err != nil {
+			return fmt.Errorf("supplement file %q is not accessible: %w", f, err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("supplement file %q is a directory", f)
+		}
+	}
+
+	if (Config.SupplementAuto || hasManual) && !Config.SupplementIPv4 && !Config.SupplementIPv6 {
+		return fmt.Errorf("\"--supplement-ipv4\" and \"--supplement-ipv6\" cannot both be disabled when supplementation is enabled")
+	}
+
+	if hasManual && !HasUserSources() && !Config.FastMode {
+		logger.Log.Warningln("manual supplement flags have no effect when primary source defaults to full Cloudflare scan; specify user sources (-s/-i) or --fast as primary candidates")
+	}
+
+	if HasUserSources() && Config.FastMode {
+		if !Config.SupplementAuto {
+			logger.Log.Warningln("--fast wouldn't work when user provide sources (-s/-i), you can try --supplement-auto and -r <N>.")
+		} else {
+			logger.Log.Warningln("sources from --fast just tested after no enough -r <N> archived, --fast can be omitted while --supplement-auto provided.")
+		}
+	}
+
+	Config.Supplement = Config.SupplementAuto || hasManual
+	opts.Config.Supplement = Config.Supplement
+
+	plan := NewSupplementPlan()
+	if Config.SupplementAuto {
+		if HasUserSources() {
+			plan.AddStage(SupplementStage{
+				Type: SupplementStageFast,
+				Name: "fast ranges (--fast)",
+			})
+			plan.AddStage(SupplementStage{
+				Type: SupplementStageFull,
+				Name: "full ranges (Cloudflare CIDRs)",
+			})
+		} else if Config.FastMode {
+			plan.AddStage(SupplementStage{
+				Type: SupplementStageFull,
+				Name: "full ranges (Cloudflare CIDRs)",
+			})
+		}
+	} else if hasManual {
+		for _, f := range Config.SupplementWithFiles {
+			plan.AddStage(SupplementStage{
+				Type:   SupplementStageFile,
+				Target: f,
+				Name:   fmt.Sprintf("file %s", f),
+			})
+		}
+		if Config.SupplementAsFast {
+			plan.AddStage(SupplementStage{
+				Type: SupplementStageFast,
+				Name: "fast ranges (--fast)",
+			})
+		}
+		if Config.SupplementAsFull {
+			plan.AddStage(SupplementStage{
+				Type: SupplementStageFull,
+				Name: "full ranges (Cloudflare CIDRs)",
+			})
+		}
+	}
+	Config.SupplementPlan = plan
+	opts.Config.SupplementPlan = plan
 	if Config.DisableDownload {
 		Config.DTOnly = true
 		logger.Log.Warningln("deprecated flag \"--disable-download\"; use \"--dt-only\" instead")
@@ -921,6 +1024,14 @@ func trimConfigStrings() {
 	if len(Config.IPFiles) > 0 {
 		Config.IPFile = Config.IPFiles[0]
 	}
+	cleanedSuppFiles := make([]string, 0, len(Config.SupplementWithFiles))
+	for _, f := range Config.SupplementWithFiles {
+		trimmed := strings.TrimSpace(f)
+		if trimmed != "" {
+			cleanedSuppFiles = append(cleanedSuppFiles, trimmed)
+		}
+	}
+	Config.SupplementWithFiles = cleanedSuppFiles
 	Config.ResultFile = strings.TrimSpace(Config.ResultFile)
 	Config.SuffixLabel = strings.TrimSpace(Config.SuffixLabel)
 	Config.HostName = strings.TrimSpace(Config.HostName)
@@ -1108,12 +1219,21 @@ func prepareOutputTargets() {
 	}
 }
 
-func SupplementSourceIPs(level int, tMode int8) error {
+func SupplementFromStage(stage SupplementStage, sMode int8) error {
 	SrcIPs = NewSourceIPsWithRand(MyRand)
 
-	if level == SourceLevelFast {
+	switch stage.Type {
+	case SupplementStageFile:
+		if stage.Target == "" {
+			return fmt.Errorf("supplement file path is empty")
+		}
+		logger.Log.Infof("Supplementing source IPs from file: %s...", stage.Target)
+		if err := SrcIPs.AddFromFile(stage.Target, sMode); err != nil {
+			return err
+		}
+	case SupplementStageFast:
 		logger.Log.Infoln("Supplementing source IPs from --fast ranges...")
-		if (tMode & TypeIPv4) == TypeIPv4 {
+		if (sMode & TypeIPv4) == TypeIPv4 {
 			tCFIPv4 := CFIPV4
 			logger.Log.Debugln("Supplementing IPv4: dynamically fetching optimized active CIDRs...")
 			cidrs, err := fetcher.FetchDynamicIPv4(Config.DNSServer, Config.TrancoLimit)
@@ -1129,7 +1249,7 @@ func SupplementSourceIPs(level int, tMode int8) error {
 				return err
 			}
 		}
-		if (tMode & TypeIPv6) == TypeIPv6 {
+		if (sMode & TypeIPv6) == TypeIPv6 {
 			tCFIPv6 := CFIPV6
 			logger.Log.Debugln("Supplementing IPv6: dynamically fetching optimized active CIDRs...")
 			cidrs, err := fetcher.FetchDynamicIPv6(Config.DNSServer, Config.TrancoLimit)
@@ -1145,18 +1265,20 @@ func SupplementSourceIPs(level int, tMode int8) error {
 				return err
 			}
 		}
-	} else if level == SourceLevelFull {
+	case SupplementStageFull:
 		logger.Log.Infoln("Supplementing source IPs from full ranges...")
-		if (tMode & TypeIPv4) == TypeIPv4 {
+		if (sMode & TypeIPv4) == TypeIPv4 {
 			if err := SrcIPs.AddFromSlice(CFIPV4FULL, TypeIPv4); err != nil {
 				return err
 			}
 		}
-		if (tMode & TypeIPv6) == TypeIPv6 {
+		if (sMode & TypeIPv6) == TypeIPv6 {
 			if err := SrcIPs.AddFromSlice(CFIPV6FULL, TypeIPv6); err != nil {
 				return err
 			}
 		}
+	default:
+		return fmt.Errorf("unknown supplement stage type: %v", stage.Type)
 	}
 
 	SrcIPs.Shuffle()
@@ -1164,6 +1286,17 @@ func SupplementSourceIPs(level int, tMode int8) error {
 		return err
 	}
 	return nil
+}
+
+func SupplementSourceIPs(level int, tMode int8) error {
+	switch level {
+	case SourceLevelFast:
+		return SupplementFromStage(SupplementStage{Type: SupplementStageFast, Name: "fast ranges (--fast)"}, tMode)
+	case SourceLevelFull:
+		return SupplementFromStage(SupplementStage{Type: SupplementStageFull, Name: "full ranges (Cloudflare CIDRs)"}, tMode)
+	default:
+		return fmt.Errorf("unknown source level: %d", level)
+	}
 }
 
 // HasUserSources returns true if user specified candidate IPs via -s or -i.

@@ -1,9 +1,12 @@
 package config_test
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -839,6 +842,644 @@ func TestSupplementWithoutLoopSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected ConfigureApp to succeed when --supplement is used without --loop: %v", err)
 	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	os.Stdout = w
+
+	outCh := make(chan string)
+	go func() {
+		var buf bytes.Buffer
+		io.Copy(&buf, r)
+		r.Close()
+		outCh <- buf.String()
+	}()
+
+	defer func() {
+		os.Stdout = oldStdout
+	}()
+
+	fn()
+	w.Close()
+	out := <-outCh
+	return out
+}
+
+func TestSupplementAutoAndLegacyAlias(t *testing.T) {
+	t.Run("with user sources auto plan has fast and full", func(t *testing.T) {
+		for _, flag := range []string{"--supplement-auto", "--supplement"} {
+			t.Run(flag, func(t *testing.T) {
+				resetGlobalsForTest()
+				opts, shouldExit, exitCode, err := config.ConfigureApp([]string{"-s", "1.1.1.1", flag})
+				if err != nil {
+					t.Fatalf("ConfigureApp failed with %s: %v", flag, err)
+				}
+				if shouldExit || exitCode != 0 {
+					t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+				}
+				if !opts.Config.SupplementAuto {
+					t.Errorf("expected SupplementAuto to be true for %s", flag)
+				}
+				if !opts.Config.Supplement {
+					t.Errorf("expected Supplement to be true for %s", flag)
+				}
+				if opts.Config.SupplementPlan == nil {
+					t.Fatalf("expected non-nil SupplementPlan for %s", flag)
+				}
+				stages := opts.Config.SupplementPlan.Stages()
+				if len(stages) != 2 {
+					t.Fatalf("expected 2 stages, got %d", len(stages))
+				}
+				if stages[0].Type != config.SupplementStageFast {
+					t.Errorf("stage 0: expected SupplementStageFast, got %v", stages[0].Type)
+				}
+				if stages[1].Type != config.SupplementStageFull {
+					t.Errorf("stage 1: expected SupplementStageFull, got %v", stages[1].Type)
+				}
+			})
+		}
+	})
+
+	t.Run("with fast mode auto plan has full only", func(t *testing.T) {
+		for _, flag := range []string{"--supplement-auto", "--supplement"} {
+			t.Run(flag, func(t *testing.T) {
+				resetGlobalsForTest()
+				opts, shouldExit, exitCode, err := config.ConfigureApp([]string{"--fast", flag})
+				if err != nil {
+					t.Fatalf("ConfigureApp failed with %s: %v", flag, err)
+				}
+				if shouldExit || exitCode != 0 {
+					t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+				}
+				if opts.Config.SupplementPlan == nil {
+					t.Fatalf("expected non-nil SupplementPlan for %s", flag)
+				}
+				stages := opts.Config.SupplementPlan.Stages()
+				if len(stages) != 1 {
+					t.Fatalf("expected 1 stage, got %d", len(stages))
+				}
+				if stages[0].Type != config.SupplementStageFull {
+					t.Errorf("stage 0: expected SupplementStageFull, got %v", stages[0].Type)
+				}
+			})
+		}
+	})
+
+	t.Run("default full scan auto plan has no stages", func(t *testing.T) {
+		for _, flag := range []string{"--supplement-auto", "--supplement"} {
+			t.Run(flag, func(t *testing.T) {
+				resetGlobalsForTest()
+				opts, shouldExit, exitCode, err := config.ConfigureApp([]string{flag})
+				if err != nil {
+					t.Fatalf("ConfigureApp failed with %s: %v", flag, err)
+				}
+				if shouldExit || exitCode != 0 {
+					t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+				}
+				if opts.Config.SupplementPlan == nil {
+					t.Fatalf("expected non-nil SupplementPlan for %s", flag)
+				}
+				stages := opts.Config.SupplementPlan.Stages()
+				if len(stages) != 0 {
+					t.Fatalf("expected 0 stages for default full scan, got %d", len(stages))
+				}
+			})
+		}
+	})
+}
+
+func TestSupplementManualFlags(t *testing.T) {
+	tempDir := t.TempDir()
+	f1 := filepath.Join(tempDir, "supp1.txt")
+	if err := os.WriteFile(f1, []byte("1.1.1.1\n"), 0644); err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	f2 := filepath.Join(tempDir, "supp2.txt")
+	if err := os.WriteFile(f2, []byte("1.0.0.1\n"), 0644); err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+
+	t.Run("single supplement-with-file", func(t *testing.T) {
+		resetGlobalsForTest()
+		opts, shouldExit, exitCode, err := config.ConfigureApp([]string{"-s", "1.1.1.2", "--supplement-with-file", f1})
+		if err != nil {
+			t.Fatalf("ConfigureApp failed: %v", err)
+		}
+		if shouldExit || exitCode != 0 {
+			t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+		}
+		if !opts.Config.Supplement {
+			t.Error("expected Supplement to be true")
+		}
+		if opts.Config.SupplementAuto {
+			t.Error("expected SupplementAuto to be false")
+		}
+		if opts.Config.SupplementPlan == nil {
+			t.Fatal("expected non-nil SupplementPlan")
+		}
+		stages := opts.Config.SupplementPlan.Stages()
+		if len(stages) != 1 {
+			t.Fatalf("expected 1 stage, got %d", len(stages))
+		}
+		if stages[0].Type != config.SupplementStageFile || stages[0].Target != f1 {
+			t.Errorf("stage 0: expected file %s, got %+v", f1, stages[0])
+		}
+	})
+
+	t.Run("multiple supplement-with-file and alias supplement-file", func(t *testing.T) {
+		resetGlobalsForTest()
+		opts, shouldExit, exitCode, err := config.ConfigureApp([]string{"-s", "1.1.1.2", "--supplement-with-file", f1, "--supplement-file", f2})
+		if err != nil {
+			t.Fatalf("ConfigureApp failed: %v", err)
+		}
+		if shouldExit || exitCode != 0 {
+			t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+		}
+		stages := opts.Config.SupplementPlan.Stages()
+		if len(stages) != 2 {
+			t.Fatalf("expected 2 stages, got %d", len(stages))
+		}
+		if stages[0].Type != config.SupplementStageFile || stages[0].Target != f1 {
+			t.Errorf("stage 0: expected %s, got %+v", f1, stages[0])
+		}
+		if stages[1].Type != config.SupplementStageFile || stages[1].Target != f2 {
+			t.Errorf("stage 1: expected %s, got %+v", f2, stages[1])
+		}
+	})
+
+	t.Run("supplement-with-file deduplicates duplicates", func(t *testing.T) {
+		resetGlobalsForTest()
+		opts, shouldExit, exitCode, err := config.ConfigureApp([]string{"-s", "1.1.1.2", "--supplement-with-file", f1, "--supplement-with-file", f1})
+		if err != nil {
+			t.Fatalf("ConfigureApp failed: %v", err)
+		}
+		if shouldExit || exitCode != 0 {
+			t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+		}
+		stages := opts.Config.SupplementPlan.Stages()
+		if len(stages) != 1 {
+			t.Fatalf("expected 1 deduplicated stage, got %d", len(stages))
+		}
+		if stages[0].Target != f1 {
+			t.Errorf("expected %s, got %s", f1, stages[0].Target)
+		}
+	})
+
+	t.Run("supplement-as-fast standalone", func(t *testing.T) {
+		resetGlobalsForTest()
+		opts, shouldExit, exitCode, err := config.ConfigureApp([]string{"-s", "1.1.1.2", "--supplement-as-fast"})
+		if err != nil {
+			t.Fatalf("ConfigureApp failed: %v", err)
+		}
+		if shouldExit || exitCode != 0 {
+			t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+		}
+		if !opts.Config.SupplementAsFast {
+			t.Error("expected SupplementAsFast to be true")
+		}
+		stages := opts.Config.SupplementPlan.Stages()
+		if len(stages) != 1 {
+			t.Fatalf("expected 1 stage, got %d", len(stages))
+		}
+		if stages[0].Type != config.SupplementStageFast {
+			t.Errorf("expected SupplementStageFast, got %v", stages[0].Type)
+		}
+	})
+
+	t.Run("supplement-as-full standalone", func(t *testing.T) {
+		resetGlobalsForTest()
+		opts, shouldExit, exitCode, err := config.ConfigureApp([]string{"-s", "1.1.1.2", "--supplement-as-full"})
+		if err != nil {
+			t.Fatalf("ConfigureApp failed: %v", err)
+		}
+		if shouldExit || exitCode != 0 {
+			t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+		}
+		if !opts.Config.SupplementAsFull {
+			t.Error("expected SupplementAsFull to be true")
+		}
+		stages := opts.Config.SupplementPlan.Stages()
+		if len(stages) != 1 {
+			t.Fatalf("expected 1 stage, got %d", len(stages))
+		}
+		if stages[0].Type != config.SupplementStageFull {
+			t.Errorf("expected SupplementStageFull, got %v", stages[0].Type)
+		}
+	})
+
+	t.Run("combined manual flags respect hierarchy", func(t *testing.T) {
+		resetGlobalsForTest()
+		opts, shouldExit, exitCode, err := config.ConfigureApp([]string{
+			"-s", "1.1.1.2",
+			"--supplement-as-full",
+			"--supplement-with-file", f1,
+			"--supplement-as-fast",
+			"--supplement-file", f2,
+		})
+		if err != nil {
+			t.Fatalf("ConfigureApp failed: %v", err)
+		}
+		if shouldExit || exitCode != 0 {
+			t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+		}
+		stages := opts.Config.SupplementPlan.Stages()
+		if len(stages) != 4 {
+			t.Fatalf("expected 4 stages in hierarchy order, got %d", len(stages))
+		}
+		if stages[0].Type != config.SupplementStageFile || stages[0].Target != f1 {
+			t.Errorf("stage 0: expected file %s, got %+v", f1, stages[0])
+		}
+		if stages[1].Type != config.SupplementStageFile || stages[1].Target != f2 {
+			t.Errorf("stage 1: expected file %s, got %+v", f2, stages[1])
+		}
+		if stages[2].Type != config.SupplementStageFast {
+			t.Errorf("stage 2: expected SupplementStageFast, got %+v", stages[2])
+		}
+		if stages[3].Type != config.SupplementStageFull {
+			t.Errorf("stage 3: expected SupplementStageFull, got %+v", stages[3])
+		}
+	})
+}
+
+func TestSupplementAutoAndManualConflict(t *testing.T) {
+	tempDir := t.TempDir()
+	f1 := filepath.Join(tempDir, "supp.txt")
+	if err := os.WriteFile(f1, []byte("1.1.1.1\n"), 0644); err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+
+	conflictTests := []struct {
+		name string
+		args []string
+	}{
+		{name: "auto with file", args: []string{"-s", "1.1.1.1", "--supplement-auto", "--supplement-with-file", f1}},
+		{name: "legacy supplement with file", args: []string{"-s", "1.1.1.1", "--supplement", "--supplement-with-file", f1}},
+		{name: "auto with as-fast", args: []string{"-s", "1.1.1.1", "--supplement-auto", "--supplement-as-fast"}},
+		{name: "legacy supplement with as-fast", args: []string{"-s", "1.1.1.1", "--supplement", "--supplement-as-fast"}},
+		{name: "auto with as-full", args: []string{"-s", "1.1.1.1", "--supplement-auto", "--supplement-as-full"}},
+		{name: "legacy supplement with as-full", args: []string{"-s", "1.1.1.1", "--supplement", "--supplement-as-full"}},
+	}
+
+	for _, tt := range conflictTests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetGlobalsForTest()
+			_, shouldExit, exitCode, err := config.ConfigureApp(tt.args)
+			if !shouldExit || exitCode != 1 || err == nil {
+				t.Fatalf("expected conflict error and exitCode 1, got shouldExit=%v, exitCode=%d, err=%v", shouldExit, exitCode, err)
+			}
+			wantSub := "\"--supplement-auto\" (or \"--supplement\") cannot be combined with manual supplement flags"
+			if !strings.Contains(err.Error(), wantSub) {
+				t.Errorf("error %q does not contain %q", err.Error(), wantSub)
+			}
+		})
+	}
+}
+
+func TestSupplementWithFileNonExistentRejects(t *testing.T) {
+	nonExistent := filepath.Join(t.TempDir(), "non_existent_supplement_file.txt")
+	for _, flag := range []string{"--supplement-with-file", "--supplement-file"} {
+		t.Run(flag, func(t *testing.T) {
+			resetGlobalsForTest()
+			_, shouldExit, exitCode, err := config.ConfigureApp([]string{"-s", "1.1.1.1", flag, nonExistent})
+			if !shouldExit || exitCode != 1 || err == nil {
+				t.Fatalf("expected error for non-existent file: shouldExit=%v, exitCode=%d, err=%v", shouldExit, exitCode, err)
+			}
+			wantSub := fmt.Sprintf("supplement file %q is not accessible", nonExistent)
+			if !strings.Contains(err.Error(), wantSub) {
+				t.Errorf("error %q does not contain %q", err.Error(), wantSub)
+			}
+		})
+	}
+
+	t.Run("directory path rejected", func(t *testing.T) {
+		tempDir := t.TempDir()
+		resetGlobalsForTest()
+		_, shouldExit, exitCode, err := config.ConfigureApp([]string{"-s", "1.1.1.1", "--supplement-with-file", tempDir})
+		if !shouldExit || exitCode != 1 || err == nil {
+			t.Fatalf("expected error for directory path: shouldExit=%v, exitCode=%d, err=%v", shouldExit, exitCode, err)
+		}
+		wantSub := fmt.Sprintf("supplement file %q is a directory", tempDir)
+		if !strings.Contains(err.Error(), wantSub) {
+			t.Errorf("error %q does not contain %q", err.Error(), wantSub)
+		}
+	})
+
+	t.Run("empty string path rejected", func(t *testing.T) {
+		resetGlobalsForTest()
+		_, shouldExit, exitCode, err := config.ConfigureApp([]string{"-s", "1.1.1.1", "--supplement-with-file", "   "})
+		if !shouldExit || exitCode != 1 || err == nil {
+			t.Fatalf("expected error for empty path: shouldExit=%v, exitCode=%d, err=%v", shouldExit, exitCode, err)
+		}
+		wantSub := "supplement file path cannot be empty"
+		if !strings.Contains(err.Error(), wantSub) {
+			t.Errorf("error %q does not contain %q", err.Error(), wantSub)
+		}
+	})
+}
+
+func TestSupplementWithFileIPModeFiltering(t *testing.T) {
+	tempDir := t.TempDir()
+	suppFile := filepath.Join(tempDir, "mixed_nodes.txt")
+	content := "# Top level comment line\n1.1.1.1:443 # node 1\n1.0.0.1 # node 2 without port\n# Empty and comment lines\n\n[2606:4700:4700::1111]:443 # ipv6 with port\n2606:4700:4700::1001 # ipv6 without port\n"
+	if err := os.WriteFile(suppFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	stage := config.SupplementStage{
+		Type:   config.SupplementStageFile,
+		Target: suppFile,
+		Name:   "test file",
+	}
+
+	t.Run("IPv4 only filtering", func(t *testing.T) {
+		resetGlobalsForTest()
+		if err := config.SupplementFromStage(stage, config.TypeIPv4); err != nil {
+			t.Fatalf("SupplementFromStage failed: %v", err)
+		}
+		if count := config.SrcIPs.LenInt(); count != 2 {
+			t.Fatalf("expected 2 IPv4 candidates, got %d", count)
+		}
+		batch := config.SrcIPs.RetrieveSome(2, false)
+		for _, ip := range batch {
+			if strings.Contains(*ip, "[") || strings.Contains(*ip, "2606") {
+				t.Errorf("expected IPv4 address, got %s", *ip)
+			}
+		}
+	})
+
+	t.Run("IPv6 only filtering", func(t *testing.T) {
+		resetGlobalsForTest()
+		if err := config.SupplementFromStage(stage, config.TypeIPv6); err != nil {
+			t.Fatalf("SupplementFromStage failed: %v", err)
+		}
+		if count := config.SrcIPs.LenInt(); count != 2 {
+			t.Fatalf("expected 2 IPv6 candidates, got %d", count)
+		}
+		batch := config.SrcIPs.RetrieveSome(2, false)
+		for _, ip := range batch {
+			if !strings.Contains(*ip, "[") && !strings.Contains(*ip, "2606") {
+				t.Errorf("expected IPv6 address, got %s", *ip)
+			}
+		}
+	})
+
+	t.Run("Dual stack filtering", func(t *testing.T) {
+		resetGlobalsForTest()
+		if err := config.SupplementFromStage(stage, config.TypeIPv4|config.TypeIPv6); err != nil {
+			t.Fatalf("SupplementFromStage failed: %v", err)
+		}
+		if count := config.SrcIPs.LenInt(); count != 4 {
+			t.Fatalf("expected 4 candidates, got %d", count)
+		}
+	})
+}
+
+func TestSupplementFromStage(t *testing.T) {
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "nodes.txt")
+	if err := os.WriteFile(testFile, []byte("1.1.1.1:443\n"), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	t.Run("file stage valid", func(t *testing.T) {
+		resetGlobalsForTest()
+		stage := config.SupplementStage{Type: config.SupplementStageFile, Target: testFile, Name: "nodes file"}
+		if err := config.SupplementFromStage(stage, config.TypeIPv4); err != nil {
+			t.Fatalf("SupplementFromStage failed: %v", err)
+		}
+		if config.SrcIPs.LenInt() != 1 {
+			t.Fatalf("expected 1 host loaded, got %d", config.SrcIPs.LenInt())
+		}
+	})
+
+	t.Run("file stage empty target", func(t *testing.T) {
+		resetGlobalsForTest()
+		stage := config.SupplementStage{Type: config.SupplementStageFile, Target: ""}
+		if err := config.SupplementFromStage(stage, config.TypeIPv4); err == nil {
+			t.Fatal("expected error for empty target")
+		} else if !strings.Contains(err.Error(), "supplement file path is empty") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("file stage non-existent target", func(t *testing.T) {
+		resetGlobalsForTest()
+		stage := config.SupplementStage{Type: config.SupplementStageFile, Target: filepath.Join(tempDir, "not_found.txt")}
+		if err := config.SupplementFromStage(stage, config.TypeIPv4); err == nil {
+			t.Fatal("expected error for non-existent target")
+		}
+	})
+
+	t.Run("fast stage", func(t *testing.T) {
+		resetGlobalsForTest()
+		config.Config.PortStrSlice = []string{"443"}
+		stage := config.SupplementStage{Type: config.SupplementStageFast, Name: "fast ranges"}
+		if err := config.SupplementFromStage(stage, config.TypeIPv4); err != nil {
+			t.Fatalf("SupplementFromStage failed for fast stage: %v", err)
+		}
+		if config.SrcIPs.LenInt() == 0 {
+			t.Fatal("expected non-empty SrcIPs for fast stage")
+		}
+	})
+
+	t.Run("full stage", func(t *testing.T) {
+		resetGlobalsForTest()
+		config.Config.PortStrSlice = []string{"443"}
+		stage := config.SupplementStage{Type: config.SupplementStageFull, Name: "full ranges"}
+		if err := config.SupplementFromStage(stage, config.TypeIPv4); err != nil {
+			t.Fatalf("SupplementFromStage failed for full stage: %v", err)
+		}
+		if config.SrcIPs.LenInt() == 0 {
+			t.Fatal("expected non-empty SrcIPs for full stage")
+		}
+	})
+
+	t.Run("unknown stage type", func(t *testing.T) {
+		resetGlobalsForTest()
+		stage := config.SupplementStage{Type: config.SupplementStageType(999), Name: "unknown"}
+		if err := config.SupplementFromStage(stage, config.TypeIPv4); err == nil {
+			t.Fatal("expected error for unknown stage type")
+		} else if !strings.Contains(err.Error(), "unknown supplement stage type") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("SupplementPlan methods", func(t *testing.T) {
+		s1 := config.SupplementStage{Type: config.SupplementStageFile, Target: "a.txt", Name: "stage 1"}
+		s2 := config.SupplementStage{Type: config.SupplementStageFast, Name: "stage 2"}
+		plan := config.NewSupplementPlan(s1, s2)
+
+		if !plan.HasNext() {
+			t.Fatal("expected HasNext to be true")
+		}
+		got1 := plan.Next()
+		if got1.Target != "a.txt" {
+			t.Errorf("expected target a.txt, got %s", got1.Target)
+		}
+		if !plan.HasNext() {
+			t.Fatal("expected HasNext to be true before stage 2")
+		}
+		got2 := plan.Next()
+		if got2.Type != config.SupplementStageFast {
+			t.Errorf("expected SupplementStageFast, got %v", got2.Type)
+		}
+		if plan.HasNext() {
+			t.Fatal("expected HasNext to be false after exhaustion")
+		}
+		gotEmpty := plan.Next()
+		if gotEmpty.Type != 0 && gotEmpty.Target != "" && gotEmpty.Name != "" {
+			t.Errorf("expected zero SupplementStage, got %+v", gotEmpty)
+		}
+
+		s3 := config.SupplementStage{Type: config.SupplementStageFull, Name: "stage 3"}
+		plan.AddStage(s3)
+		if !plan.HasNext() {
+			t.Fatal("expected HasNext to be true after AddStage")
+		}
+		got3 := plan.Next()
+		if got3.Type != config.SupplementStageFull {
+			t.Errorf("expected SupplementStageFull, got %v", got3.Type)
+		}
+		if plan.HasNext() {
+			t.Fatal("expected HasNext to be false after consuming added stage")
+		}
+
+		// Nil plan safety
+		var nilPlan *config.SupplementPlan
+		if nilPlan.HasNext() {
+			t.Error("nil plan HasNext should be false")
+		}
+		if nilPlan.Next() != (config.SupplementStage{}) {
+			t.Error("nil plan Next should return zero stage")
+		}
+		if nilPlan.Stages() != nil {
+			t.Error("nil plan Stages should return nil")
+		}
+		nilPlan.AddStage(s1) // should not panic
+
+		// DisplayName fallback
+		stageFile := config.SupplementStage{Type: config.SupplementStageFile, Target: "f.txt"}
+		if stageFile.DisplayName() != "file f.txt" {
+			t.Errorf("DisplayName() = %q, want %q", stageFile.DisplayName(), "file f.txt")
+		}
+		stageFast := config.SupplementStage{Type: config.SupplementStageFast}
+		if stageFast.DisplayName() != "fast ranges (--fast)" {
+			t.Errorf("DisplayName() = %q, want %q", stageFast.DisplayName(), "fast ranges (--fast)")
+		}
+		stageFull := config.SupplementStage{Type: config.SupplementStageFull}
+		if stageFull.DisplayName() != "full ranges (Cloudflare CIDRs)" {
+			t.Errorf("DisplayName() = %q, want %q", stageFull.DisplayName(), "full ranges (Cloudflare CIDRs)")
+		}
+		stageUnknown := config.SupplementStage{Type: config.SupplementStageType(888)}
+		if stageUnknown.DisplayName() != "unknown stage" {
+			t.Errorf("DisplayName() = %q, want %q", stageUnknown.DisplayName(), "unknown stage")
+		}
+	})
+}
+
+func TestSupplementManualWithoutUserSourcesWarns(t *testing.T) {
+	tempDir := t.TempDir()
+	f1 := filepath.Join(tempDir, "supp.txt")
+	if err := os.WriteFile(f1, []byte("1.1.1.1\n"), 0644); err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+
+	wantWarning := "manual supplement flags have no effect when primary source defaults to full Cloudflare scan; specify user sources (-s/-i) or --fast as primary candidates"
+
+	t.Run("supplement-as-fast without user sources or fast warns", func(t *testing.T) {
+		resetGlobalsForTest()
+		out := captureStdout(t, func() {
+			opts, shouldExit, exitCode, err := config.ConfigureApp([]string{"--supplement-as-fast"})
+			if err != nil {
+				t.Fatalf("ConfigureApp failed: %v", err)
+			}
+			if shouldExit || exitCode != 0 {
+				t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+			}
+			if !opts.Config.SupplementAsFast {
+				t.Fatal("expected SupplementAsFast to be true")
+			}
+		})
+		if !strings.Contains(out, wantWarning) {
+			t.Errorf("expected warning %q in output, got %q", wantWarning, out)
+		}
+	})
+
+	t.Run("supplement-with-file without user sources or fast warns", func(t *testing.T) {
+		resetGlobalsForTest()
+		out := captureStdout(t, func() {
+			opts, shouldExit, exitCode, err := config.ConfigureApp([]string{"--supplement-with-file", f1})
+			if err != nil {
+				t.Fatalf("ConfigureApp failed: %v", err)
+			}
+			if shouldExit || exitCode != 0 {
+				t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+			}
+			if len(opts.Config.SupplementWithFiles) != 1 {
+				t.Fatal("expected 1 supplement file")
+			}
+		})
+		if !strings.Contains(out, wantWarning) {
+			t.Errorf("expected warning %q in output, got %q", wantWarning, out)
+		}
+	})
+
+	t.Run("supplement-as-full without user sources or fast warns", func(t *testing.T) {
+		resetGlobalsForTest()
+		out := captureStdout(t, func() {
+			opts, shouldExit, exitCode, err := config.ConfigureApp([]string{"--supplement-as-full"})
+			if err != nil {
+				t.Fatalf("ConfigureApp failed: %v", err)
+			}
+			if shouldExit || exitCode != 0 {
+				t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+			}
+			if !opts.Config.SupplementAsFull {
+				t.Fatal("expected SupplementAsFull to be true")
+			}
+		})
+		if !strings.Contains(out, wantWarning) {
+			t.Errorf("expected warning %q in output, got %q", wantWarning, out)
+		}
+	})
+
+	t.Run("manual flags with user sources do not warn", func(t *testing.T) {
+		resetGlobalsForTest()
+		out := captureStdout(t, func() {
+			_, shouldExit, exitCode, err := config.ConfigureApp([]string{"-s", "1.1.1.1", "--supplement-as-fast"})
+			if err != nil {
+				t.Fatalf("ConfigureApp failed: %v", err)
+			}
+			if shouldExit || exitCode != 0 {
+				t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+			}
+		})
+		if strings.Contains(out, wantWarning) {
+			t.Errorf("unexpected warning in output when user source provided: %q", out)
+		}
+	})
+
+	t.Run("manual flags with fast mode do not warn", func(t *testing.T) {
+		resetGlobalsForTest()
+		out := captureStdout(t, func() {
+			_, shouldExit, exitCode, err := config.ConfigureApp([]string{"--fast", "--supplement-as-full"})
+			if err != nil {
+				t.Fatalf("ConfigureApp failed: %v", err)
+			}
+			if shouldExit || exitCode != 0 {
+				t.Fatalf("unexpected exit: shouldExit=%v, exitCode=%d", shouldExit, exitCode)
+			}
+		})
+		if strings.Contains(out, wantWarning) {
+			t.Errorf("unexpected warning in output when --fast provided: %q", out)
+		}
+	})
 }
 
 func TestLoadSourceIPsDualStackRandomMixed(t *testing.T) {
